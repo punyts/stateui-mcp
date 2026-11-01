@@ -95,11 +95,10 @@ const SEGMENT = /^[^.\s]+$/;
  */
 function diffLeaves(path: string, a: unknown, b: unknown, writes: PathWrite[]): boolean {
     if (deepEqual(a, b)) return true;
-    if (isRecord(b) && (a === undefined || isRecord(a))) {
-        const before = a ?? {};
+    if (isRecord(b) && isRecord(a)) {
         for (const key of Object.keys(b)) {
             if (!SEGMENT.test(key)) return false;
-            if (!diffLeaves(`${path}.${key}`, before[key], b[key], writes)) return false;
+            if (!diffLeaves(`${path}.${key}`, a[key], b[key], writes)) return false;
         }
         return writes.length <= MAX_WRITES;
     }
@@ -107,6 +106,8 @@ function diffLeaves(path: string, a: unknown, b: unknown, writes: PathWrite[]): 
         if (a.length !== b.length) return false;
         return a.every((item, index) => diffLeaves(`${path}.${index}`, item, b[index], writes));
     }
+    //a new key, or a value of another kind, is written whole: the store creates no parents, so writes to the leaves
+    //of a new object would all be refused
     if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
     writes.push({ path, value: b });
     return writes.length <= MAX_WRITES;

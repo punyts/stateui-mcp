@@ -115,4 +115,17 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(preview.body['revision']).toBe(2);
         expect(String(outline.body['text'])).toContain('Send now');
     });
+
+    it('should add a new key with ui_state_set to the running page and keep it', async () => {
+        // Act: a new object under data, then a new record inside it
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks', value: { t1: { title: 'first' } } });
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', value: { title: 'second' } });
+        const preview = await call(harness.client, 'ui_preview', { appId });
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(preview.body['rendered']).toBe(true);
+        expect(state.body['source']).toBe('live');
+        expect((state.body['snapshot'] as { data: unknown }).data).toMatchObject({ tasks: { t1: { title: 'first' }, t2: { title: 'second' } } });
+    });
 });

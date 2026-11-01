@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: `ui_state_set` of a new key (a new record, a new object under `data`) reaches the open views. The host wrote the leaves of the new value, which the store refuses without their parent, and the next snapshot of the view then dropped the key from the stored state. A new key is now written whole.
+
 ## 0.1.0
 
 - First version: a standalone MCP server for building StateUI apps, ported from the `ui-builder` bounded context of AI Minion for one local user (no workspaces, users, approval policy or Postgres).
