@@ -128,4 +128,23 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(state.body['source']).toBe('live');
         expect((state.body['snapshot'] as { data: unknown }).data).toMatchObject({ tasks: { t1: { title: 'first' }, t2: { title: 'second' } } });
     });
+
+    it('should refuse at once a screenshot of a node that is rendered but not visible', async () => {
+        // Arrange: a closed modal keeps its body rendered, but nothing of it is shown
+        const created = await call(harness.client, 'ui_app_create', {
+            name: 'closed modal',
+            document: { app: { component: 'page', children: { dialog: { component: 'modal', _title: 'Hidden', body: { component: 'text', _text: 'inside' } } } } }
+        });
+        const hiddenAppId = created.body['appId'] as string;
+        const started = Date.now();
+
+        // Act
+        const shot = await call(harness.client, 'ui_screenshot', { appId: hiddenAppId, path: '$.app.children.dialog.body' });
+
+        // Assert
+        expect(shot.isError).toBe(true);
+        expect(shot.body['error']).toBe('not-rendered');
+        expect(String(shot.body['message'])).toContain('not visible');
+        expect(Date.now() - started).toBeLessThan(10_000);
+    });
 });

@@ -69,6 +69,8 @@ export interface PreviewOpenResult {
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 } as const;
 const RENDER_TIMEOUT_MS = 10_000;
 const SETTLE_MS = 300;
+/** A visible element is captured at once; this bounds the wait for one that never becomes stable */
+const ELEMENT_SHOT_TIMEOUT_MS = 5_000;
 
 /** Where the controls of a component are: the first native control in its shadow root, else the element */
 const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
@@ -142,9 +144,21 @@ export class BrowserPreview {
                 const statePath = toStatePath(options.path);
                 const handle = await this.elementAt(page, statePath);
                 try {
-                    const png = await handle.screenshot({ type: 'png' });
+                    //Playwright waits for an element to become visible, so a hidden one (such as the body of a closed
+                    //modal) would hold the call until its timeout: refuse it at once instead
                     const box = await handle.boundingBox();
-                    return { png, width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0), target: statePath };
+                    if (box === null || box.width === 0 || box.height === 0) {
+                        throw new InteractionError(
+                            `${statePath} is rendered but not visible (hidden, closed or zero size), so it has no image. Show it first, or take a screenshot of the page`
+                        );
+                    }
+                    const png = await handle.screenshot({ type: 'png', timeout: ELEMENT_SHOT_TIMEOUT_MS }).catch((error: unknown) => {
+                        if (error instanceof Error && error.name === 'TimeoutError') {
+                            throw new InteractionError(`${statePath} did not settle for a screenshot within ${ELEMENT_SHOT_TIMEOUT_MS / 1000} s`);
+                        }
+                        throw error;
+                    });
+                    return { png, width: Math.round(box.width), height: Math.round(box.height), target: statePath };
                 } finally {
                     await handle.dispose();
                 }
