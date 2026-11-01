@@ -15,7 +15,7 @@ import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle } from './runtimeBundle.js';
-import { runtimePage } from './runtimeBundle.js';
+import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
 import { COMMON_HEADERS, FILE_CSP, HOST_PAGE_CSP, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, RUNTIME_CSP } from './security.js';
 
 /** The MCP side of `/mcp`: sessions of the streamable HTTP transport */
@@ -130,7 +130,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
- * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js` | the content-hashed StateUI runtime page and bundle |
+ * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
     const { useCases, repository, hub, liveViews, runtime, report } = options;
@@ -161,6 +161,11 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
         if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
             send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': RUNTIME_CSP, 'Cache-Control': 'no-cache' });
+            return;
+        }
+        if (method === 'GET' && path === `${runtimeBase}/runtime.css`) {
+            // loaded by the sandboxed frame, whose origin is opaque, like the script below
+            send(response, 200, 'text/css; charset=utf-8', RUNTIME_CSS, { 'Cache-Control': 'no-cache', 'Cross-Origin-Resource-Policy': 'cross-origin' });
             return;
         }
         if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {

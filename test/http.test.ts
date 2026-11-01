@@ -99,6 +99,22 @@ describe('GET /apps/:appId', () => {
         expect((await fetch(`${origin}/runtime/0000000000000000.html`)).status).toBe(404);
     });
 
+    it('should link the runtime stylesheet that removes the body margin and lets the root fill the frame', async () => {
+        const html = await (await fetch(`${origin}/apps/${appId}`)).text();
+        const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
+
+        const page = await (await fetch(`${origin}${runtime}`)).text();
+        const sheet = await fetch(`${origin}/runtime/runtime.css`);
+        const css = await sheet.text();
+
+        expect(page).toContain('<link rel="stylesheet" href="./runtime.css">');
+        expect(sheet.status).toBe(200);
+        expect(sheet.headers.get('content-type')).toContain('text/css');
+        expect(sheet.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
+        expect(css).toContain('margin: 0');
+        expect(css).toContain('min-height: 100%');
+    });
+
     it('should answer 404 for an unknown app and 400 for an id that is not a UUID', async () => {
         const unknown = await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111`);
         const malformed = await fetch(`${origin}/apps/not-a-uuid`);

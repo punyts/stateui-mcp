@@ -4,6 +4,7 @@
 
 - Fix: `ui_state_set` of a new key (a new record, a new object under `data`) reaches the open views. The host wrote the leaves of the new value, which the store refuses without their parent, and the next snapshot of the view then dropped the key from the stored state. A new key is now written whole.
 - Fix: `ui_screenshot` of a node that is rendered but not visible (such as the body of a closed modal) answers `not-rendered` at once. It waited 30 s for the node to show and then failed with `internal-error` and the raw Playwright log. A visible node that never settles now fails after 5 s, also as `not-rendered`.
+- Fix: the runtime page in the frame has a stylesheet (`/runtime/runtime.css`). The browser's 8 px body margin framed every app in white, in a dark theme too, and the root component was only as tall as its content; it now fills the frame and paints its own background to the edges.
 
 ## 0.1.0
 

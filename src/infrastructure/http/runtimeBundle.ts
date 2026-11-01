@@ -33,6 +33,16 @@ export function loadRuntimeBundle(dir: string | undefined): RuntimeBundle {
     return { hash: manifest.hash, script: readFileSync(join(resolved, `${manifest.hash}.js`)) };
 }
 
+/**
+ * The stylesheet of the runtime page. Without it the browser's 8 px body margin frames the app in white (in a dark
+ * theme too) and the root component has no height to fill, so a table or record list sized to its container shrinks
+ * to its minimum
+ */
+export const RUNTIME_CSS = `html { height: 100%; }
+/* a grid stretches the root component (inside display: contents wrappers) to at least the frame height */
+body { margin: 0; min-height: 100%; display: grid; }
+`;
+
 /** The page the sandboxed frame loads: no inline script and no inline style, which the policy blocks */
 export function runtimePage(hash: string): string {
     return [
@@ -42,6 +52,7 @@ export function runtimePage(hash: string): string {
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<title>Runtime</title>',
+        '<link rel="stylesheet" href="./runtime.css">',
         '</head>',
         '<body>',
         `<script src="./${hash}.js"></script>`,
