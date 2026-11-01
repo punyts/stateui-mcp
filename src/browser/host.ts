@@ -20,6 +20,8 @@ const PROTOCOL_VERSION = 1;
 const MAX_WRITES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const SNAPSHOT_THROTTLE_MS = 1000;
+/** A snapshot request is answered from the copy when the runtime does not answer its ping in time */
+const PONG_TIMEOUT_MS = 500;
 const ALLOWED_FILE_TYPES = [
     'image/png',
     'image/jpeg',
@@ -43,6 +45,7 @@ interface PathWrite {
 interface AppMessage {
     type: 'app';
     reason: 'attach' | 'document' | 'state';
+    statePath?: string;
     revision: number;
     document: JsonRecord;
     stateSnapshot: JsonRecord;
@@ -111,6 +114,50 @@ function diffLeaves(path: string, a: unknown, b: unknown, writes: PathWrite[]): 
     if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
     writes.push({ path, value: b });
     return writes.length <= MAX_WRITES;
+}
+
+/** The value at the segments below a value, or undefined where a step is missing */
+function valueAt(value: unknown, segments: readonly string[]): unknown {
+    let current = value;
+    for (const segment of segments) {
+        if (!isRecord(current) && !Array.isArray(current)) return undefined;
+        current = (current as Record<string, unknown>)[segment];
+    }
+    return current;
+}
+
+/** A copy of the view state with the writes applied, as the store applies them: a set replaces the value at its path */
+function withWrites(state: { data: JsonRecord; app: JsonRecord }, writes: readonly PathWrite[]): { data: JsonRecord; app: JsonRecord } {
+    const copy = JSON.parse(JSON.stringify(state)) as { data: JsonRecord; app: JsonRecord };
+    for (const write of writes) {
+        const segments = write.path.replace(/^$./, '').split('.');
+        const parent = valueAt(copy, segments.slice(0, -1));
+        if (!isRecord(parent) && !Array.isArray(parent)) continue;
+        const key = segments[segments.length - 1]!;
+        if (write.remove === true) delete (parent as Record<string, unknown>)[key];
+        else (parent as Record<string, unknown>)[key] = JSON.parse(JSON.stringify(write.value ?? null));
+    }
+    return copy;
+}
+
+/**
+ * The writes that make the view's value at a written path the snapshot's: the server replaced the value (keys it no
+ * longer has are removed) and created missing parents, which the store does not, so a parent the view has neither
+ * reported nor been sent is a full load (undefined)
+ */
+function statePathWrites(statePath: string, base: JsonRecord, snapshot: JsonRecord, previous: JsonRecord): PathWrite[] | undefined {
+    const segments = statePath.replace(/^$./, '').split('.');
+    if (!segments.every((segment) => SEGMENT.test(segment))) return undefined;
+    //the view may report a snapshot it took before it applied the last writes, so a parent the server sent before counts too
+    const holds = (state: JsonRecord): boolean => {
+        const parent = valueAt(state, segments.slice(0, -1));
+        return isRecord(parent) || Array.isArray(parent);
+    };
+    if (!holds(base) && !holds(previous)) return undefined;
+    const value = valueAt(snapshot, segments);
+    if (value === undefined) return [{ path: statePath, remove: true }];
+    const writes: PathWrite[] = [];
+    return diffDocumentPart(statePath, valueAt(base, segments), value, writes) ? writes : undefined;
 }
 
 /** A document change as writes: `data` and `app` change through writes, anything else (theme, locales, composed) is a full load */
@@ -194,6 +241,11 @@ class LiveView {
     private sentDocument: JsonRecord | undefined;
     private sentState: { data: JsonRecord; app: JsonRecord } = { data: {}, app: {} };
     private runtimeState: { data: JsonRecord; app: JsonRecord } | undefined;
+    /** The snapshot of the last state message or load: what the view has been sent, whatever it has reported since */
+    private serverSnapshot: JsonRecord = {};
+    /** Snapshot requests waiting for the pong of their ping, by ping id */
+    private readonly snapshotRequests = new Map<number, string>();
+    private pingId = 0;
     private readonly sentIcons = new Set<string>();
     private revision = 0;
     private mode: string | undefined;
@@ -263,7 +315,7 @@ class LiveView {
                 if (this.ready) this.post({ type: 'theme', kind: message.kind, name: message.name });
                 break;
             case 'snapshot-request':
-                this.report({ type: 'snapshot-reply', requestId: message.requestId, snapshot: this.runtimeState ?? null });
+                this.requestSnapshot(message.requestId);
                 break;
             case 'deleted':
                 this.setStatus('failed', 'This app was deleted');
@@ -321,6 +373,23 @@ class LiveView {
 
     private applyState(app: AppMessage): void {
         const base = this.runtimeState ?? this.sentState;
+        if (app.statePath !== undefined) {
+            //only the written path: the snapshot also holds runtime properties the view reported earlier (a formatted
+            //value, a measured size), and writing those back would undo what the view has computed since
+            const writes = statePathWrites(app.statePath, base, app.stateSnapshot, this.serverSnapshot);
+            this.serverSnapshot = app.stateSnapshot;
+            if (writes === undefined) {
+                this.sendLoad(app);
+                return;
+            }
+            if (writes.length > 0) {
+                this.post({ type: 'write', writes });
+                //the view reports its state after it applied the writes; until then the next write is planned on this copy
+                this.runtimeState = withWrites(base, writes);
+            }
+            this.markRendered(app.revision);
+            return;
+        }
         const writes: PathWrite[] = [];
         const snapshotData = app.stateSnapshot['data'];
         const snapshotApp = app.stateSnapshot['app'];
@@ -335,6 +404,29 @@ class LiveView {
         this.markRendered(app.revision);
     }
 
+    /**
+     * Answers with the view's state once the runtime has applied every message sent before: it handles messages in
+     * order and posts its snapshot after each write, so by its pong the snapshot of the last write has arrived. A
+     * reply from the copy alone could miss a write the runtime had not reported yet
+     */
+    private requestSnapshot(requestId: string): void {
+        if (!this.ready || this.frame === undefined) {
+            this.report({ type: 'snapshot-reply', requestId, snapshot: this.runtimeState ?? null });
+            return;
+        }
+        const id = ++this.pingId;
+        this.snapshotRequests.set(id, requestId);
+        this.post({ type: 'ping', id });
+        window.setTimeout(() => this.replySnapshot(id), PONG_TIMEOUT_MS);
+    }
+
+    private replySnapshot(id: number): void {
+        const requestId = this.snapshotRequests.get(id);
+        if (requestId === undefined) return;
+        this.snapshotRequests.delete(id);
+        this.report({ type: 'snapshot-reply', requestId, snapshot: this.runtimeState ?? null });
+    }
+
     private sendLoad(app: AppMessage): void {
         const state = loadState(app.document, app.stateSnapshot);
         const icons = iconsMessage(app.icons, new Set());
@@ -347,6 +439,7 @@ class LiveView {
             app: state !== undefined && isRecord(state.app) ? state.app : {}
         };
         this.runtimeState = undefined;
+        this.serverSnapshot = app.stateSnapshot;
         this.sentIcons.clear();
         Object.keys(app.icons).forEach((name) => this.sentIcons.add(name));
         this.revision = app.revision;
@@ -382,6 +475,9 @@ class LiveView {
                 break;
             case 'snapshot':
                 this.onSnapshot(message);
+                break;
+            case 'pong':
+                if (typeof message['id'] === 'number') this.replySnapshot(message['id']);
                 break;
             case 'emit':
                 if (typeof message['name'] === 'string') {

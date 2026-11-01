@@ -14,6 +14,8 @@ export type ViewMessage =
           readonly type: 'app';
           /** `document`: load or write the document; `state`: write the changed state paths */
           readonly reason: 'attach' | 'document' | 'state';
+          /** With `state`: the one path the write changed, so a view writes only that path */
+          readonly statePath?: string;
           readonly revision: number;
           readonly document: JsonObject;
           readonly stateSnapshot: JsonObject;

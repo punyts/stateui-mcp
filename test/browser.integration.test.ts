@@ -147,4 +147,34 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(shot.body['message'])).toContain('not visible');
         expect(Date.now() - started).toBeLessThan(10_000);
     });
+
+    it('should keep what a view computed when later state sets follow one another', async () => {
+        // Arrange: a stat formats its linked value into the runtime property shown, which the view reports back
+        const created = await call(harness.client, 'ui_app_create', {
+            name: 'totals',
+            document: {
+                app: { component: 'page', children: { total: { component: 'stat', format: 'number', '<-value': '$.data.totals.month' } } },
+                data: { totals: { month: 1, count: 1 }, other: { n: 0 }, draft: { text: 'x' } }
+            }
+        });
+        const totalsAppId = created.body['appId'] as string;
+        await call(harness.client, 'ui_preview', { appId: totalsAppId });
+
+        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.totals', value: { month: 2, count: 2 } });
+        //the view reports its state at most once a second: let a report with shown "2" be stored
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Act: the writes an agent makes after an add, one after another, faster than the view reports
+        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.totals', value: { month: 3, count: 3 } });
+        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.other.n', value: 3 });
+        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.draft', value: { text: '' } });
+        await call(harness.client, 'ui_preview', { appId: totalsAppId });
+        const state = await call(harness.client, 'ui_state_get', { appId: totalsAppId });
+
+        // Assert
+        const snapshot = state.body['snapshot'] as { app: { children: { total: { shown: string } } }; data: { draft: unknown } };
+        expect(state.body['source']).toBe('live');
+        expect(snapshot.app.children.total.shown).toBe('3');
+        expect(snapshot.data.draft).toEqual({ text: '' });
+    });
 });

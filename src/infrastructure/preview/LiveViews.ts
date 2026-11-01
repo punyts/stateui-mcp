@@ -5,10 +5,11 @@ import type { PreviewBrowser } from './BrowserPreview.js';
 import type { PreviewHub, ViewMessage } from './PreviewHub.js';
 
 /** What the views are told about an app: the app message, built from the stored app */
-export function toAppMessage(app: UiAppResponse, reason: 'attach' | 'document' | 'state'): ViewMessage {
+export function toAppMessage(app: UiAppResponse, reason: 'attach' | 'document' | 'state', statePath?: string): ViewMessage {
     return {
         type: 'app',
         reason,
+        ...(statePath !== undefined && { statePath }),
         revision: app.revision,
         document: app.document,
         stateSnapshot: app.stateSnapshot,
@@ -30,12 +31,12 @@ export class LiveViews {
         return result.kind === 'found' ? toAppMessage(result.app, 'attach') : undefined;
     }
 
-    /** After a document write (`document`) or a state write (`state`): sends the stored app to every open view */
-    async appChanged(appId: string, reason: 'document' | 'state'): Promise<number> {
+    /** After a document write (`document`) or a state write (`state`, with the path it wrote): sends the stored app to every open view */
+    async appChanged(appId: string, reason: 'document' | 'state', statePath?: string): Promise<number> {
         if (this.hub.viewCount(appId) === 0) return 0;
         const result = await this.getUiApp.execute(appId);
         if (result.kind !== 'found') return 0;
-        return this.hub.publish(appId, toAppMessage(result.app, reason));
+        return this.hub.publish(appId, toAppMessage(result.app, reason, statePath));
     }
 
     /** Delivers a command to every open view, the headless page included, and returns how many views were open */

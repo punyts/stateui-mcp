@@ -30,7 +30,8 @@ export type SetStateRefusal =
     | 'content-locale-active';
 
 export type SetStateResult =
-    | { readonly kind: 'written'; readonly appId: string; readonly revision: number; readonly path: string }
+    /** `statePath` is where the value was written in the snapshot, such as `$.data.totals` or `$.app.children.name.value` */
+    | { readonly kind: 'written'; readonly appId: string; readonly revision: number; readonly path: string; readonly statePath: string }
     | { readonly kind: 'refused'; readonly appId: string; readonly reason: SetStateRefusal; readonly message: string }
     /** The value does not fit the property's shape, or a key in it is integer-like (`SUI-DOC-ORDER`) */
     | { readonly kind: 'invalid'; readonly appId: string; readonly errors: readonly UiBuildError[] }
@@ -112,7 +113,7 @@ export class SetState {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
         }
         if (written.kind === 'not-found') return this.finish(appId, { kind: 'not-found', appId });
-        return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path });
+        return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path, statePath });
     }
 
     /** A snapshot with no data yet starts from the document's data, so the first write does not drop the rest of it */

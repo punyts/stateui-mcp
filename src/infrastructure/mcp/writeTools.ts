@@ -147,7 +147,7 @@ export function createWriteTools(
                 });
                 switch (result.kind) {
                     case 'written':
-                        await live.appChanged(result.appId, 'state');
+                        await live.appChanged(result.appId, 'state', result.statePath);
                         return succeed({ appId: result.appId, revision: result.revision, path: result.path });
                     case 'refused':
                         return fail(result.reason, result.message, { appId: result.appId });
