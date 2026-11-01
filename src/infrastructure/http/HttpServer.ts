@@ -304,7 +304,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     stream.resume();
                     return;
                 }
-                upload = useCases.uploadFile.execute(appId, { name: info.filename, content: stream });
+                // A refusal that comes before the bytes are read leaves the stream unread; drain it so the parser can finish
+                upload = useCases.uploadFile.execute(appId, { name: info.filename, content: stream }).finally(() => stream.resume());
             });
             parser.on('error', reject);
             parser.on('close', () => {

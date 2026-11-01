@@ -1,0 +1,32 @@
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parseOptions, UsageError } from './options.js';
+
+describe('parseOptions', () => {
+    it('should default to ./data, port 4100 and the loopback address', () => {
+        const options = parseOptions([], {});
+
+        expect(options).toEqual({ dataDir: resolve('./data'), host: '127.0.0.1', port: 4100, stdio: false, runtimeDir: undefined, help: false });
+    });
+
+    it('should read the environment and let a flag win over it', () => {
+        const options = parseOptions(['--port', '5000', '--data-dir=other'], { STATEUI_MCP_PORT: '4200', STATEUI_MCP_DATA_DIR: 'env-dir', STATEUI_MCP_HOST: '0.0.0.0' });
+
+        expect(options.port).toBe(5000);
+        expect(options.dataDir).toBe(resolve('other'));
+        expect(options.host).toBe('0.0.0.0');
+    });
+
+    it('should turn on stdio and help', () => {
+        expect(parseOptions(['--stdio'], {}).stdio).toBe(true);
+        expect(parseOptions(['-h'], {}).help).toBe(true);
+        expect(parseOptions(['--help'], {}).help).toBe(true);
+    });
+
+    it('should refuse an unknown option, a missing value and a bad port', () => {
+        expect(() => parseOptions(['--nope'], {})).toThrow(UsageError);
+        expect(() => parseOptions(['--port'], {})).toThrow('needs a value');
+        expect(() => parseOptions(['--port', 'abc'], {})).toThrow('Invalid port');
+        expect(() => parseOptions([], { STATEUI_MCP_PORT: '99999' })).toThrow('Invalid port');
+    });
+});

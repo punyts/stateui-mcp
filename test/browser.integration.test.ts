@@ -1,0 +1,118 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
+import { FORM_DOCUMENT, call, httpHarness, tempData } from './helpers.js';
+import type { HttpHarness, TempData } from './helpers.js';
+
+const installed = await BrowserPreview.isInstalled();
+
+describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let appId = '';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        const created = await call(harness.client, 'ui_app_create', { name: 'form', document: FORM_DOCUMENT });
+        appId = created.body['appId'] as string;
+    });
+
+    afterAll(async () => {
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should open the headless page and render the current revision', async () => {
+        // Act
+        const preview = await call(harness.client, 'ui_preview', { appId });
+
+        // Assert
+        expect(preview.isError).toBe(false);
+        expect(preview.body['rendered']).toBe(true);
+        expect(preview.body['revision']).toBe(1);
+        expect(preview.body['url']).toBe(`${harness.server.origin}/apps/${appId}`);
+        expect(preview.body['errors']).toEqual([]);
+    });
+
+    it('should return a PNG screenshot of the page and of one node', async () => {
+        // Act
+        const page = await call(harness.client, 'ui_screenshot', { appId, width: 640, height: 400 });
+        const node = await call(harness.client, 'ui_screenshot', { appId, path: '$.app.children.form.children.save' });
+
+        // Assert
+        for (const shot of [page, node]) {
+            expect(shot.isError).toBe(false);
+            expect(shot.images).toHaveLength(1);
+            expect(shot.images[0]?.mimeType).toBe('image/png');
+            expect(Buffer.from(shot.images[0]?.data ?? '', 'base64').subarray(1, 4).toString()).toBe('PNG');
+        }
+        expect(page.body['target']).toBe('page');
+        expect(node.body['target']).toBe('$.app.children.form.children.save');
+    });
+
+    it('should click a button that emits and hand the event to ui_events_read', async () => {
+        // Arrange
+        const before = await call(harness.client, 'ui_events_read', { appId });
+
+        // Act
+        const interacted = await call(harness.client, 'ui_interact', {
+            appId,
+            actions: [
+                { action: 'fill', path: '$.app.children.form.children.email', value: 'a@b.test' },
+                { action: 'click', path: '$.app.children.form.children.save' }
+            ]
+        });
+        const after = await call(harness.client, 'ui_events_read', { appId, since: before.body['cursor'] });
+
+        // Assert
+        expect(interacted.isError).toBe(false);
+        expect((interacted.body['results'] as { ok: boolean }[]).map((step) => step.ok)).toEqual([true, true]);
+        expect((interacted.body['emits'] as { name: string }[]).map((event) => event.name)).toEqual(['form.saved']);
+        expect((after.body['events'] as { name: string; payload: unknown }[]).map((event) => [event.name, event.payload])).toEqual([['form.saved', 'ok']]);
+    });
+
+    it('should read the typed value live from the page', async () => {
+        // Act
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(state.body['source']).toBe('live');
+        expect(JSON.stringify(state.body['snapshot'])).toContain('a@b.test');
+        expect((state.body['preview'] as { attached: boolean }).attached).toBe(true);
+    });
+
+    it('should report a failed action with the reason and stop there', async () => {
+        // Act
+        const result = await call(harness.client, 'ui_interact', {
+            appId,
+            actions: [
+                { action: 'click', path: '$.app.children.nothing' },
+                { action: 'click', path: '$.app.children.form.children.save' }
+            ]
+        });
+
+        // Assert
+        expect(result.isError).toBe(true);
+        const results = result.body['results'] as { ok: boolean; error?: string }[];
+        expect(results).toHaveLength(1);
+        expect(results[0]?.ok).toBe(false);
+        expect(results[0]?.error).toContain('Nothing is rendered');
+    });
+
+    it('should follow a document write in the headless page', async () => {
+        // Act
+        const written = await call(harness.client, 'ui_app_write', {
+            appId,
+            operations: [{ op: 'set', path: 'app.children.form.children.save._title', value: 'Send now' }],
+            expectedRevision: 1
+        });
+        const preview = await call(harness.client, 'ui_preview', { appId });
+        const outline = await call(harness.client, 'ui_outline', { appId });
+
+        // Assert
+        expect(written.body['revision']).toBe(2);
+        expect(preview.body['rendered']).toBe(true);
+        expect(preview.body['revision']).toBe(2);
+        expect(String(outline.body['text'])).toContain('Send now');
+    });
+});
