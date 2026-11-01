@@ -1,0 +1,184 @@
+import { setCreatingParents } from '../../domain/documentOperations.js';
+import { isJsonObject } from '../../domain/JsonValue.js';
+import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
+import { isNodeValue } from '../../domain/nodeDepth.js';
+import { orderedMapKeyErrors } from '../../domain/orderedMap.js';
+import { isRevisionCurrent } from '../../domain/revision.js';
+import { parseStatePath } from '../../domain/statePath.js';
+import type { UiApp, UiStateSnapshot } from '../../domain/UiApp.js';
+import type { UiBuildError } from '../../domain/UiBuildError.js';
+import type { UiAppRepository } from '../ports/UiAppRepository.js';
+import type { UiAppValidator } from '../ports/UiAppValidator.js';
+import type { UseCaseReport } from '../ports/UseCaseReport.js';
+
+export interface SetStateInput {
+    /** `$.data...` or `$.app...<node path>.<property>` */
+    readonly path: string;
+    readonly value: JsonValue;
+    /** Absent: the write is checked against the revision that was read */
+    readonly expectedRevision?: number;
+}
+
+/** Why a path was refused. Each one names what the minion should do instead in `message` */
+export type SetStateRefusal =
+    | 'invalid-path'
+    | 'runtime-path'
+    | 'unknown-path'
+    | 'linked'
+    | 'runtime-property'
+    | 'exposed-property'
+    | 'content-locale-active';
+
+export type SetStateResult =
+    | { readonly kind: 'written'; readonly appId: string; readonly revision: number; readonly path: string }
+    | { readonly kind: 'refused'; readonly appId: string; readonly reason: SetStateRefusal; readonly message: string }
+    /** The value does not fit the property's shape, or a key in it is integer-like (`SUI-DOC-ORDER`) */
+    | { readonly kind: 'invalid'; readonly appId: string; readonly errors: readonly UiBuildError[] }
+    | { readonly kind: 'conflict'; readonly appId: string; readonly currentRevision: number }
+    | { readonly kind: 'not-found'; readonly appId: string };
+
+interface Target {
+    /** Where the value goes in the snapshot, from its root (`data...` or `app...`) */
+    readonly snapshotPath: readonly string[];
+}
+
+type Resolved =
+    | { readonly ok: true; readonly target: Target }
+    | { readonly ok: false; readonly result: SetStateResult };
+
+function refuse(appId: string, reason: SetStateRefusal, message: string): { ok: false; result: SetStateResult } {
+    return { ok: false, result: { kind: 'refused', appId, reason, message } };
+}
+
+/**
+ * Writes one value into the state snapshot: a `$.data` path, or an articulation property of a node. It refuses
+ * links, runtime and exposed properties, `$.runtime`, unknown paths and, while a language is active, `_` content,
+ * and checks the value against the component's shape. The write is compare-and-set on the revision
+ */
+export class SetState {
+    constructor(
+        private readonly repository: UiAppRepository,
+        private readonly validator: UiAppValidator,
+        private readonly report: UseCaseReport
+    ) {}
+
+    async execute(appId: string, input: SetStateInput): Promise<SetStateResult> {
+        const parsed = parseStatePath(input.path);
+        if (parsed.kind === 'invalid') return this.finish(appId, refuse(appId, 'invalid-path', parsed.reason).result);
+        if (parsed.kind === 'runtime') {
+            return this.finish(appId, refuse(appId, 'runtime-path', 'Tools cannot write $.runtime: controllers create it while the app runs').result);
+        }
+        if (parsed.kind === 'unknown') {
+            return this.finish(appId, refuse(appId, 'unknown-path', 'Only $.data paths and node properties under $.app can be set').result);
+        }
+
+        const app = await this.repository.findById(appId);
+        if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
+        if (!isRevisionCurrent(app.revision, input.expectedRevision)) {
+            return this.finish(appId, { kind: 'conflict', appId, currentRevision: app.revision });
+        }
+
+        let resolved: Resolved;
+        let snapshot: UiStateSnapshot = app.stateSnapshot;
+        if (parsed.kind === 'data') {
+            resolved = { ok: true, target: { snapshotPath: ['data', ...parsed.path] } };
+            snapshot = this.withData(app);
+        } else {
+            resolved = this.resolveProperty(app, appId, parsed.path, input.value);
+        }
+        if (!resolved.ok) return this.finish(appId, resolved.result);
+
+        const { snapshotPath } = resolved.target;
+        if (snapshotPath.length === 1 && !isJsonObject(input.value)) {
+            return this.finish(appId, {
+                kind: 'invalid',
+                appId,
+                errors: [{ code: 'SUI-DOC-OPERATION', message: '$.data must be an object', statePath: '$.data' }]
+            });
+        }
+        const applied = setCreatingParents(snapshot, snapshotPath, input.value);
+        if (!applied.ok) {
+            return this.finish(appId, refuse(appId, 'unknown-path', applied.error.message).result);
+        }
+
+        const statePath = `$.${snapshotPath.join('.')}`;
+        const orderErrors = orderedMapKeyErrors(applied.document).filter(
+            (error) => error.statePath === statePath || error.statePath?.startsWith(`${statePath}.`) === true
+        );
+        if (orderErrors.length > 0) return this.finish(appId, { kind: 'invalid', appId, errors: orderErrors });
+
+        const written = await this.repository.writeStateSnapshot(appId, applied.document, app.revision);
+        if (written.kind === 'conflict') {
+            return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
+        }
+        if (written.kind === 'not-found') return this.finish(appId, { kind: 'not-found', appId });
+        return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path });
+    }
+
+    /** A snapshot with no data yet starts from the document's data, so the first write does not drop the rest of it */
+    private withData(app: UiApp): UiStateSnapshot {
+        if (Object.hasOwn(app.stateSnapshot, 'data') || app.document['data'] === undefined) return app.stateSnapshot;
+        return { ...app.stateSnapshot, data: app.document['data'] };
+    }
+
+    private languageActive(app: UiApp): boolean {
+        const locale = app.document['locale'];
+        return typeof locale === 'string' && locale !== '' && this.validator.localeOverlay(app.document, locale) !== undefined;
+    }
+
+    /** Finds the node and the property a `$.app` path names, and checks that the property may be written */
+    private resolveProperty(app: UiApp, appId: string, path: readonly string[], value: JsonValue): Resolved {
+        const root = this.validator.resolveNode(app.document, ['app']);
+        if (root === undefined) return refuse(appId, 'unknown-path', 'The app has no node to write to');
+
+        let node: JsonObject = root;
+        let nodeDepth = 0;
+        let current: JsonValue = root;
+        for (const [index, segment] of path.entries()) {
+            if (!isJsonObject(current) || !Object.hasOwn(current, segment)) break;
+            current = current[segment] as JsonValue;
+            if (isNodeValue(current)) {
+                node = current;
+                nodeDepth = index + 1;
+            }
+        }
+        const remainder = path.slice(nodeDepth);
+        const nodeSegments = path.slice(0, nodeDepth);
+        const nodeStatePath = `$.${['app', ...nodeSegments].join('.')}`;
+        if (remainder.length !== 1) {
+            return refuse(appId, 'unknown-path', `No node and property at the path; the closest node is ${nodeStatePath}`);
+        }
+        const property = remainder[0] as string;
+        if (Object.hasOwn(node, `<-${property}`)) {
+            return refuse(appId, 'linked', `${nodeStatePath}.${property} is linked to data: set the data it links to`);
+        }
+        const component = node['component'] as string;
+        const check = this.validator.checkProperty(component, property, value, nodeStatePath);
+        switch (check.kind) {
+            case 'unknown-component':
+            case 'unknown-property':
+                return refuse(appId, 'unknown-path', `${component} has no property "${property}" that can be set`);
+            case 'runtime':
+                return refuse(appId, 'runtime-property', `${nodeStatePath}.${property} is runtime state that only the component writes`);
+            case 'exposed':
+                return refuse(appId, 'exposed-property', `${nodeStatePath}.${property} is exposed runtime state that only the component writes`);
+            case 'invalid':
+                return { ok: false, result: { kind: 'invalid', appId, errors: check.errors } };
+            case 'ok':
+                if (check.content && this.languageActive(app)) {
+                    return refuse(appId, 'content-locale-active', 'Content is text for the active language: change it with ui_app_write on the document or its locale overlay');
+                }
+                return { ok: true, target: { snapshotPath: ['app', ...nodeSegments, property] } };
+        }
+    }
+
+    private finish(appId: string, result: SetStateResult): SetStateResult {
+        this.report.info('App state write', {
+            appId,
+            outcome: result.kind,
+            ...(result.kind === 'refused' ? { reason: result.reason } : {}),
+            ...(result.kind === 'written' ? { revision: result.revision } : {})
+        });
+        return result;
+    }
+}
