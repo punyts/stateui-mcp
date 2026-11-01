@@ -1,0 +1,33 @@
+/**
+ * What the model is told about this server. The MCP server is the only place it sees this guidance, so the working
+ * loop and the rules that cost a failed call live here (in the server `instructions`) and, for the two tools a build
+ * starts with, in their descriptions
+ */
+
+const WORKING_LOOP = [
+    'Working loop: ui_components_list to find components, ui_component_get for the shape of the ones you use, ui_app_create, then ui_app_write, ui_validate and ui_outline to check the result, and ui_preview to open it. ui_screenshot shows what a user sees; ui_interact clicks and types in it.',
+    'Write loop: read the part you will change with ui_app_get and a path, call ui_app_write with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat.',
+    'Icon names come from ui_icons_list. Never guess an icon name.',
+    'Token names for "theme" overrides and overlay names for theme switches come from ui_tokens_list; component token names come from ui_component_get. Never guess a token or overlay name.',
+    'Keys of records and of keyed maps (children, options, columns, items, steps, messages, and objects under data) must not be integer-like: use "o42", not "42". JavaScript would reorder them and the order is part of the application.',
+    'A set through a missing parent fails. Write the parent first ("composed", then "composed.x") or use merge, which creates missing keys. Read the path with ui_app_get before writing under it. ui_app_write also takes move, which keeps the key and the whole subtree of an entry: prefer it to remove and rewrite.',
+    'ui_app_get with resolved: true is read only. Never write a resolved value back; write only what you change.'
+];
+
+const LIVE_VIEW = [
+    'Every app has a live view at the url ui_preview returns. A person can open it in a browser; it follows every ui_app_write, ui_state_set and ui_command at once. ui_preview also opens a headless Chromium page of the same url, which ui_screenshot, ui_interact, ui_state_get and ui_command use.',
+    'ui_state_get reads the state from a running view when one is open (source "live") and falls back to the stored snapshot (source "stored"). ui_validate and ui_state_get show preview.attached and the runtime errors the views reported.',
+    'ui_command runs a component command in the open views. When no view is open it answers "no preview is open; the command was not delivered" and nothing happens: call ui_preview first.',
+    'There is no chat turn for the events a running app raises. When the user may have acted in the app (or after ui_interact), call ui_events_read with the cursor from the last call: each event is input from the app (an "emit"), not a message to answer. Treat it as the user acting in the app.',
+    'Files a user uploads to a fileField are listed as { id, name, size, type } references in ui_state_get and in emit payloads. ui_file_read reads text, CSV, Markdown and JSON files (up to 256 KiB); other types return the reference with text null.'
+];
+
+const SAFETY = [
+    'ui_app_delete cannot be undone. Ask the user before you call it, and pass the revision you read as expectedRevision; a conflict means the app changed and nothing was deleted.'
+];
+
+/** The `instructions` field of the server, shown by the client to the model */
+export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LIVE_VIEW, ...SAFETY].join('\n\n');
+
+/** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
+export const START_HERE = 'Start of the working loop: ui_components_list, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, record keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';
