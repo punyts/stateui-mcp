@@ -1,0 +1,157 @@
+# stateui-mcp
+
+A standalone MCP server for building StateUI apps. An agent creates and edits an app with tools, a person watches the same app live in a browser, and a headless Chromium (Playwright) renders it so the agent can take screenshots, click and type in it, and read the events it raises.
+
+It is the single-user, local version of the `ui-builder` bounded context of AI Minion: same tools, arguments, results and error codes, with no workspaces, users, approval policy or Postgres. Apps are JSON files on disk.
+
+## Install
+
+Node 22 or newer. The `@punyts/*` packages are not on npm; this repository resolves them from a checkout of the monorepo (like `libraries/example`), so it runs from a clone of it.
+
+```sh
+cd libraries/stateui-mcp
+npm run build
+npx playwright install chromium   # once, for ui_preview, ui_screenshot and ui_interact
+```
+
+Without Chromium everything else works. `ui_preview` still returns the address a person can open (with `rendered: false` and a note), and `ui_screenshot` and `ui_interact` answer `browser-unavailable`.
+
+The runtime bundle comes from `@punyts/stateui-app` (`dist/runtime-bundle/`, built by `npm run build:runtime-bundle` in that package). Use `--runtime-dir` to point at another build.
+
+## Run
+
+```sh
+# Streamable HTTP: MCP at http://127.0.0.1:4100/mcp, apps at http://127.0.0.1:4100/
+node dist/cli.js --port 4100 --data-dir ./data
+
+# stdio: MCP on stdin and stdout, and the HTTP server still listens for the browser view
+node dist/cli.js --stdio --port 4100 --data-dir ./data
+```
+
+| Option | Environment | Default |
+|---|---|---|
+| `--data-dir <dir>` | `STATEUI_MCP_DATA_DIR` | `./data` |
+| `--port <n>` | `STATEUI_MCP_PORT` | `4100` (`0` picks a free port) |
+| `--host <address>` | `STATEUI_MCP_HOST` | `127.0.0.1` |
+| `--stdio` | | off |
+| `--runtime-dir <dir>` | `STATEUI_MCP_RUNTIME_DIR` | the bundle in `@punyts/stateui-app` |
+
+`npm start` runs `node dist/cli.js`; `stateui-mcp --help` lists the options. In stdio mode every log line goes to stderr, because stdout is the protocol. `Ctrl+C`, `SIGTERM`, or the client closing stdin stops the server, closes the MCP sessions and closes the headless browser.
+
+## Register it in an MCP client
+
+Claude Code, HTTP (start the server first):
+
+```sh
+claude mcp add --transport http stateui http://127.0.0.1:4100/mcp
+```
+
+Claude Code, stdio (the client starts the server):
+
+```sh
+claude mcp add stateui -- node /path/to/libraries/stateui-mcp/dist/cli.js --stdio --port 4100 --data-dir /path/to/data
+```
+
+A `.mcp.json`:
+
+```json
+{
+    "mcpServers": {
+        "stateui-http": { "type": "http", "url": "http://127.0.0.1:4100/mcp" },
+        "stateui-stdio": {
+            "command": "node",
+            "args": ["/path/to/libraries/stateui-mcp/dist/cli.js", "--stdio", "--port", "4100", "--data-dir", "/path/to/data"]
+        }
+    }
+}
+```
+
+The server sends instructions with the working loop (components, create, write with `expectedRevision`, validate, preview, screenshot), the rules that cost a failed call (icon names from `ui_icons_list`, no integer-like record keys, no set through a missing parent), and how to read events. The tool descriptions carry the same guidance.
+
+## Tools
+
+The first sixteen are the `ui-builder` tools. The last three are new.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `ui_components_list` | `query?`, `tier?` | `{ count, components: [{ name, tier, size, summary }] }` |
+| `ui_component_get` | `name` | the catalog entry; an unknown name is `unknown-component` with `nearest` |
+| `ui_icons_list` | `query?`, `category?`, `filled?`, `limit?` | `{ icons, total, more }` |
+| `ui_tokens_list` | `group?`, `query?`, `includeOverlays?` | `{ count, tokens, overlays? }`; `unknown-group` lists the groups |
+| `ui_app_create` | `name`, `document?` | `{ appId, revision }`; `invalid-document`, `invalid-name`, `duplicate-name` |
+| `ui_app_list` | none | `{ count, apps: [{ appId, name, revision, updatedAt }] }` |
+| `ui_app_get` | `appId`, `path?`, `depth?`, `resolved?` | `{ appId, revision, path, value, resolved, note? }`; `missing-path`, `invalid-path` |
+| `ui_validate` | `appId` | `{ appId, revision, valid, errors, warnings, preview }` |
+| `ui_outline` | `appId`, `path?`, `depth?`, `locale?` | `{ appId, revision, text, lineCount, cutLines, localeApplied }` |
+| `ui_state_get` | `appId` | `{ appId, revision, source, snapshot, preview }`; `source` is `live` (read from an open view) or `stored` |
+| `ui_app_write` | `appId`, `operations` (1 to 50 of `set`, `remove`, `merge`, `move`), `expectedRevision?` | `{ appId, revision, warnings }`; `invalid-document`, `invalid-operation`, `conflict` |
+| `ui_state_set` | `appId`, `path`, `value`, `expectedRevision?` | `{ appId, revision, path }`; `conflict`, `invalid-value` or the refusal reason |
+| `ui_preview` | `appId` | `{ appId, revision, url, rendered, errors, note? }`; opens or refreshes the headless page and waits for the revision |
+| `ui_command` | `appId`, `target`, `command`, `value?` | `{ appId, revision, command, previewAttached, message }`; delivered to every open view, the headless page included |
+| `ui_file_read` | `appId`, `fileId` | `{ file, text, truncated, note? }` |
+| `ui_app_delete` | `appId`, `expectedRevision` | `{ appId, revision }`; `conflict`, `not-found` |
+| `ui_screenshot` | `appId`, `path?`, `width?`, `height?`, `mode?` | an MCP image (PNG) and `{ appId, revision, target, width, height, mode? }` |
+| `ui_interact` | `appId`, `actions: [{ action: click|fill|press|hover|select, path, value? }]` | `{ appId, revision, results, errors, emits, cursor }`; an error (`action-failed`) when an action failed |
+| `ui_events_read` | `appId`, `since?` | `{ appId, events: [{ cursor, name, payload, at, view }], cursor }` |
+
+Read-only tools carry `readOnlyHint`; only `ui_app_delete` carries `destructiveHint`. A failed call has `isError: true` and the body `{ error, message, ...details }`. Codes: `invalid-argument` (with `argument`), `not-found`, `unknown-tool`, `internal-error`, `browser-unavailable`, `not-rendered`, `action-failed`, and the codes in the table. Arguments are plain JSON; extra arguments and an `appId` that is not a UUID are refused.
+
+Differences from `ui-builder`: no `workspace-missing` or `user-missing`, no `ownerId` in `ui_app_list`, no approval marker on `ui_app_delete` (the client can ask the user; the tool is annotated destructive), and `ui_preview`, `ui_command` and `ui_state_get` work against real views instead of an API socket.
+
+`path` in `ui_screenshot` and `ui_interact` is the state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional). It is mapped to the element the component rendered for that node, through open shadow roots. A hidden or closed node has no element.
+
+## Browser endpoint
+
+| Route | What |
+|---|---|
+| `GET /` | the apps, with a link to each |
+| `GET /apps/:appId` | the live view of an app |
+| `GET /apps/:appId/events` | the server-sent event stream of a view |
+| `POST /apps/:appId/report` | what a view tells the server: state snapshots, `emit` events, errors, ready, snapshot replies |
+| `POST /apps/:appId/files` | an upload from a `fileField`: `multipart/form-data` with one field `file`; `201 { id, name, size, type }`, `409 quota`, `413 too_large`, `415 unsupported_type` |
+| `GET /apps/:appId/files/:fileId` | the bytes, as an attachment, `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` |
+| `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
+| `GET /runtime/<hash>.html`, `/runtime/<hash>.js` | the content-hashed StateUI runtime page and bundle |
+| `POST`, `GET`, `DELETE /mcp` | MCP over streamable HTTP, with sessions |
+
+**How the view works.** The page is a shell with one external script. The script puts the runtime page into a sandboxed iframe (`sandbox="allow-scripts"`, so the frame has an opaque origin), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source and nonce. This is the same arrangement as the preview of the minion UI, so the runtime bundle is used as built, with no Vite or bundling step. It opens an event stream to the server and gets the app on connect and again after every `ui_app_write` (written into the running app as path writes where it can, or as a new load), `ui_state_set`, `ui_command` and theme or locale switch. It sends back the state snapshot (throttled to one per second, saved without raising the revision), `emit` events, runtime errors and the answer to a live-state request. Query parameters `?mode=dark` and `?locale=fr` apply a theme overlay or a language to a view.
+
+**Playwright.** The server keeps one headless Chromium, started on the first call that needs it and closed on shutdown, with one page per app. The page loads the same `/apps/:appId` URL a person opens, so it is a view like any other: it receives the same messages, and `ui_command` and `ui_state_get` reach it. `ui_screenshot` and `ui_interact` look up the element in the runtime frame and use Playwright's own click, fill, press, hover and select on the native control inside it, so the events are the ones a user raises.
+
+**Policy.** The host page allows scripts, styles, connections and frames from its own origin only, no inline script, no inline style, no framing by other pages. The runtime page has `default-src 'none'`, scripts only from its own origin plus `'unsafe-eval'` (the expression library builds functions for binding expressions), no network, images and fonts as `data:` only, and may be framed by this server's pages only. Uploaded files are never served inline.
+
+## Data directory
+
+One folder per app, named by its UUID:
+
+```text
+data/<appId>/app.json      id, name, revision, createdAt, updatedAt and the document
+data/<appId>/state.json    the revision and the state snapshot
+data/<appId>/errors.json   the bounded preview error log (the newest 50)
+data/<appId>/files.json    metadata of the uploaded files
+data/<appId>/files/<id>    the bytes of one uploaded file
+```
+
+Every file is written to a temporary file in the same folder and renamed into place, and the writes of one app run one at a time, so a reader never sees half a file and a write is checked against the revision it read. `children` and keyed data maps are ordered by key: the files are written with `JSON.stringify` and read with `JSON.parse` and nothing re-sorts them (integer-like keys are refused, because JavaScript would move them). A state write that raises the revision writes `state.json` first; a read takes the higher of the two revisions, so a crash between the two writes leaves a consistent app. Limits: 1 MiB per document, 2000 nodes, 10 MiB per file, 50 files and 100 MiB per app. Uploaded files that nothing references (not in the document or the snapshot) are removed after 24 hours, when the next upload to the app happens.
+
+## Security notes
+
+- **Local only by default.** The server binds `127.0.0.1`. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused.
+- **No authentication.** Anyone who can reach the port can read, change and delete every app and use the headless browser. `--host 0.0.0.0` exposes all of that to the network and turns the Host check off. Do it only on a network you trust, or put your own authentication in front.
+- **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network, cookies or storage, but the headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
+- **Paths.** Only UUIDs reach a file path. A file name is metadata and never part of a path.
+- **Uploads.** The type is sniffed from the bytes; the type the client claims is ignored. HTML, SVG, XML and executables are refused.
+
+## Develop
+
+```sh
+npm run typecheck   # server and browser host script
+npm run build       # dist/ (server) and dist/browser/host.js (host script)
+npm test            # Vitest; the Playwright test skips itself when Chromium is missing
+```
+
+Layout: `src/domain` (pure rules), `src/application` (ports and use cases), `src/infrastructure/storage` (the JSON file adapters), `src/infrastructure/mcp` (tools and server), `src/infrastructure/http` (routes, pages, policy), `src/infrastructure/preview` (the hub of live views and the Playwright adapter), `src/browser/host.ts` (the script that runs in the page), `src/config` (options and composition).
+
+## License
+
+MIT
