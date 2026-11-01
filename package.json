@@ -1,0 +1,47 @@
+{
+    "name": "@punyts/stateui-mcp",
+    "version": "0.1.0",
+    "description": "A standalone MCP server for building StateUI apps, with a live browser view of each app rendered and inspected with Playwright",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "bin": {
+        "stateui-mcp": "dist/cli.js"
+    },
+    "files": [
+        "dist",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
+        "test": "vitest run",
+        "start": "node dist/cli.js"
+    },
+    "keywords": [
+        "stateui",
+        "punyts",
+        "mcp",
+        "playwright"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "@punyts/core": "^1.0.0",
+        "@punyts/stateui-app": "^0.1.0",
+        "@punyts/stateui-components": "^0.1.0",
+        "busboy": "^1.6.0",
+        "playwright": "^1.61.1"
+    },
+    "devDependencies": {
+        "@types/node": "^26.1.1",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.10"
+    }
+}
