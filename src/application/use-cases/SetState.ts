@@ -14,7 +14,10 @@ import type { UseCaseReport } from '../ports/UseCaseReport.js';
 export interface SetStateInput {
     /** `$.data...` or `$.app...<node path>.<property>` */
     readonly path: string;
-    readonly value: JsonValue;
+    /** The value to write; absent when `remove` is set */
+    readonly value?: JsonValue;
+    /** Removes the entry at a `$.data` path, such as a record, instead of writing a value */
+    readonly remove?: boolean;
     /** Absent: the write is checked against the revision that was read */
     readonly expectedRevision?: number;
 }
@@ -84,25 +87,28 @@ export class SetState {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: app.revision });
         }
 
+        if (input.remove === true) return this.finish(appId, await this.remove(app, parsed));
+
+        const value = input.value ?? null;
         let resolved: Resolved;
         let snapshot: UiStateSnapshot = app.stateSnapshot;
         if (parsed.kind === 'data') {
             resolved = { ok: true, target: { snapshotPath: ['data', ...parsed.path] } };
             snapshot = this.withData(app);
         } else {
-            resolved = this.resolveProperty(app, appId, parsed.path, input.value);
+            resolved = this.resolveProperty(app, appId, parsed.path, value);
         }
         if (!resolved.ok) return this.finish(appId, resolved.result);
 
         const { snapshotPath } = resolved.target;
-        if (snapshotPath.length === 1 && !isJsonObject(input.value)) {
+        if (snapshotPath.length === 1 && !isJsonObject(value)) {
             return this.finish(appId, {
                 kind: 'invalid',
                 appId,
                 errors: [{ code: 'SUI-DOC-OPERATION', message: '$.data must be an object', statePath: '$.data' }]
             });
         }
-        const applied = setCreatingParents(snapshot, snapshotPath, input.value);
+        const applied = setCreatingParents(snapshot, snapshotPath, value);
         if (!applied.ok) {
             return this.finish(appId, refuse(appId, 'unknown-path', applied.error.message).result);
         }
@@ -113,12 +119,31 @@ export class SetState {
         );
         if (orderErrors.length > 0) return this.finish(appId, { kind: 'invalid', appId, errors: orderErrors });
 
-        const written = await this.repository.writeState(appId, snapshotPath, input.value, app.revision);
+        const written = await this.repository.writeState(appId, snapshotPath, value, app.revision);
         if (written.kind === 'conflict') {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
         }
         if (written.kind === 'not-found') return this.finish(appId, { kind: 'not-found', appId });
         return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path, statePath });
+    }
+
+    /** Removes an existing entry under `$.data`; `$.data` itself and node properties are refused */
+    private async remove(app: UiApp, parsed: ReturnType<typeof parseStatePath>): Promise<SetStateResult> {
+        const appId = app.id;
+        if (parsed.kind !== 'data' || parsed.path.length === 0) {
+            return refuse(appId, 'unknown-path', 'remove takes a path under $.data, such as $.data.tasks.t2; set node properties with a value').result;
+        }
+        let current: JsonValue | undefined = this.withData(app)['data'];
+        for (const segment of parsed.path) {
+            current = isJsonObject(current) && Object.hasOwn(current, segment) ? current[segment] : undefined;
+        }
+        const statePath = `$.data.${parsed.path.join('.')}`;
+        if (current === undefined) return refuse(appId, 'unknown-path', `Nothing is at ${statePath} to remove`).result;
+
+        const written = await this.repository.writeState(appId, ['data', ...parsed.path], undefined, app.revision);
+        if (written.kind === 'conflict') return { kind: 'conflict', appId, currentRevision: written.currentRevision };
+        if (written.kind === 'not-found') return { kind: 'not-found', appId };
+        return { kind: 'written', appId, revision: written.revision, path: statePath, statePath };
     }
 
     /** A snapshot with no data yet starts from the document's data, so the first write does not drop the rest of it */

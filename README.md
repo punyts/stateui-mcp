@@ -88,7 +88,7 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 | `ui_outline` | `appId`, `path?`, `depth?`, `locale?` | `{ appId, revision, text, lineCount, cutLines, localeApplied }` |
 | `ui_state_get` | `appId` | `{ appId, revision, state, preview }`; `state` is the synced state (`data` and the `app` articulation), which every view and tool write goes through |
 | `ui_app_write` | `appId`, `operations` (1 to 50 of `set`, `remove`, `merge`, `move`), `expectedRevision?` | `{ appId, revision, warnings }`; `invalid-document`, `invalid-operation`, `conflict` |
-| `ui_state_set` | `appId`, `path`, `value`, `expectedRevision?` | `{ appId, revision, path }`; the value syncs to every open view, missing parents are created, and the document revision does not change; `conflict`, `invalid-value` or the refusal reason |
+| `ui_state_set` | `appId`, `path`, `value` or `remove: true`, `expectedRevision?` | `{ appId, revision, path }`; the value syncs to every open view, missing parents are created, `remove: true` removes an entry under `$.data` (a record), and the document revision does not change; `conflict`, `invalid-value` or the refusal reason |
 | `ui_preview` | `appId` | `{ appId, revision, url, rendered, errors, note? }`; opens or refreshes the headless page and waits for the revision |
 | `ui_command` | `appId`, `target`, `command`, `value?` | `{ appId, revision, command, previewAttached, message }`; delivered to every open view, the headless page included |
 | `ui_file_read` | `appId`, `fileId` | `{ file, text, truncated, note? }` |

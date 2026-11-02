@@ -120,11 +120,12 @@ export class FileUiAppRepository implements UiAppRepository {
         });
     }
 
-    async writeState(appId: string, statePath: readonly string[], value: JsonValue, expectedRevision: number): Promise<UiAppWriteResult> {
+    async writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppWriteResult> {
         return this.withApp(appId, expectedRevision, async (file) => {
             if (file.sync === 'persisted') throw new Error(`App ${appId} is Persisted: the server does not change its state`);
             const authority = await this.states.authority(appId, file.document);
-            authority.write({ path: `$.${statePath.join('.')}`, op: 'set', value: value as SyncValue });
+            const path = `$.${statePath.join('.')}`;
+            authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
             return { kind: 'written', revision: file.revision };
         });
     }

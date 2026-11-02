@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New: `ui_state_set` takes `remove: true` instead of `value` to remove an entry under `$.data`, such as a deleted record. The authority applies a `delete` change, so every open view drops the record; a `null` value left an empty row behind and there was no other way to remove a record short of rewriting its whole map. A missing entry and `$.data` itself are refused (`unknown-path`), and `value` with `remove` is an `invalid-argument`.
+- Fix: `ui_screenshot` of a modal or drawer by its path shows the dialog. The host is `display: contents`, so it has no box and the shot was refused as `not-rendered` while the modal was open; the shot now takes the first drawn element of the host's shadow root.
+- Fix: a `ui_interact` click or hover on a node behind an open modal dialog fails with "is behind an open modal dialog" instead of a bare 5 s Playwright timeout.
+
 - New: `--statenet <url>` (`STATEUI_MCP_STATENET`) keeps the app state in a `@punyts/statenet`: each app's authority loads its namespace from the statenet and relays every accepted change to it, with the change ids, so a restarted server picks the state up again. `$.server` is relayed encrypted as `$.sealed`.
 - New: `--secret-key-file` (`STATEUI_MCP_SECRET_KEY_FILE`, or the key in `STATEUI_MCP_SECRET_KEY`) sets the key that encrypts `$.server` at rest; an app whose state has `$.server` without a key fails with a message that names the options. The tools and the app API never read `$.server`.
 - New: Persisted apps. `ui_app_create` takes `sync: "persisted"`: the state lives only in the statenet (seeded from the document's `data`), the page's sync client connects to the statenet directly and the server socket carries only the view frames; `ui_state_set` is refused (`persisted-app`). Creating one without a statenet is refused (`no-statenet`). `app.json` has `sync` for these apps, and the app API returns `sync`.

@@ -161,6 +161,47 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(shot.body['message'])).toContain('not visible');
         expect(Date.now() - started).toBeLessThan(10_000);
     });
+
+    describe('with an open modal', () => {
+        let modalAppId = '';
+
+        beforeAll(async () => {
+            const created = await call(harness.client, 'ui_app_create', {
+                name: 'open modal',
+                document: {
+                    app: {
+                        component: 'page',
+                        children: {
+                            behind: { component: 'button', _title: 'Behind' },
+                            dialog: { component: 'modal', _title: 'Shown', open: true, body: { component: 'text', _text: 'inside' } }
+                        }
+                    }
+                }
+            });
+            modalAppId = created.body['appId'] as string;
+            await call(harness.client, 'ui_preview', { appId: modalAppId });
+        });
+
+        it('should screenshot the dialog of a modal named by its path', async () => {
+            // Act: the modal host is display: contents, so the image is of the dialog in its shadow root
+            const shot = await call(harness.client, 'ui_screenshot', { appId: modalAppId, path: '$.app.children.dialog', width: 800, height: 600 });
+
+            // Assert
+            expect(shot.isError).toBe(false);
+            expect(shot.images).toHaveLength(1);
+            expect(shot.body['width']).toBeGreaterThan(0);
+            expect(shot.body['width']).toBeLessThan(800);
+        });
+
+        it('should say that a click is behind the open modal', async () => {
+            // Act
+            const result = await call(harness.client, 'ui_interact', { appId: modalAppId, actions: [{ action: 'click', path: '$.app.children.behind' }] });
+
+            // Assert
+            expect(result.isError).toBe(true);
+            expect((result.body['results'] as { error?: string }[])[0]?.error).toContain('behind an open modal dialog');
+        });
+    });
 });
 
 describe.skipIf(!installed)('live sync between pages and the server (Chromium through Playwright)', () => {

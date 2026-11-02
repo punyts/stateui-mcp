@@ -38,7 +38,8 @@ const APP_WRITE = defineInput({
 const STATE_SET = defineInput({
     appId: APP_ID,
     path: { type: 'string', required: true, description: 'A "$.data..." path, or "$.app...<node path>.<property>" for a property the user can change' },
-    value: { type: 'json', required: true, description: 'The new value' },
+    value: { type: 'json', description: 'The new value; leave it out with remove' },
+    remove: { type: 'boolean', description: 'true: remove the entry at a "$.data..." path, such as a record, instead of setting a value' },
     expectedRevision: EXPECTED_REVISION
 });
 
@@ -133,16 +134,18 @@ export function createWriteTools(
         {
             name: 'ui_state_set',
             description:
-                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". Open views get the value at once. Links, runtime and exposed properties are refused with the reason. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
+                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". remove: true instead of a value removes an entry under $.data, such as a deleted record ($.data.tasks.t2); a null value would leave an empty record behind. Open views get the change at once. Links, runtime and exposed properties are refused with the reason. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
             inputSchema: STATE_SET.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = STATE_SET.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, value, expectedRevision } = parsed.value;
+                const { appId, path, value, remove, expectedRevision } = parsed.value;
+                if (remove === true && value !== undefined) return fail('invalid-argument', 'Pass value or remove: true, not both', { argument: 'remove' });
+                if (remove !== true && value === undefined) return fail('invalid-argument', 'value is required, or remove: true to remove the entry', { argument: 'value' });
                 const result = await useCases.setState.execute(appId, {
                     path,
-                    value,
+                    ...(remove === true ? { remove } : { value }),
                     ...(expectedRevision !== undefined && { expectedRevision })
                 });
                 switch (result.kind) {

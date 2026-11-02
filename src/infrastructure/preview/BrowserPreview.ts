@@ -142,7 +142,7 @@ export class BrowserPreview {
                     return { png, ...viewport, target: 'page' };
                 }
                 const statePath = toStatePath(options.path);
-                const handle = await this.elementAt(page, statePath);
+                const handle = await this.boxOf(await this.elementAt(page, statePath));
                 try {
                     //Playwright waits for an element to become visible, so a hidden one (such as the body of a closed
                     //modal) would hold the call until its timeout: refuse it at once instead
@@ -271,6 +271,52 @@ export class BrowserPreview {
         return element;
     }
 
+    /**
+     * The element that draws a node: the host itself, or for a host with no box of its own (`display: contents`, such
+     * as a modal or drawer, whose dialog is in its shadow root) the first element of its shadow root that has one
+     */
+    private async boxOf(element: ElementHandle<HTMLElement>): Promise<ElementHandle<HTMLElement>> {
+        const found = await element.evaluateHandle((host: HTMLElement) => {
+            if (host.getClientRects().length > 0 || host.shadowRoot === null) return null;
+            return Array.from(host.shadowRoot.children).find((child): child is HTMLElement => child instanceof HTMLElement && child.getClientRects().length > 0) ?? null;
+        });
+        const drawn = found.asElement() as ElementHandle<HTMLElement> | null;
+        if (drawn === null) {
+            await found.dispose();
+            return element;
+        }
+        await element.dispose();
+        return drawn;
+    }
+
+    /** True when an open modal dialog that does not hold `control` covers the page, so a press cannot reach it */
+    private async behindModal(page: Page, control: ElementHandle<HTMLElement>): Promise<boolean> {
+        const frame = this.runtimeFrame(page);
+        const modals = await frame.evaluateHandle(() => {
+            const found: HTMLDialogElement[] = [];
+            const walk = (root: ParentNode): void => {
+                for (const element of Array.from(root.querySelectorAll('*'))) {
+                    if (element instanceof HTMLDialogElement && element.matches(':modal')) found.push(element);
+                    if (element.shadowRoot) walk(element.shadowRoot);
+                }
+            };
+            walk(document);
+            return found;
+        });
+        try {
+            return await control.evaluate((node: HTMLElement, open: HTMLDialogElement[]) => {
+                if (open.length === 0) return false;
+                const top = open[open.length - 1] as HTMLDialogElement;
+                for (let current: Node | null = node; current !== null; current = current.parentNode ?? (current as ShadowRoot).host ?? null) {
+                    if (current === top) return false;
+                }
+                return true;
+            }, modals);
+        } finally {
+            await modals.dispose();
+        }
+    }
+
     private async controlOf(element: ElementHandle<HTMLElement>, action: InteractAction): Promise<ElementHandle<HTMLElement>> {
         const found = await element.evaluateHandle((host: HTMLElement, selector: string) => {
             const own = host.shadowRoot?.querySelector<HTMLElement>(selector);
@@ -313,6 +359,11 @@ export class BrowserPreview {
                     await control.selectOption(step.value, { timeout });
                     break;
             }
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TimeoutError' && (await this.behindModal(page, control))) {
+                throw new InteractionError(`${statePath} is behind an open modal dialog: act inside the modal, or close it first`);
+            }
+            throw error;
         } finally {
             if (control !== element) await control.dispose();
             await element.dispose();

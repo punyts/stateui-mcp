@@ -287,6 +287,29 @@ describe('write tools', () => {
         expect(state.body['state']).toEqual({ data: { name: 'Ada' }, app: {} });
     });
 
+    it('should remove a record under $.data with remove and refuse a missing entry, $.data itself and value with remove', async () => {
+        // Arrange
+        const appId = await createForm();
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks', value: { t1: { title: 'first' }, t2: { title: 'second' } } });
+
+        // Act
+        const removed = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', remove: true });
+        const missing = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t9', remove: true });
+        const root = await call(harness.client, 'ui_state_set', { appId, path: '$.data', remove: true });
+        const both = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', remove: true, value: 1 });
+        const neither = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2' });
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(removed.isError).toBe(false);
+        expect(removed.body).toMatchObject({ revision: 1, path: '$.data.tasks.t1' });
+        expect(missing.body['error']).toBe('unknown-path');
+        expect(root.body['error']).toBe('unknown-path');
+        expect(both.body['error']).toBe('invalid-argument');
+        expect(neither.body['error']).toBe('invalid-argument');
+        expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t2: { title: 'second' } } });
+    });
+
     it('should push a document write to the open views and a state write to the synced views', async () => {
         // Arrange
         const appId = await createForm();

@@ -44,10 +44,11 @@ export interface UiAppRepository {
     list(): Promise<readonly UiAppSummary[]>;
     writeDocument(appId: string, document: UiDocument, expectedRevision: number): Promise<UiAppWriteResult>;
     /**
-     * Sets one value of the state, at `statePath` from its root (`['data', 'total']`), creating missing parents. Every
-     * open view gets the change at once. The revision stays as it is; `written` carries it
+     * Sets one value of the state, at `statePath` from its root (`['data', 'total']`), creating missing parents, or
+     * removes the entry there when `value` is undefined. Every open view gets the change at once. The revision stays as
+     * it is; `written` carries it
      */
-    writeState(appId: string, statePath: readonly string[], value: JsonValue, expectedRevision: number): Promise<UiAppWriteResult>;
+    writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppWriteResult>;
     /** Removes the app folder: document, state, error log and files */
     delete(appId: string, expectedRevision: number): Promise<UiAppDeleteResult>;
 }
