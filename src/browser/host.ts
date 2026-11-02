@@ -13,7 +13,11 @@
  * sync client and the app's authority on the server, and `{ type: 'view', message }` frames from the server (the
  * document, commands, locale, theme, deletion). The sync client keeps the confirmed state and the changes not yet
  * acknowledged in `localStorage`, with the document beside them, so the app opens and takes changes offline and sends
- * them when the socket is back. `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
+ * them when the socket is back.
+ *
+ * A Persisted app (`data-statenet-url` on the body) has no server logic: the sync client connects straight to the
+ * statenet, and the socket to the server carries only the view frames, reconnecting on its own.
+ * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
  * and its errors.
  *
  * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
@@ -279,6 +283,12 @@ class LiveView {
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
     private readonly namespace: string;
+    /** The statenet's URL for a Persisted app; `undefined` in Full mode */
+    private readonly statenetUrl: string | undefined;
+    private readonly syncMode: 'full' | 'persisted';
+    private viewSocket: WebSocket | undefined;
+    private viewRetry = 0;
+    private stopped = false;
     private readonly store = localStore();
     private readonly nonce = createNonce();
     private client: SyncClient | undefined;
@@ -295,7 +305,7 @@ class LiveView {
     /** The synced part of what the frame holds, as far as the host knows */
     private shown: ViewState = { data: {}, app: {} };
     private readonly listeners = new Set<(changes: LocalChange[]) => void>();
-    private syncStatus: { mode: 'full'; status: string; waiting: number } = { mode: 'full', status: 'connecting', waiting: 0 };
+    private syncStatus: { mode: 'full' | 'persisted'; status: string; waiting: number };
     private readonly sentIcons = new Set<string>();
     private revision = 0;
     private mode: string | undefined;
@@ -309,6 +319,9 @@ class LiveView {
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
         this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
         this.namespace = `apps.${this.appId.toLowerCase()}`;
+        this.statenetUrl = body.dataset['statenetUrl'] || undefined;
+        this.syncMode = this.statenetUrl === undefined ? 'full' : 'persisted';
+        this.syncStatus = { mode: this.syncMode, status: 'connecting', waiting: 0 };
         const query = new URLSearchParams(window.location.search);
         this.mode = query.get('mode') ?? undefined;
         this.locale = query.get('locale') ?? undefined;
@@ -332,6 +345,7 @@ class LiveView {
             }
         });
         this.client.start();
+        if (this.statenetUrl !== undefined) this.openViewSocket();
     }
 
     /** The sync client's view of the frame: state comes in as loads and writes, the frame's own changes go out */
@@ -350,9 +364,35 @@ class LiveView {
         };
     }
 
-    /** The page's WebSocket: view frames go to the host, everything else to the sync client */
+    private viewSocketUrl(): string {
+        return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${this.appId}/sync?view=${this.viewId}&kind=${this.viewKind}`;
+    }
+
+    /** A Persisted app's socket to the server, for the view frames only; it reconnects with a growing delay */
+    private openViewSocket(): void {
+        if (this.stopped) return;
+        const socket = new WebSocket(this.viewSocketUrl());
+        this.viewSocket = socket;
+        socket.addEventListener('open', () => {
+            this.viewRetry = 0;
+        });
+        socket.addEventListener('message', (event: MessageEvent<unknown>) => {
+            if (typeof event.data === 'string' && event.data.startsWith(VIEW_FRAME)) this.onViewFrame(event.data);
+        });
+        socket.addEventListener('close', () => {
+            if (this.stopped || this.viewSocket !== socket) return;
+            const delay = Math.min(30_000, 500 * 2 ** this.viewRetry++);
+            window.setTimeout(() => this.openViewSocket(), delay);
+        });
+    }
+
+    /**
+     * The sync client's WebSocket. Full mode: the page's socket to the server, where view frames go to the host and
+     * everything else to the sync client. Persisted mode: a socket to the statenet, sync only
+     */
     private transport(): SyncTransport {
-        const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${this.appId}/sync?view=${this.viewId}&kind=${this.viewKind}`;
+        const persisted = this.statenetUrl !== undefined;
+        const url = this.statenetUrl ?? this.viewSocketUrl();
         return {
             connect: (handlers) => {
                 const socket = new WebSocket(url);
@@ -360,7 +400,7 @@ class LiveView {
                 socket.addEventListener('open', () => handlers.onOpen());
                 socket.addEventListener('message', (event: MessageEvent<unknown>) => {
                     if (typeof event.data !== 'string') return;
-                    if (event.data.startsWith(VIEW_FRAME)) this.onViewFrame(event.data);
+                    if (!persisted && event.data.startsWith(VIEW_FRAME)) this.onViewFrame(event.data);
                     else handlers.onMessage(event.data);
                 });
                 socket.addEventListener('close', () => {
@@ -428,6 +468,8 @@ class LiveView {
                 if (this.ready) this.post({ type: 'theme', kind: message.kind, name: message.name });
                 break;
             case 'deleted':
+                this.stopped = true;
+                this.viewSocket?.close();
                 this.client?.stop();
                 for (const part of ['confirmed', 'outbox', 'document'] as const) this.store.remove(this.namespace, part);
                 this.setStatus('failed', 'This app was deleted');
@@ -438,7 +480,7 @@ class LiveView {
     }
 
     private onSyncStatus(report: SyncStatusReport): void {
-        this.syncStatus = { mode: 'full', status: report.status, waiting: report.waiting };
+        this.syncStatus = { mode: this.syncMode, status: report.status, waiting: report.waiting };
         this.body.dataset['sync'] = report.status;
         if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
     }
@@ -507,7 +549,7 @@ class LiveView {
         this.post({
             type: 'load',
             document: app.document,
-            mode: 'full',
+            mode: this.syncMode,
             ...(this.synced !== undefined && { state: this.synced }),
             ...(icons !== undefined && { icons })
         });

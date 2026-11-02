@@ -37,6 +37,8 @@ export interface HttpServerOptions {
     readonly hub: PreviewHub;
     /** The sync authority of each app, which the views' sockets connect to */
     readonly authorities: AppAuthorities;
+    /** The statenet's WebSocket URL, which the views of Persisted apps connect to */
+    readonly statenet?: string;
     readonly liveViews: LiveViews;
     readonly mcp: McpEndpoint;
     readonly runtime: RuntimeBundle;
@@ -223,13 +225,20 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const app = await repository.findById(appId);
         if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
+        const persistedUrl = app.sync === 'persisted' ? options.statenet : undefined;
         const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
         send(
             response,
             200,
             'text/html; charset=utf-8',
-            appPage({ appId, name: app.name, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: headless ? 'headless' : 'browser' }),
-            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
+            appPage({
+                appId,
+                name: app.name,
+                runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
+                viewKind: headless ? 'headless' : 'browser',
+                ...(persistedUrl !== undefined && { statenetUrl: persistedUrl })
+            }),
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin, persistedUrl), 'Cache-Control': 'no-store' }
         );
     }
 
@@ -364,7 +373,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const app = await repository.findById(appId);
         const first = app === undefined ? undefined : await liveViews.attachMessage(appId);
         if (app === undefined || first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        const authority = await authorities.authority(appId, app.document);
+        // A Persisted app's views sync with the statenet; this socket carries only their view frames
+        const authority = app.sync === 'persisted' ? undefined : await authorities.authority(appId, app.document);
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
                 if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
@@ -372,7 +382,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
             const detach = hub.attach(appId, connection);
             sendView(first);
-            const session = authority.connect({
+            const session = authority?.connect({
                 send: (text) => {
                     if (ws.readyState === ws.OPEN) ws.send(text);
                 },
@@ -385,12 +395,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     return;
                 }
                 hub.touch(appId, viewId);
-                session.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
+                session?.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
             });
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {
                 clearInterval(timer);
-                session.close();
+                session?.close();
                 detach();
             });
         });

@@ -2,6 +2,7 @@
 import { createStderrReporter } from './config/reporter.js';
 import { HELP_TEXT, parseOptions, UsageError } from './config/options.js';
 import { startServer } from './config/startServer.js';
+import { loadSecretKey } from './infrastructure/sync/secretKey.js';
 
 async function main(): Promise<void> {
     let options;
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
         return;
     }
 
+    const serverKey = await loadSecretKey(options.secretKeyFile, options.secretKey);
     const reporter = createStderrReporter();
     const server = await startServer({
         dataDir: options.dataDir,
@@ -28,7 +30,9 @@ async function main(): Promise<void> {
         ...(options.runtimePort !== undefined && { runtimePort: options.runtimePort }),
         stdio: options.stdio,
         report: reporter.report,
-        ...(options.runtimeDir !== undefined && { runtimeDir: options.runtimeDir })
+        ...(options.runtimeDir !== undefined && { runtimeDir: options.runtimeDir }),
+        ...(options.statenet !== undefined && { statenet: options.statenet }),
+        ...(serverKey !== undefined && { serverKey })
     });
     // Always stderr: in stdio mode stdout is the protocol
     process.stderr.write(`stateui-mcp: apps at ${server.origin}/  MCP at ${server.origin}/mcp${options.stdio ? '  and on stdio' : ''}\n`);

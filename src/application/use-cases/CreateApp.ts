@@ -1,5 +1,5 @@
 import { createEmptyDocument } from '../../domain/UiApp.js';
-import type { UiDocument } from '../../domain/UiApp.js';
+import type { UiDocument, UiSyncMode } from '../../domain/UiApp.js';
 import { isValid } from '../../domain/UiBuildError.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { orderedMapKeyErrors } from '../../domain/orderedMap.js';
@@ -11,6 +11,8 @@ export interface CreateAppInput {
     readonly name: string;
     /** Absent: the app starts from an empty valid document */
     readonly document?: UiDocument;
+    /** Absent: `full` */
+    readonly sync?: UiSyncMode;
 }
 
 export type CreateAppResult =
@@ -18,7 +20,8 @@ export type CreateAppResult =
     /** The supplied document has blocking errors; nothing was created */
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] }
     | { readonly kind: 'invalid-name' }
-    | { readonly kind: 'duplicate-name' };
+    | { readonly kind: 'duplicate-name' }
+    | { readonly kind: 'no-statenet' };
 
 /** Creates an app, from an empty document or from a validated one */
 export class CreateApp {
@@ -42,12 +45,12 @@ export class CreateApp {
             document = input.document;
         }
 
-        const created = await this.repository.create({ name, document });
-        if (created.kind === 'duplicate-name') {
-            this.report.info('Create app rejected: duplicate name');
-            return { kind: 'duplicate-name' };
+        const created = await this.repository.create({ name, document, sync: input.sync ?? 'full' });
+        if (created.kind !== 'created') {
+            this.report.info('Create app rejected', { reason: created.kind });
+            return { kind: created.kind };
         }
-        this.report.info('App created', { appId: created.app.id, revision: created.app.revision });
+        this.report.info('App created', { appId: created.app.id, revision: created.app.revision, sync: created.app.sync });
         return { kind: 'created', appId: created.app.id, revision: created.app.revision };
     }
 }

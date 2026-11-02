@@ -52,6 +52,8 @@ export interface AppPageOptions {
     readonly runtimeUrl: string;
     /** `headless` for the page of Playwright, `browser` for a person */
     readonly viewKind: 'browser' | 'headless';
+    /** A Persisted app: the statenet's WebSocket URL, which the page's sync client connects to */
+    readonly statenetUrl?: string;
 }
 
 /** `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame */
@@ -65,7 +67,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}" data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}"${options.statenetUrl === undefined ? '' : ` data-statenet-url="${escapeHtml(options.statenetUrl)}"`} data-status="loading">`,
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',

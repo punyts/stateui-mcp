@@ -6,7 +6,29 @@ describe('parseOptions', () => {
     it('should default to ./data, port 4100 and the loopback address', () => {
         const options = parseOptions([], {});
 
-        expect(options).toEqual({ dataDir: resolve('./data'), host: '127.0.0.1', port: 4100, runtimePort: undefined, stdio: false, runtimeDir: undefined, help: false });
+        expect(options).toEqual({
+            dataDir: resolve('./data'),
+            host: '127.0.0.1',
+            port: 4100,
+            runtimePort: undefined,
+            stdio: false,
+            runtimeDir: undefined,
+            statenet: undefined,
+            secretKeyFile: undefined,
+            secretKey: undefined,
+            help: false
+        });
+    });
+
+    it('should read the statenet and the secret key from flags or the environment', () => {
+        expect(parseOptions(['--statenet', 'ws://127.0.0.1:4200/sync'], { STATEUI_MCP_STATENET: 'ws://other/sync' }).statenet).toBe('ws://127.0.0.1:4200/sync');
+        expect(parseOptions([], { STATEUI_MCP_STATENET: 'ws://other/sync' }).statenet).toBe('ws://other/sync');
+        expect(parseOptions(['--secret-key-file', 'key.bin'], {}).secretKeyFile).toBe(resolve('key.bin'));
+        expect(parseOptions([], { STATEUI_MCP_SECRET_KEY_FILE: 'env.bin', STATEUI_MCP_SECRET_KEY: 'abc' })).toMatchObject({ secretKeyFile: resolve('env.bin'), secretKey: 'abc' });
+    });
+
+    it('should refuse a statenet URL that is not a WebSocket URL', () => {
+        expect(() => parseOptions(['--statenet', 'http://127.0.0.1:4200'], {})).toThrow('ws:// or wss://');
     });
 
     it('should read the environment and let a flag win over it', () => {

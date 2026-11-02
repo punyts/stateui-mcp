@@ -28,18 +28,24 @@ export function runtimeCsp(hostOrigin: string): string {
  * The policy of the host page: its own script and stylesheet, its own event stream and reports, the runtime frame
  * from the runtime origin (`runtimeOrigin`), and nothing else. No inline script and no inline style. No other page may frame it
  */
-export function hostPageCsp(runtimeOrigin: string): string {
+export function hostPageCsp(runtimeOrigin: string, statenetUrl?: string): string {
     return [
         "default-src 'none'",
         "script-src 'self'",
         "style-src 'self'",
-        "connect-src 'self'",
+        statenetUrl === undefined ? "connect-src 'self'" : `connect-src 'self' ${statenetSource(statenetUrl)}`,
         `frame-src ${runtimeOrigin}`,
         'img-src data:',
         "form-action 'none'",
         "base-uri 'none'",
         "frame-ancestors 'none'"
     ].join('; ');
+}
+
+/** The statenet's origin as a CSP source: its scheme, host and port, with the path cut off */
+function statenetSource(url: string): string {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}`;
 }
 
 /** The policy of a page that only lists links: a stylesheet from its own origin and nothing else */

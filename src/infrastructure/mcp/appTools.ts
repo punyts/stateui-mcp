@@ -6,7 +6,13 @@ const APP_ID = { type: 'string', uuid: true, required: true, description: 'The a
 
 const APP_CREATE = defineInput({
     name: { type: 'string', required: true, description: 'The application name; unique among the applications' },
-    document: { type: 'object', description: 'An optional starting document as a JSON object; without it the app starts as an empty page' }
+    document: { type: 'object', description: 'An optional starting document as a JSON object; without it the app starts as an empty page' },
+    sync: {
+        type: 'string',
+        enum: ['full', 'persisted'],
+        description:
+            'full (default): the server keeps the state and ui_state_set may change it. persisted: the statenet keeps it and the views sync with it directly; the tools only read it. Needs a server started with --statenet'
+    }
 });
 
 const APP_LIST = defineInput({});
@@ -49,7 +55,11 @@ export function createAppTools(
             run: async (args) => {
                 const parsed = APP_CREATE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.createApp.execute({ name: parsed.value.name, ...(parsed.value.document !== undefined && { document: parsed.value.document }) });
+                const result = await useCases.createApp.execute({
+                    name: parsed.value.name,
+                    ...(parsed.value.document !== undefined && { document: parsed.value.document }),
+                    ...(parsed.value.sync !== undefined && { sync: parsed.value.sync })
+                });
                 switch (result.kind) {
                     case 'created':
                         return succeed({ appId: result.appId, revision: result.revision });
@@ -59,6 +69,8 @@ export function createAppTools(
                         return fail('invalid-name', 'The name must not be blank');
                     case 'duplicate-name':
                         return fail('duplicate-name', 'An application with this name already exists');
+                    case 'no-statenet':
+                        return fail('no-statenet', 'A persisted app needs the server to run with --statenet');
                 }
             }
         },

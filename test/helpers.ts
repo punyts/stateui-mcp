@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createServices } from '../src/config/createServices.js';
 import type { Services } from '../src/config/createServices.js';
 import { startServer } from '../src/config/startServer.js';
-import type { RunningServer } from '../src/config/startServer.js';
+import type { RunningServer, ServerOptions } from '../src/config/startServer.js';
 import { createStateUiMcpServer } from '../src/infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../src/infrastructure/preview/BrowserPreview.js';
 
@@ -89,16 +89,17 @@ export interface HttpHarness {
     readonly client: Client;
     close(): Promise<void>;
 }
-
-/** The whole server on a free port with a real MCP client over streamable HTTP */
-export async function httpHarness(dataDir: string, browser?: PreviewBrowser): Promise<HttpHarness> {
+/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` adds a statenet or a key */
+/** The whole server on a free port (or ) with a real MCP client over streamable HTTP */
+export async function httpHarness(dataDir: string, browser?: PreviewBrowser, extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'statenet' | 'serverKey'>> = {}): Promise<HttpHarness> {
     const server = await startServer({
         dataDir,
         host: '127.0.0.1',
         port: 0,
         stdio: false,
         report: silentReport,
-        ...(browser !== undefined && { browser })
+        ...(browser !== undefined && { browser }),
+        ...extra
     });
     const client = new Client({ name: 'test', version: '1.0.0' });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${server.origin}/mcp`)));

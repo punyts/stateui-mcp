@@ -25,6 +25,10 @@ export interface ServerOptions {
     readonly runtimeDir?: string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
+    /** The statenet's WebSocket URL: the app state is loaded from it and relayed to it, and Persisted apps live in it */
+    readonly statenet?: string;
+    /** The key that encrypts `$.server` at rest */
+    readonly serverKey?: Uint8Array;
 }
 
 export interface RunningServer {
@@ -52,7 +56,9 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         dataDir: options.dataDir,
         report: options.report,
         origin: () => origin,
-        ...(options.browser !== undefined && { browser: options.browser })
+        ...(options.browser !== undefined && { browser: options.browser }),
+        ...(options.statenet !== undefined && { statenet: options.statenet }),
+        ...(options.serverKey !== undefined && { serverKey: options.serverKey })
     });
     const dependencies = { ...services, useCases: services.useCases };
     const sessions = new McpHttpSessions(() => createStateUiMcpServer(dependencies), options.report);
@@ -64,6 +70,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         repository: services.repository,
         hub: services.hub,
         authorities: services.authorities,
+        ...(options.statenet !== undefined && { statenet: options.statenet }),
         liveViews: services.liveViews,
         mcp: sessions,
         runtime,
@@ -74,7 +81,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
 
     const stdioServer = options.stdio ? createStateUiMcpServer(dependencies) : undefined;
     if (stdioServer !== undefined) await stdioServer.connect(new StdioServerTransport());
-    options.report.info('Server started', { origin, stdio: options.stdio, dataDir: options.dataDir });
+    options.report.info('Server started', { origin, stdio: options.stdio, dataDir: options.dataDir, statenet: options.statenet !== undefined });
 
     let stopped = false;
     return {
@@ -91,6 +98,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
             await services.browser.close();
             await http.close();
             await services.authorities.close();
+            await services.close();
         }
     };
 }

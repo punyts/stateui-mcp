@@ -1,3 +1,7 @@
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
+import { startStatenet } from '@punyts/statenet';
+import type { RunningStatenet } from '@punyts/statenet';
 import { chromium } from 'playwright';
 import type { Browser, Page, WebSocketRoute } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -277,3 +281,70 @@ describe.skipIf(!installed)('live sync between pages and the server (Chromium th
         await page.close();
     });
 });
+
+describe.skipIf(!installed)('a Persisted app synced through the statenet alone (Chromium through Playwright)', () => {
+    let data: TempData;
+    let statenetData: TempData;
+    let statenet: RunningStatenet;
+    let harness: HttpHarness;
+    let browser: Browser;
+
+    beforeAll(async () => {
+        data = await tempData();
+        statenetData = await tempData();
+        // The statenet admits the pages of one origin, so the server's port is chosen first
+        const port = await freePort();
+        statenet = await startStatenet({ port: 0, dataDir: statenetData.dir, allowedOrigins: [`http://127.0.0.1:${port}`] });
+        harness = await httpHarness(data.dir, undefined, { port, runtimePort: 0, statenet: statenet.url });
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await statenet.close();
+        await data.cleanup();
+        await statenetData.cleanup();
+    });
+
+    it('should show the change one page makes in another, with the state in the statenet', async () => {
+        // Arrange
+        const created = await call(harness.client, 'ui_app_create', { name: 'persisted pages', document: FORM_DOCUMENT, sync: 'persisted' });
+        const appId = created.body['appId'] as string;
+        const context = await browser.newContext();
+        const first = await context.newPage();
+        const second = await context.newPage();
+        const sockets: string[] = [];
+        first.on('websocket', (socket) => sockets.push(socket.url()));
+        for (const page of [first, second]) {
+            await page.goto(`${harness.server.origin}/apps/${appId}`);
+            await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
+        }
+
+        // Act
+        await first.frameLocator('iframe').locator('input').first().fill('shared@statenet.test');
+
+        // Assert
+        await expect.poll(() => second.frameLocator('iframe').locator('input').first().inputValue()).toBe('shared@statenet.test');
+        const stored = await eventually(harness, 'ui_state_get', { appId }, (result) => JSON.stringify(result.body['state']).includes('shared@statenet.test'));
+        expect(stored.body['state']).toMatchObject({ app: { children: { form: { children: { email: { value: 'shared@statenet.test' } } } } } });
+        expect(await first.evaluate(() => document.body.dataset['statenetUrl'])).toBe(statenet.url);
+        // The sync client talks to the statenet; the server's socket carries only the view frames
+        expect(sockets).toHaveLength(2);
+        expect(sockets).toContain(statenet.url);
+        expect(sockets.some((url) => url.startsWith(`${harness.server.origin.replace('http', 'ws')}/apps/${appId}/sync?`))).toBe(true);
+        await context.close();
+    });
+});
+
+/** A port nothing listens on right now */
+function freePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const server = createServer();
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const { port } = server.address() as AddressInfo;
+            server.close(() => resolve(port));
+        });
+    });
+}

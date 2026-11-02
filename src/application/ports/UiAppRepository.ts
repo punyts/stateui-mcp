@@ -1,10 +1,11 @@
 import type { JsonValue } from '../../domain/JsonValue.js';
-import type { UiApp, UiDocument } from '../../domain/UiApp.js';
+import type { UiApp, UiDocument, UiSyncMode } from '../../domain/UiApp.js';
 
 /** What a caller supplies to create an app. The id, revision and timestamps come from the adapter */
 export interface CreateUiAppInput {
     readonly name: string;
     readonly document: UiDocument;
+    readonly sync: UiSyncMode;
 }
 
 /** One row of the app list: no document, no state */
@@ -17,7 +18,9 @@ export interface UiAppSummary {
 
 export type CreateUiAppResult =
     | { readonly kind: 'created'; readonly app: UiApp }
-    | { readonly kind: 'duplicate-name' };
+    | { readonly kind: 'duplicate-name' }
+    /** A Persisted app needs a statenet, and none is configured */
+    | { readonly kind: 'no-statenet' };
 
 /** The outcome of a write. Only `written` changed anything */
 export type UiAppWriteResult =

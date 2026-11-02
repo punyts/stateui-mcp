@@ -77,6 +77,7 @@ export class GetUiApp {
                 revision: app.revision,
                 document: app.document,
                 stateSnapshot: app.stateSnapshot,
+                sync: app.sync,
                 preview: {
                     attached: status.attached,
                     lastSeenAt: status.lastSeenAt?.toISOString() ?? null,

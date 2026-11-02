@@ -21,6 +21,7 @@ export interface UiAppResponse {
     revision: number;
     document: JsonObject;
     stateSnapshot: JsonObject;
+    sync: 'full' | 'persisted';
     preview: UiAppPreviewResponse;
     icons: Record<string, string>;
     createdAt: string;

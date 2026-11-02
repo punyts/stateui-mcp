@@ -27,7 +27,8 @@ export type SetStateRefusal =
     | 'linked'
     | 'runtime-property'
     | 'exposed-property'
-    | 'content-locale-active';
+    | 'content-locale-active'
+    | 'persisted-app';
 
 export type SetStateResult =
     /** `statePath` is where the value was written in the state, such as `$.data.totals` or `$.app.children.name.value` */
@@ -76,6 +77,9 @@ export class SetState {
 
         const app = await this.repository.findById(appId);
         if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
+        if (app.sync === 'persisted') {
+            return this.finish(appId, refuse(appId, 'persisted-app', 'The app is Persisted: its state lives in the statenet and only its views change it').result);
+        }
         if (!isRevisionCurrent(app.revision, input.expectedRevision)) {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: app.revision });
         }

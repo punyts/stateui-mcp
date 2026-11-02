@@ -20,7 +20,9 @@ export class AppAuthorities {
 
     constructor(
         private readonly storage: NamespaceStorage,
-        private readonly onEmit: AppEmitHandler
+        private readonly onEmit: AppEmitHandler,
+        /** The key that encrypts `$.server` at rest; without it an app whose state has `$.server` is refused */
+        private readonly serverKey?: Uint8Array
     ) {}
 
     /** The authority of an app; `document` gives the state at revision 0 when nothing is stored */
@@ -33,10 +35,13 @@ export class AppAuthorities {
                 namespace: appNamespace(key),
                 storage: this.storage,
                 initial: { data: (isJsonObject(data) ? data : {}) as SyncValue, app: {} },
-                createParents: true
+                createParents: true,
+                ...(this.serverKey !== undefined && { serverKey: this.serverKey })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(key, name, value as JsonValue | undefined, clientId));
                 return created;
+            }, (error: unknown) => {
+                throw this.explain(key, error);
             });
             authority.catch(() => this.authorities.delete(key));
             this.authorities.set(key, authority);
@@ -44,9 +49,19 @@ export class AppAuthorities {
         return authority;
     }
 
+    /** A stored `$.server` without a key is the one failure the operator can fix; it gets a message that says how */
+    private explain(appId: string, error: unknown): Error {
+        const message = error instanceof Error ? error.message : String(error);
+        if (this.serverKey === undefined && message.includes('$.server')) {
+            return new Error(`App ${appId} keeps $.server state, which is encrypted: start the server with --secret-key-file or STATEUI_MCP_SECRET_KEY`, { cause: error });
+        }
+        return error instanceof Error ? error : new Error(message);
+    }
+
     /** A copy of the app's state: `{ data, app }` */
     async state(appId: string, document: UiDocument): Promise<JsonObject> {
-        return (await this.authority(appId, document)).state() as JsonObject;
+        const { server: _server, ...state } = (await this.authority(appId, document)).state() as JsonObject;
+        return state;
     }
 
     /** Closes the app's connections, waits for its saves and forgets it; for a deleted app */

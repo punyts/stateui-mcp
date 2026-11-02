@@ -17,6 +17,8 @@ import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
+import { PersistedStates } from '../infrastructure/sync/PersistedStates.js';
+import { StatenetRelayStorage } from '../infrastructure/sync/StatenetRelayStorage.js';
 import type { UiAppRepository } from '../application/ports/UiAppRepository.js';
 
 export interface ServicesOptions {
@@ -27,6 +29,10 @@ export interface ServicesOptions {
     readonly origin: () => string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
+    /** The statenet's WebSocket URL; absent: the state is kept in the data folder and there are no Persisted apps */
+    readonly statenet?: string;
+    /** The key that encrypts `$.server` at rest */
+    readonly serverKey?: Uint8Array;
 }
 
 /** Everything the transports need: the use cases, the live views, the browser and the repository */
@@ -40,6 +46,8 @@ export interface Services {
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
     readonly viewUrl: (appId: string) => string;
+    /** Stops relaying to the statenet, after the relayed changes are acknowledged; after `authorities.close()` */
+    close(): Promise<void>;
 }
 
 /** The composition root of the server: plain factories, no container */
@@ -48,11 +56,17 @@ export function createServices(options: ServicesOptions): Services {
     const lock = new KeyedLock();
     const now = (): Date => new Date();
     const hub = new PreviewHub(now);
-    const authorities = new AppAuthorities(new FileNamespaceStorage(folders), (appId, name, value, viewId) => {
-        hub.recordEvent(appId, viewId, name, value);
-        hub.touch(appId, viewId);
-    });
-    const repository = new FileUiAppRepository(folders, lock, authorities, now);
+    const relay = options.statenet === undefined ? undefined : new StatenetRelayStorage(options.statenet, options.serverKey);
+    const persisted = options.statenet === undefined ? undefined : new PersistedStates(options.statenet);
+    const authorities = new AppAuthorities(
+        relay ?? new FileNamespaceStorage(folders),
+        (appId, name, value, viewId) => {
+            hub.recordEvent(appId, viewId, name, value);
+            hub.touch(appId, viewId);
+        },
+        options.serverKey
+    );
+    const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const { validator, catalog } = createStateUiAdapters();
@@ -70,6 +84,10 @@ export function createServices(options: ServicesOptions): Services {
         liveViews: new LiveViews(useCases.getUiApp, hub, browser),
         browser,
         report: options.report,
-        viewUrl: (appId) => `${options.origin()}/apps/${appId}`
+        viewUrl: (appId) => `${options.origin()}/apps/${appId}`,
+        close: async () => {
+            await relay?.close();
+            await persisted?.close();
+        }
     };
 }

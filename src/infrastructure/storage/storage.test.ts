@@ -30,7 +30,7 @@ const ORDERED: UiDocument = {
 };
 
 async function createApp(name = 'one', document: UiDocument = ORDERED): Promise<string> {
-    const created = await apps.create({ name, document });
+    const created = await apps.create({ name, document, sync: 'full' });
     if (created.kind !== 'created') throw new Error('not created');
     return created.app.id;
 }
@@ -155,7 +155,7 @@ describe('FileUiAppRepository', () => {
     it('should refuse a duplicate name', async () => {
         await createApp('same');
 
-        expect(await apps.create({ name: 'same', document: ORDERED })).toEqual({ kind: 'duplicate-name' });
+        expect(await apps.create({ name: 'same', document: ORDERED, sync: 'full' })).toEqual({ kind: 'duplicate-name' });
     });
 
     it('should list the apps newest first and skip folders that are not apps', async () => {
