@@ -18,7 +18,7 @@
         "node": ">=22"
     },
     "scripts": {
-        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.json",
+        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.json --noEmit && node scripts/build-host.mjs",
         "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
         "test": "vitest run",
         "start": "node dist/cli.js"
@@ -34,13 +34,17 @@
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@punyts/core": "^1.0.0",
+        "@punyts/state-sync": "^0.7.0",
         "@punyts/stateui-app": "^0.1.0",
         "@punyts/stateui-components": "^0.1.0",
         "busboy": "^1.6.0",
-        "playwright": "^1.61.1"
+        "playwright": "^1.61.1",
+        "ws": "^8.21.1"
     },
     "devDependencies": {
         "@types/node": "^26.1.1",
+        "@types/ws": "^8.18.1",
+        "esbuild": "^0.28.1",
         "typescript": "^5.9.3",
         "vitest": "^4.1.10"
     }

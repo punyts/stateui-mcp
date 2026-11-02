@@ -1,5 +1,8 @@
 import busboy from 'busboy';
 import { createServer } from 'node:http';
+import type { Duplex } from 'node:stream';
+import { WebSocketServer } from 'ws';
+import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { UiAppRepository } from '../../application/ports/UiAppRepository.js';
@@ -7,11 +10,11 @@ import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
-import type { JsonValue } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { isAppId } from '../storage/AppFolders.js';
 import type { LiveViews } from '../preview/LiveViews.js';
+import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle } from './runtimeBundle.js';
@@ -32,6 +35,8 @@ export interface HttpServerOptions {
     readonly useCases: UiBuilderUseCases;
     readonly repository: UiAppRepository;
     readonly hub: PreviewHub;
+    /** The sync authority of each app, which the views' sockets connect to */
+    readonly authorities: AppAuthorities;
     readonly liveViews: LiveViews;
     readonly mcp: McpEndpoint;
     readonly runtime: RuntimeBundle;
@@ -52,7 +57,8 @@ export interface RunningHttpServer {
 const MAX_JSON_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_REPORT_BODY_BYTES = 2 * 1024 * 1024;
 const KEEP_ALIVE_MS = 15_000;
-const MAX_EVENT_NAME = 256;
+/** A sync message is at most 1,000,000 characters (`parseMessage`); a frame may hold that many bytes of UTF-8 twice over */
+const MAX_SYNC_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_REPORTED_ERRORS = 50;
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -129,8 +135,8 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * |---|---|
  * | `GET /` | the apps, with a link to each |
  * | `GET /apps/:appId` | the live view of an app |
- * | `GET /apps/:appId/events` | the event stream of a view (server to view) |
- * | `POST /apps/:appId/report` | what a view tells the server: state, `emit` events, errors, ready |
+ * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
+ * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
@@ -145,7 +151,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
-    const { useCases, repository, hub, liveViews, runtime, report } = options;
+    const { useCases, repository, hub, authorities, liveViews, runtime, report } = options;
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
     // Both known after listen, so a port of 0 works
@@ -206,7 +212,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             if (!isAppId(appId)) throw new HttpError(400, 'An app id is a UUID', 'invalid_id');
             const rest = parts.slice(2);
             if (method === 'GET' && rest.length === 0) return appRoute(request, response, appId);
-            if (method === 'GET' && rest.length === 1 && rest[0] === 'events') return eventsRoute(request, response, appId, url);
             if (method === 'POST' && rest.length === 1 && rest[0] === 'report') return reportRoute(request, response, appId);
             if (method === 'POST' && rest.length === 1 && rest[0] === 'files') return uploadRoute(request, response, appId);
             if (method === 'GET' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return downloadRoute(response, appId, rest[1]);
@@ -228,41 +233,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         );
     }
 
-    async function eventsRoute(request: IncomingMessage, response: ServerResponse, appId: string, url: URL): Promise<void> {
-        const viewId = url.searchParams.get('view');
-        if (!isUuid(viewId)) throw new HttpError(400, 'The view parameter is a UUID', 'invalid_view');
-        const first = await liveViews.attachMessage(appId);
-        if (first === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-
-        response.writeHead(200, {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-store',
-            Connection: 'keep-alive',
-            'X-Accel-Buffering': 'no',
-            ...COMMON_HEADERS
-        });
-        const write = (message: ViewMessage): void => {
-            response.write(`data: ${JSON.stringify(message)}\n\n`);
-        };
-        const connection: ViewConnection = {
-            id: viewId,
-            kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser',
-            send: write
-        };
-        const detach = hub.attach(appId, connection);
-        const timer = setInterval(() => response.write(': keep-alive\n\n'), KEEP_ALIVE_MS);
-        let closed = false;
-        const cleanup = (): void => {
-            if (closed) return;
-            closed = true;
-            clearInterval(timer);
-            detach();
-        };
-        request.on('close', cleanup);
-        response.on('close', cleanup);
-        write(first);
-    }
-
     async function reportRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const body = await readJsonBody(request, MAX_REPORT_BODY_BYTES);
         if (!isJsonObject(body) || !isUuid(typeof body['viewId'] === 'string' ? body['viewId'] : null)) {
@@ -279,25 +249,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 hub.touch(appId, viewId, { ...(revision !== undefined && { revision }) });
                 sendJson(response, 200, { ok: true });
                 return;
-            case 'state': {
-                if (revision === undefined) throw new HttpError(400, 'A state report needs the revision it rendered', 'invalid_report');
-                const saved = await useCases.savePreviewState.execute(appId, { snapshot: body['snapshot'] as JsonValue, expectedRevision: revision });
-                hub.touch(appId, viewId);
-                if (saved.kind === 'saved') sendJson(response, 200, { ok: true, revision: saved.revision });
-                else if (saved.kind === 'conflict') sendJson(response, 409, { error: 'conflict', currentRevision: saved.currentRevision });
-                else if (saved.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
-                else throw new HttpError(400, saved.reason, 'invalid_report');
-                return;
-            }
-            case 'emit': {
-                const name = body['name'];
-                if (typeof name !== 'string' || name === '' || name.length > MAX_EVENT_NAME) throw new HttpError(400, 'An emit report needs a name', 'invalid_report');
-                if ((await repository.findById(appId)) === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-                hub.recordEvent(appId, viewId, name, body['payload'] as JsonValue | undefined);
-                hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
             case 'errors': {
                 const errors = toBuildErrors(body['errors']);
                 if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
@@ -305,14 +256,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision);
                 if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
                 hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            case 'snapshot-reply': {
-                const requestId = body['requestId'];
-                const snapshot = body['snapshot'];
-                if (typeof requestId !== 'string' || (snapshot !== null && !isJsonObject(snapshot))) throw new HttpError(400, 'A snapshot reply needs a requestId and a snapshot', 'invalid_report');
-                hub.answerSnapshot(appId, requestId, snapshot);
                 sendJson(response, 200, { ok: true });
                 return;
             }
@@ -396,6 +339,63 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         })();
     };
 
+    const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_SYNC_FRAME_BYTES });
+
+    /** Refuses an upgrade with a plain HTTP answer and closes the socket */
+    function refuseUpgrade(socket: Duplex, status: number, reason: string): void {
+        socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    }
+
+    /**
+     * `GET /apps/:appId/sync`: the WebSocket of one view. The view joins the hub (document, commands, locale, theme and
+     * deletion reach it as `{ type: 'view', message }` frames, the attach message first) and connects to the app's
+     * sync authority, which gets every other text frame. Closing the socket leaves both
+     */
+    async function syncUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+        if (!isAllowedHost(request.headers.host, options.host)) return refuseUpgrade(socket, 403, 'Forbidden');
+        // A browser always sends Origin with a WebSocket, so a page of another origin cannot open one
+        if (!isSameOrigin(request)) return refuseUpgrade(socket, 403, 'Forbidden');
+        const url = new URL(request.url ?? '/', 'http://localhost');
+        const parts = url.pathname.split('/').filter((part) => part !== '');
+        const appId = parts[1];
+        const viewId = url.searchParams.get('view');
+        if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
+        if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
+        const app = await repository.findById(appId);
+        const first = app === undefined ? undefined : await liveViews.attachMessage(appId);
+        if (app === undefined || first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
+        const authority = await authorities.authority(appId, app.document);
+        sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
+            const sendView = (message: ViewMessage): void => {
+                if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
+            };
+            const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
+            const detach = hub.attach(appId, connection);
+            sendView(first);
+            const session = authority.connect({
+                send: (text) => {
+                    if (ws.readyState === ws.OPEN) ws.send(text);
+                },
+                close: () => ws.close()
+            });
+            const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
+            ws.on('message', (data, isBinary) => {
+                if (isBinary) {
+                    ws.close(1003, 'Text frames only');
+                    return;
+                }
+                hub.touch(appId, viewId);
+                session.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
+            });
+            ws.on('error', () => ws.terminate());
+            ws.on('close', () => {
+                clearInterval(timer);
+                session.close();
+                detach();
+            });
+        });
+    }
+
     const listen = (target: Server, port: number): Promise<AddressInfo> =>
         new Promise<AddressInfo>((resolve, reject) => {
             target.once('error', reject);
@@ -412,6 +412,13 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     const server: Server = createServer(handler(route));
     const runtimeServer: Server = createServer(handler(runtimeRoute));
+    server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+        socket.on('error', () => socket.destroy());
+        syncUpgrade(request, socket, head).catch((error: unknown) => {
+            report.info('Sync connection failed', { path: request.url?.split('?')[0], error: error instanceof Error ? error.message : String(error) });
+            if (!socket.destroyed) refuseUpgrade(socket, 500, 'Internal Server Error');
+        });
+    });
     const address = await listen(server, options.port);
     mainPort = address.port;
     try {
@@ -426,6 +433,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         port: address.port,
         runtimePort,
         close: async () => {
+            // Upgraded sockets are no longer the HTTP server's connections
+            for (const client of sockets.clients) client.terminate();
+            sockets.close();
             await Promise.all([stop(server), stop(runtimeServer)]);
         }
     };

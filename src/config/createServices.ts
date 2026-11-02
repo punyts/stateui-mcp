@@ -15,6 +15,8 @@ import { FileUiErrorLog } from '../infrastructure/storage/FileUiErrorLog.js';
 import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileRepository.js';
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
+import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
+import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import type { UiAppRepository } from '../application/ports/UiAppRepository.js';
 
 export interface ServicesOptions {
@@ -32,6 +34,8 @@ export interface Services {
     readonly useCases: UiBuilderUseCases;
     readonly repository: UiAppRepository;
     readonly hub: PreviewHub;
+    /** The sync authority of each app: the views connect to it, the tools write through it */
+    readonly authorities: AppAuthorities;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
@@ -43,10 +47,14 @@ export function createServices(options: ServicesOptions): Services {
     const folders = new AppFolders(options.dataDir);
     const lock = new KeyedLock();
     const now = (): Date => new Date();
-    const repository = new FileUiAppRepository(folders, lock, now);
+    const hub = new PreviewHub(now);
+    const authorities = new AppAuthorities(new FileNamespaceStorage(folders), (appId, name, value, viewId) => {
+        hub.recordEvent(appId, viewId, name, value);
+        hub.touch(appId, viewId);
+    });
+    const repository = new FileUiAppRepository(folders, lock, authorities, now);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
-    const hub = new PreviewHub(now);
     const { validator, catalog } = createStateUiAdapters();
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
@@ -58,6 +66,7 @@ export function createServices(options: ServicesOptions): Services {
         useCases,
         repository,
         hub,
+        authorities,
         liveViews: new LiveViews(useCases.getUiApp, hub, browser),
         browser,
         report: options.report,

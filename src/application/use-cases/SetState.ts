@@ -30,7 +30,7 @@ export type SetStateRefusal =
     | 'content-locale-active';
 
 export type SetStateResult =
-    /** `statePath` is where the value was written in the snapshot, such as `$.data.totals` or `$.app.children.name.value` */
+    /** `statePath` is where the value was written in the state, such as `$.data.totals` or `$.app.children.name.value` */
     | { readonly kind: 'written'; readonly appId: string; readonly revision: number; readonly path: string; readonly statePath: string }
     | { readonly kind: 'refused'; readonly appId: string; readonly reason: SetStateRefusal; readonly message: string }
     /** The value does not fit the property's shape, or a key in it is integer-like (`SUI-DOC-ORDER`) */
@@ -52,9 +52,10 @@ function refuse(appId: string, reason: SetStateRefusal, message: string): { ok: 
 }
 
 /**
- * Writes one value into the state snapshot: a `$.data` path, or an articulation property of a node. It refuses
+ * Writes one value into the app's synced state: a `$.data` path, or an articulation property of a node. It refuses
  * links, runtime and exposed properties, `$.runtime`, unknown paths and, while a language is active, `_` content,
- * and checks the value against the component's shape. The write is compare-and-set on the revision
+ * and checks the value against the component's shape. The write is checked against the revision (it does not raise it)
+ * and reaches every open view at once
  */
 export class SetState {
     constructor(
@@ -108,7 +109,7 @@ export class SetState {
         );
         if (orderErrors.length > 0) return this.finish(appId, { kind: 'invalid', appId, errors: orderErrors });
 
-        const written = await this.repository.writeStateSnapshot(appId, applied.document, app.revision);
+        const written = await this.repository.writeState(appId, snapshotPath, input.value, app.revision);
         if (written.kind === 'conflict') {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
         }

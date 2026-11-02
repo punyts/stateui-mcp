@@ -1,9 +1,21 @@
+import { chromium } from 'playwright';
+import type { Browser, Page, WebSocketRoute } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
 import { FORM_DOCUMENT, call, httpHarness, tempData } from './helpers.js';
-import type { HttpHarness, TempData } from './helpers.js';
+import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 
 const installed = await BrowserPreview.isInstalled();
+
+/** Calls a tool until its result passes the check, for state that reaches the server over the page's socket */
+async function eventually(harness: HttpHarness, name: string, args: Record<string, unknown>, check: (result: ToolResult) => boolean): Promise<ToolResult> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+        const result = await call(harness.client, name, args);
+        if (check(result) || Date.now() > deadline) return result;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+}
 
 describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)', () => {
     let data: TempData;
@@ -71,13 +83,12 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect((after.body['events'] as { name: string; payload: unknown }[]).map((event) => [event.name, event.payload])).toEqual([['form.saved', 'ok']]);
     });
 
-    it('should read the typed value live from the page', async () => {
+    it('should have the typed value synced to the server', async () => {
         // Act
-        const state = await call(harness.client, 'ui_state_get', { appId });
+        const state = await eventually(harness, 'ui_state_get', { appId }, (result) => JSON.stringify(result.body['state']).includes('a@b.test'));
 
         // Assert
-        expect(state.body['source']).toBe('live');
-        expect(JSON.stringify(state.body['snapshot'])).toContain('a@b.test');
+        expect(JSON.stringify(state.body['state'])).toContain('a@b.test');
         expect((state.body['preview'] as { attached: boolean }).attached).toBe(true);
     });
 
@@ -125,8 +136,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
 
         // Assert
         expect(preview.body['rendered']).toBe(true);
-        expect(state.body['source']).toBe('live');
-        expect((state.body['snapshot'] as { data: unknown }).data).toMatchObject({ tasks: { t1: { title: 'first' }, t2: { title: 'second' } } });
+        expect((state.body['state'] as { data: unknown }).data).toMatchObject({ tasks: { t1: { title: 'first' }, t2: { title: 'second' } } });
     });
 
     it('should refuse at once a screenshot of a node that is rendered but not visible', async () => {
@@ -147,34 +157,123 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(shot.body['message'])).toContain('not visible');
         expect(Date.now() - started).toBeLessThan(10_000);
     });
+});
 
-    it('should keep what a view computed when later state sets follow one another', async () => {
-        // Arrange: a stat formats its linked value into the runtime property shown, which the view reports back
-        const created = await call(harness.client, 'ui_app_create', {
-            name: 'totals',
-            document: {
-                app: { component: 'page', children: { total: { component: 'stat', format: 'number', '<-value': '$.data.totals.month' } } },
-                data: { totals: { month: 1, count: 1 }, other: { n: 0 }, draft: { text: 'x' } }
-            }
-        });
-        const totalsAppId = created.body['appId'] as string;
-        await call(harness.client, 'ui_preview', { appId: totalsAppId });
+describe.skipIf(!installed)('live sync between pages and the server (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
 
-        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.totals', value: { month: 2, count: 2 } });
-        //the view reports its state at most once a second: let a report with shown "2" be stored
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+    });
 
-        // Act: the writes an agent makes after an add, one after another, faster than the view reports
-        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.totals', value: { month: 3, count: 3 } });
-        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.other.n', value: 3 });
-        await call(harness.client, 'ui_state_set', { appId: totalsAppId, path: '$.data.draft', value: { text: '' } });
-        await call(harness.client, 'ui_preview', { appId: totalsAppId });
-        const state = await call(harness.client, 'ui_state_get', { appId: totalsAppId });
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    async function createForm(name: string): Promise<string> {
+        const created = await call(harness.client, 'ui_app_create', { name, document: FORM_DOCUMENT });
+        return created.body['appId'] as string;
+    }
+
+    /** A page of the app that has rendered and whose socket is online */
+    async function openPage(page: Page, appId: string): Promise<void> {
+        await page.goto(`${harness.server.origin}/apps/${appId}`);
+        await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
+    }
+
+    function email(page: Page) {
+        return page.frameLocator('iframe').locator('input').first();
+    }
+
+    it('should show a tool write in an open page', async () => {
+        // Arrange
+        const appId = await createForm('tool write');
+        const page = await browser.newPage();
+        await openPage(page, appId);
+
+        // Act
+        await call(harness.client, 'ui_state_set', { appId, path: '$.app.children.form.children.email.value', value: 'from@tool.test' });
 
         // Assert
-        const snapshot = state.body['snapshot'] as { app: { children: { total: { shown: string } } }; data: { draft: unknown } };
-        expect(state.body['source']).toBe('live');
-        expect(snapshot.app.children.total.shown).toBe('3');
-        expect(snapshot.data.draft).toEqual({ text: '' });
+        await expect.poll(() => email(page).inputValue()).toBe('from@tool.test');
+        await page.close();
+    });
+
+    it('should show the change one page makes in another', async () => {
+        // Arrange
+        const appId = await createForm('two pages');
+        const context = await browser.newContext();
+        const first = await context.newPage();
+        const second = await context.newPage();
+        await openPage(first, appId);
+        await openPage(second, appId);
+
+        // Act
+        await email(first).fill('shared@pages.test');
+
+        // Assert
+        await expect.poll(() => email(second).inputValue()).toBe('shared@pages.test');
+        await context.close();
+    });
+
+    it('should keep a change made offline across a reload and send it when the socket is back', async () => {
+        // Arrange: the page's socket goes through a route that can cut it
+        const appId = await createForm('offline');
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        let offline = false;
+        const open = new Set<WebSocketRoute>();
+        await page.routeWebSocket(/\/sync\?/, (route) => {
+            if (offline) {
+                route.close();
+                return;
+            }
+            open.add(route);
+            route.connectToServer();
+        });
+        await openPage(page, appId);
+
+        // Act: cut the socket, type, reload while still offline, then let the socket back
+        offline = true;
+        for (const route of open) await route.close();
+        await page.waitForSelector('body[data-sync="offline"]');
+        await email(page).fill('typed@offline.test');
+        await page.reload();
+        await page.waitForSelector('body[data-status="ready"]');
+        const shownAfterReload = await email(page).inputValue();
+        const serverWhileOffline = await call(harness.client, 'ui_state_get', { appId });
+        offline = false;
+        const synced = await eventually(harness, 'ui_state_get', { appId }, (result) => JSON.stringify(result.body['state']).includes('typed@offline.test'));
+
+        // Assert
+        expect(shownAfterReload).toBe('typed@offline.test');
+        expect(JSON.stringify(serverWhileOffline.body['state'])).not.toContain('typed@offline.test');
+        expect(JSON.stringify(synced.body['state'])).toContain('typed@offline.test');
+        await context.close();
+    });
+
+    it('should put back the confirmed value when the server rejects a change', async () => {
+        // Arrange: server logic that refuses every change to the form
+        const appId = await createForm('rejected');
+        const app = await harness.server.services.repository.findById(appId);
+        const authority = await harness.server.services.authorities.authority(appId, app?.document ?? {});
+        authority.onChange('$.app.children.form', () => ({ result: 'reject', reason: 'read only' }));
+        const page = await browser.newPage();
+        await openPage(page, appId);
+
+        // Act
+        await email(page).fill('refused@server.test');
+
+        // Assert
+        await expect.poll(() => email(page).inputValue()).toBe('');
+        const state = await call(harness.client, 'ui_state_get', { appId });
+        expect(JSON.stringify(state.body['state'])).not.toContain('refused@server.test');
+        await page.close();
     });
 });

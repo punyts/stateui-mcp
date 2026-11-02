@@ -89,7 +89,7 @@ function toOperation(item: OperationItem, index: number): WriteOperation | ToolO
 /** The write tools: change the document or the state. Every open view follows the change at once */
 export function createWriteTools(
     useCases: Pick<UiBuilderUseCases, 'writeApp' | 'setState'>,
-    live: Pick<LiveViews, 'appChanged'>
+    live: Pick<LiveViews, 'documentChanged'>
 ): readonly UiToolDefinition[] {
     return [
         {
@@ -110,7 +110,7 @@ export function createWriteTools(
                 const result = await useCases.writeApp.execute(appId, operations, expectedRevision);
                 switch (result.kind) {
                     case 'written':
-                        await live.appChanged(result.appId, 'document');
+                        await live.documentChanged(result.appId);
                         return succeed({ appId: result.appId, revision: result.revision, warnings: result.warnings });
                     case 'invalid':
                         return fail('invalid-document', 'The result has blocking errors or the call is over a limit; nothing was written', {
@@ -133,7 +133,7 @@ export function createWriteTools(
         {
             name: 'ui_state_set',
             description:
-                'Set one value in the state snapshot: a "$.data..." path, or a property of a node such as "$.app.children.name.value". Links, runtime and exposed properties are refused with the reason. Content text of an app with an active language is changed with ui_app_write instead. Returns { appId, revision, path }.',
+                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". Open views get the value at once. Links, runtime and exposed properties are refused with the reason. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
             inputSchema: STATE_SET.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -147,7 +147,6 @@ export function createWriteTools(
                 });
                 switch (result.kind) {
                     case 'written':
-                        await live.appChanged(result.appId, 'state', result.statePath);
                         return succeed({ appId: result.appId, revision: result.revision, path: result.path });
                     case 'refused':
                         return fail(result.reason, result.message, { appId: result.appId });

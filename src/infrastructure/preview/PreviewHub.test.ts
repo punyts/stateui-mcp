@@ -68,27 +68,20 @@ describe('PreviewHub', () => {
         expect(none).toEqual({ events: [], cursor: 2 });
     });
 
-    it('should resolve a snapshot request with the answer of the ready view and ignore foreign answers', async () => {
+    it('should keep a view that reconnected with its id when the old connection goes away', () => {
+        // Arrange
         const hub = new PreviewHub();
-        const view = connect(hub, 'a');
-        hub.touch(APP, 'a', { ready: true });
+        const old = connect(hub, 'a');
+        const again = connect(hub, 'a');
 
-        const pending = hub.requestSnapshot(APP, 1000);
-        const request = view.messages.find((message) => message.type === 'snapshot-request');
-        const foreign = hub.answerSnapshot('22222222-2222-4222-8222-222222222222', request?.type === 'snapshot-request' ? request.requestId : '', null);
-        if (request?.type === 'snapshot-request') hub.answerSnapshot(APP, request.requestId, { data: { a: 1 }, app: {} });
+        // Act
+        old.detach();
+        hub.publish(APP, { type: 'deleted' });
 
-        expect(foreign).toBe(false);
-        expect(await pending).toEqual({ data: { a: 1 }, app: {} });
-    });
-
-    it('should answer a snapshot request with undefined when no ready view answers', async () => {
-        const hub = new PreviewHub();
-        connect(hub, 'a');
-
-        expect(await hub.requestSnapshot(APP, 20)).toBeUndefined();
-        hub.touch(APP, 'a', { ready: true });
-        expect(await hub.requestSnapshot(APP, 20)).toBeUndefined();
+        // Assert
+        expect(hub.viewCount(APP)).toBe(1);
+        expect(old.messages).toEqual([]);
+        expect(again.messages).toEqual([{ type: 'deleted' }]);
     });
 
     it('should tell the views the app is gone and forget its events', () => {

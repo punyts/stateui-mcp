@@ -9,8 +9,6 @@ import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
 
-/** How long ui_state_get waits for an open view to report the state its runtime holds now */
-const LIVE_STATE_TIMEOUT_MS = 1500;
 export const MAX_INTERACT_ACTIONS = 20;
 
 const STATE_GET = defineInput({ appId: APP_ID });
@@ -87,7 +85,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_state_get',
             description:
-                'Read the state of an application: the data and articulation (what the user typed or picked) in a { data, app } snapshot. When a view is open it is read live from the running app (source "live"); otherwise it is the stored snapshot (source "stored"). Also returns the preview block: whether a view is open and its runtime errors. Returns { appId, revision, source, snapshot, preview }.',
+                'Read the state of an application: the data and articulation (what the user typed or picked) as { data, app }. The state is synced with every open view, so it holds what the user typed a moment ago, and a view that was offline sends its changes when it reconnects. Also returns the preview block: whether a view is open and its runtime errors. Returns { appId, revision, state, preview }.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -95,15 +93,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if (!parsed.ok) return invalidArgument(parsed);
                 const result = await useCases.getState.execute(parsed.value.appId);
                 if (result.kind === 'not-found') return notFound(result.appId);
-                const live = await hub.requestSnapshot(result.appId, LIVE_STATE_TIMEOUT_MS);
-                const source = live !== undefined && live !== null ? 'live' : 'stored';
-                return succeed({
-                    appId: result.appId,
-                    revision: result.revision,
-                    source,
-                    snapshot: live !== undefined && live !== null ? live : result.snapshot,
-                    preview: result.preview
-                });
+                return succeed({ appId: result.appId, revision: result.revision, state: result.state, preview: result.preview });
             }
         },
         {

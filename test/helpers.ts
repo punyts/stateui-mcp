@@ -79,6 +79,7 @@ export async function inMemoryHarness(dataDir: string, browser: PreviewBrowser =
         close: async () => {
             await client.close();
             await server.close();
+            await services.authorities.close();
         }
     };
 }

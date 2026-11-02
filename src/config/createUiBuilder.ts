@@ -15,7 +15,6 @@ import { ReadFile } from '../application/use-cases/ReadFile.js';
 import { ReadFileText } from '../application/use-cases/ReadFileText.js';
 import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewErrors.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
-import { SavePreviewState } from '../application/use-cases/SavePreviewState.js';
 import { SetState } from '../application/use-cases/SetState.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
@@ -57,7 +56,6 @@ export interface UiBuilderUseCases {
     readonly getState: GetState;
     readonly setState: SetState;
     readonly runCommand: RunCommand;
-    readonly savePreviewState: SavePreviewState;
     readonly recordPreviewErrors: RecordPreviewErrors;
     readonly uploadFile: UploadFile;
     readonly readFile: ReadFile;
@@ -85,7 +83,6 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         getState: new GetState(repository, previewLog, now, report),
         setState: new SetState(repository, validator, report),
         runCommand: new RunCommand(repository, catalog, previewLog, now, newId, report),
-        savePreviewState: new SavePreviewState(repository, previewLog, now, report),
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, now, report), newId, report),
         readFile,

@@ -1,29 +1,42 @@
 /**
- * The host script of the live view page (`GET /apps/:appId`). It runs in the page, not in Node, and has no imports:
- * the server serves the compiled file as `/assets/host.js` under a policy that allows scripts from the page's own
- * origin only.
+ * The host script of the live view page (`GET /apps/:appId`). It runs in the page, not in Node. The server serves it
+ * bundled (esbuild, with `@punyts/state-sync`) as `/assets/host.js` under a policy that allows scripts from the page's
+ * own origin only.
  *
  * It does what the minion UI's preview host does for the runtime: it puts the content-hashed runtime page into a
  * sandboxed iframe served from the runtime origin (the server's second port, `allow-scripts allow-same-origin`: the
  * frame keeps that origin, which is not the page's, so it cannot reach the page; a browser that refuses frames with an
  * opaque origin still shows it), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a
- * per-load nonce, and checks every message by source, origin and nonce. Where the
- * minion UI talks to the API over a socket, this host talks to the server over one server-sent event stream (server
- * to view) and `POST /apps/:appId/report` (view to server).
+ * per-load nonce, and checks every message by source, origin and nonce.
  *
- * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, and
- * `revision` is the revision the runtime rendered.
+ * The app runs in Full mode: one WebSocket (`/apps/:appId/sync`) carries the state-sync protocol between the page's
+ * sync client and the app's authority on the server, and `{ type: 'view', message }` frames from the server (the
+ * document, commands, locale, theme, deletion). The sync client keeps the confirmed state and the changes not yet
+ * acknowledged in `localStorage`, with the document beside them, so the app opens and takes changes offline and sends
+ * them when the socket is back. `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
+ * and its errors.
+ *
+ * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
+ * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
  */
 
-type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@punyts/state-sync';
+import type { JsonValue, LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
+
+type Json = JsonValue;
 type JsonRecord = { [key: string]: Json };
+
+/** The synced part of the runtime store that the frame shows */
+interface ViewState {
+    data: JsonRecord;
+    app: JsonRecord;
+}
+
+type ChangeOp = 'set' | 'replace' | 'merge' | 'delete';
 
 const PROTOCOL_VERSION = 1;
 const MAX_WRITES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const SNAPSHOT_THROTTLE_MS = 1000;
-/** A snapshot request is answered from the copy when the runtime does not answer its ping in time */
-const PONG_TIMEOUT_MS = 500;
 const ALLOWED_FILE_TYPES = [
     'image/png',
     'image/jpeg',
@@ -37,6 +50,11 @@ const ALLOWED_FILE_TYPES = [
     'text/markdown',
     'application/json'
 ];
+/** Keys of a node that belong to the document, never to the synced state */
+const NODE_KEYS: readonly string[] = ['component', 'on', 'layout', 'placement', 'theme'];
+const CONTENT_PREFIX = '_';
+const SEGMENT = /^[^.\s]+$/;
+const VIEW_FRAME = '{"type":"view"';
 
 interface PathWrite {
     path: string;
@@ -46,11 +64,9 @@ interface PathWrite {
 
 interface AppMessage {
     type: 'app';
-    reason: 'attach' | 'document' | 'state';
-    statePath?: string;
+    reason: 'attach' | 'document';
     revision: number;
     document: JsonRecord;
-    stateSnapshot: JsonRecord;
     icons: Record<string, string>;
 }
 
@@ -59,7 +75,6 @@ type ServerMessage =
     | { type: 'command'; id: string; target: string; command: string; value?: Json; expiresAt: string }
     | { type: 'locale'; locale: string }
     | { type: 'theme'; kind: string; name: string }
-    | { type: 'snapshot-request'; requestId: string }
     | { type: 'deleted' };
 
 interface RuntimeMessage {
@@ -81,6 +96,10 @@ function isJson(value: unknown): value is Json {
     return false;
 }
 
+function copy<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function deepEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true;
     if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]));
@@ -91,90 +110,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
     return false;
 }
 
-const SEGMENT = /^[^.\s]+$/;
-
-/**
- * The leaf writes that turn `a` into `b` below `path`, or false when a write cannot carry the change: an array of
- * another length, a key a path cannot hold, a non-JSON value or too many writes. A key only `a` has is left alone,
- * because a snapshot is sparse (it holds what changed, not everything)
- */
-function diffLeaves(path: string, a: unknown, b: unknown, writes: PathWrite[]): boolean {
-    if (deepEqual(a, b)) return true;
-    if (isRecord(b) && isRecord(a)) {
-        for (const key of Object.keys(b)) {
-            if (!SEGMENT.test(key)) return false;
-            if (!diffLeaves(`${path}.${key}`, a[key], b[key], writes)) return false;
-        }
-        return writes.length <= MAX_WRITES;
-    }
-    if (Array.isArray(b) && Array.isArray(a)) {
-        if (a.length !== b.length) return false;
-        return a.every((item, index) => diffLeaves(`${path}.${index}`, item, b[index], writes));
-    }
-    //a new key, or a value of another kind, is written whole: the store creates no parents, so writes to the leaves
-    //of a new object would all be refused
-    if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
-    writes.push({ path, value: b });
-    return writes.length <= MAX_WRITES;
-}
-
-/** The value at the segments below a value, or undefined where a step is missing */
-function valueAt(value: unknown, segments: readonly string[]): unknown {
-    let current = value;
-    for (const segment of segments) {
-        if (!isRecord(current) && !Array.isArray(current)) return undefined;
-        current = (current as Record<string, unknown>)[segment];
-    }
-    return current;
-}
-
-/** A copy of the view state with the writes applied, as the store applies them: a set replaces the value at its path */
-function withWrites(state: { data: JsonRecord; app: JsonRecord }, writes: readonly PathWrite[]): { data: JsonRecord; app: JsonRecord } {
-    const copy = JSON.parse(JSON.stringify(state)) as { data: JsonRecord; app: JsonRecord };
-    for (const write of writes) {
-        const segments = write.path.replace(/^$./, '').split('.');
-        const parent = valueAt(copy, segments.slice(0, -1));
-        if (!isRecord(parent) && !Array.isArray(parent)) continue;
-        const key = segments[segments.length - 1]!;
-        if (write.remove === true) delete (parent as Record<string, unknown>)[key];
-        else (parent as Record<string, unknown>)[key] = JSON.parse(JSON.stringify(write.value ?? null));
-    }
-    return copy;
-}
-
-/**
- * The writes that make the view's value at a written path the snapshot's: the server replaced the value (keys it no
- * longer has are removed) and created missing parents, which the store does not, so a parent the view has neither
- * reported nor been sent is a full load (undefined)
- */
-function statePathWrites(statePath: string, base: JsonRecord, snapshot: JsonRecord, previous: JsonRecord): PathWrite[] | undefined {
-    const segments = statePath.replace(/^$./, '').split('.');
-    if (!segments.every((segment) => SEGMENT.test(segment))) return undefined;
-    //the view may report a snapshot it took before it applied the last writes, so a parent the server sent before counts too
-    const holds = (state: JsonRecord): boolean => {
-        const parent = valueAt(state, segments.slice(0, -1));
-        return isRecord(parent) || Array.isArray(parent);
-    };
-    if (!holds(base) && !holds(previous)) return undefined;
-    const value = valueAt(snapshot, segments);
-    if (value === undefined) return [{ path: statePath, remove: true }];
-    const writes: PathWrite[] = [];
-    return diffDocumentPart(statePath, valueAt(base, segments), value, writes) ? writes : undefined;
-}
-
-/** A document change as writes: `data` and `app` change through writes, anything else (theme, locales, composed) is a full load */
-function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
-    const { data: previousData, app: previousApp, ...previousRest } = previous;
-    const { data: nextData, app: nextApp, ...nextRest } = next;
-    if (!deepEqual(previousRest, nextRest)) return 'load';
-    const writes: PathWrite[] = [];
-    const ok = diffDocumentPart('$.data', previousData ?? {}, nextData ?? {}, writes) && diffDocumentPart('$.app', previousApp, nextApp, writes);
-    if (!ok || writes.length > MAX_WRITES) return 'load';
-    return writes.length === 0 ? 'none' : writes;
-}
-
-/** Like `diffLeaves`, but a key that only the old document has is removed: a document is complete, not sparse */
-function diffDocumentPart(path: string, a: unknown, b: unknown, writes: PathWrite[]): boolean {
+/** The writes that turn `a` into `b` below `path`; a key that only `a` has is removed. False when writes cannot carry it */
+function diffComplete(path: string, a: unknown, b: unknown, writes: PathWrite[]): boolean {
     if (deepEqual(a, b)) return true;
     if (isRecord(a) && isRecord(b)) {
         for (const key of Object.keys(a)) {
@@ -189,7 +126,7 @@ function diffDocumentPart(path: string, a: unknown, b: unknown, writes: PathWrit
             if (!(key in a)) {
                 if (!isJson(value)) return false;
                 writes.push({ path: child, value });
-            } else if (!diffDocumentPart(child, a[key], value, writes)) {
+            } else if (!diffComplete(child, a[key], value, writes)) {
                 return false;
             }
         }
@@ -197,11 +134,114 @@ function diffDocumentPart(path: string, a: unknown, b: unknown, writes: PathWrit
     }
     if (Array.isArray(a) && Array.isArray(b)) {
         if (a.length !== b.length) return false;
-        return a.every((item, index) => diffDocumentPart(`${path}.${index}`, item, b[index], writes));
+        return a.every((item, index) => diffComplete(`${path}.${index}`, item, b[index], writes));
     }
     if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
     writes.push({ path, value: b });
     return writes.length <= MAX_WRITES;
+}
+
+/**
+ * The writes that turn the articulation `before` into `after` below `path` in `$.app`, where the frame holds the whole
+ * node tree of the document and the synced state holds only the articulation. It descends while the document has an
+ * object at the path (a node, or an object property) and writes a value whole below it, so the runtime store, which
+ * creates no parents, finds the parent. A value the state no longer has cannot be put back by a write: false, a load
+ */
+function diffArticulation(path: string, before: unknown, after: unknown, documentValue: unknown, writes: PathWrite[]): boolean {
+    if (deepEqual(before, after)) return true;
+    if (after === undefined || path === '$.app' ? !isRecord(after) : false) return false;
+    if (isRecord(after) && isRecord(documentValue)) {
+        if (isRecord(before) && Object.keys(before).some((key) => !(key in after))) return false;
+        for (const key of Object.keys(after)) {
+            if (!SEGMENT.test(key)) return false;
+            if (!diffArticulation(`${path}.${key}`, isRecord(before) ? before[key] : undefined, after[key], documentValue[key], writes)) return false;
+        }
+        return writes.length <= MAX_WRITES;
+    }
+    if (path === '$.app') return false;
+    writes.push({ path, value: after as Json });
+    return writes.length <= MAX_WRITES;
+}
+
+/** A document change as writes: the `app` tree changes through writes, anything else (theme, locales, composed) is a full load. `data` is the synced state's */
+function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
+    const { data: _previousData, app: previousApp, ...previousRest } = previous;
+    const { data: _nextData, app: nextApp, ...nextRest } = next;
+    if (!deepEqual(previousRest, nextRest)) return 'load';
+    const writes: PathWrite[] = [];
+    if (!diffComplete('$.app', previousApp, nextApp, writes) || writes.length > MAX_WRITES) return 'load';
+    return writes.length === 0 ? 'none' : writes;
+}
+
+/** Content and the structure keys of a node cut out of a value below `$.app`; undefined when nothing is left */
+function articulation(value: Json): Json | undefined {
+    if (Array.isArray(value)) {
+        const items = value.map(articulation).filter((item): item is Json => item !== undefined);
+        return items.length === 0 && value.length > 0 ? undefined : items;
+    }
+    if (!isRecord(value)) return value;
+    const isNode = typeof value['component'] === 'string';
+    const kept: JsonRecord = {};
+    for (const [key, item] of Object.entries(value)) {
+        if (key.startsWith(CONTENT_PREFIX) || (isNode && NODE_KEYS.includes(key))) continue;
+        const part = articulation(item);
+        if (part !== undefined) kept[key] = part;
+    }
+    return Object.keys(kept).length === 0 && Object.keys(value).length > 0 ? undefined : kept;
+}
+
+/**
+ * The part of a runtime change that is synced, or undefined: `$.data`, and below `$.app` the articulation (no `_`
+ * content, no `component`, `on`, `layout`, `placement` or `theme` of a node). `$.theme` and `$.locale` stay in the view
+ */
+function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined): { path: string; op: ChangeOp; value?: Json } | undefined {
+    const segments = path.split('.');
+    const branch = segments[1];
+    if (segments[0] !== '$' || (branch !== 'data' && branch !== 'app') || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
+    let kept = value;
+    if (branch === 'app') {
+        const below = segments.slice(2);
+        if (below.some((segment) => segment.startsWith(CONTENT_PREFIX))) return undefined;
+        if (below.length > 0 && NODE_KEYS.includes(below[below.length - 1] as string)) return undefined;
+        if (kept !== undefined) {
+            kept = articulation(kept);
+            if (kept === undefined) return undefined;
+        }
+    }
+    if (op === 'delete') return { path, op };
+    return kept === undefined ? undefined : { path, op, value: kept };
+}
+
+/** Applies one change to a view state in place, as the sync client does: missing parents are created, a delete below one does nothing */
+function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | undefined): void {
+    const [, branch, ...rest] = path.split('.') as [string, 'data' | 'app', ...string[]];
+    if (rest.length === 0) {
+        state[branch] = op === 'delete' || !isRecord(value) ? {} : copy(value);
+        return;
+    }
+    let container: Record<string, unknown> = state[branch];
+    for (const segment of rest.slice(0, -1)) {
+        let child = container[segment];
+        if (typeof child !== 'object' || child === null) {
+            if (op === 'delete') return;
+            child = {};
+            container[segment] = child;
+        }
+        container = child as Record<string, unknown>;
+    }
+    const last = rest[rest.length - 1] as string;
+    if (op === 'delete') {
+        if (Array.isArray(container) && /^\d+$/.test(last)) container.splice(Number(last), 1);
+        else delete container[last];
+    } else if (op === 'merge' && isRecord(container[last]) && isRecord(value)) {
+        container[last] = { ...(container[last] as JsonRecord), ...copy(value) };
+    } else {
+        container[last] = copy(value);
+    }
+}
+
+function viewState(state: SyncState): ViewState {
+    return { data: isRecord(state['data']) ? copy(state['data']) : {}, app: isRecord(state['app']) ? copy(state['app']) : {} };
 }
 
 function createNonce(): string {
@@ -218,16 +258,18 @@ function iconsMessage(icons: Record<string, string>, skip: ReadonlySet<string>):
     return Object.keys(map).length > 0 ? map : undefined;
 }
 
-/** `{ data, app }` for a load: what the stored snapshot holds, with the document's own data under it, or nothing when it holds neither */
-function loadState(document: JsonRecord, snapshot: JsonRecord): { data: Json; app: Json } | undefined {
-    const data = snapshot['data'];
-    const app = snapshot['app'];
-    if (!isRecord(data) && !isRecord(app)) return undefined;
-    const documentData = document['data'];
-    return {
-        data: isRecord(data) ? data : isRecord(documentData) ? documentData : {},
-        app: isRecord(app) ? app : {}
-    };
+function isAppMessage(value: unknown): value is AppMessage {
+    return isRecord(value) && value['type'] === 'app' && typeof value['revision'] === 'number' && isRecord(value['document']) && isRecord(value['icons']);
+}
+
+/** `localStorage`, or memory when the page may not use it */
+function localStore(): LocalStore {
+    try {
+        window.localStorage.getItem('stateui');
+        return createWebLocalStore(window.localStorage, 'stateui-sync');
+    } catch {
+        return createMemoryLocalStore();
+    }
 }
 
 class LiveView {
@@ -236,27 +278,29 @@ class LiveView {
     private readonly viewKind: string;
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
+    private readonly namespace: string;
+    private readonly store = localStore();
     private readonly nonce = createNonce();
+    private client: SyncClient | undefined;
     private frame: HTMLIFrameElement | undefined;
     private frameLoaded = false;
+    /** A load was posted to the frame: from here on state goes to it as writes */
+    private loaded = false;
     private ready = false;
-    private pending: AppMessage | undefined;
+    /** The document the view shows or will show */
+    private app: AppMessage | undefined;
     private sentDocument: JsonRecord | undefined;
-    private sentState: { data: JsonRecord; app: JsonRecord } = { data: {}, app: {} };
-    private runtimeState: { data: JsonRecord; app: JsonRecord } | undefined;
-    /** The snapshot of the last state message or load: what the view has been sent, whatever it has reported since */
-    private serverSnapshot: JsonRecord = {};
-    /** Snapshot requests waiting for the pong of their ping, by ping id */
-    private readonly snapshotRequests = new Map<number, string>();
-    private pingId = 0;
+    /** The synced state as the sync client shows it; undefined until it has one */
+    private synced: ViewState | undefined;
+    /** The synced part of what the frame holds, as far as the host knows */
+    private shown: ViewState = { data: {}, app: {} };
+    private readonly listeners = new Set<(changes: LocalChange[]) => void>();
+    private syncStatus: { mode: 'full'; status: string; waiting: number } = { mode: 'full', status: 'connecting', waiting: 0 };
     private readonly sentIcons = new Set<string>();
     private revision = 0;
     private mode: string | undefined;
     private locale: string | undefined;
     private readonly queuedCommands: Extract<ServerMessage, { type: 'command' }>[] = [];
-    private snapshotTimer: number | undefined;
-    private lastSnapshotAt = 0;
-    private snapshotWaiting = false;
     private readonly uploads = new Map<number, XMLHttpRequest>();
 
     constructor(private readonly body: HTMLElement) {
@@ -264,6 +308,7 @@ class LiveView {
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
         this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
+        this.namespace = `apps.${this.appId.toLowerCase()}`;
         const query = new URLSearchParams(window.location.search);
         this.mode = query.get('mode') ?? undefined;
         this.locale = query.get('locale') ?? undefined;
@@ -271,10 +316,66 @@ class LiveView {
 
     start(): void {
         this.setStatus('loading');
+        this.body.dataset['sync'] = 'connecting';
         window.addEventListener('message', (event) => this.onRuntimeMessage(event));
-        window.addEventListener('pagehide', () => this.flushSnapshot());
-        const source = new EventSource(`/apps/${this.appId}/events?view=${this.viewId}&kind=${this.viewKind}`);
-        source.addEventListener('message', (event: MessageEvent<string>) => this.onServerMessage(event.data));
+        const cached: unknown = this.store.read(this.namespace, 'document');
+        if (isAppMessage(cached)) this.onApp({ type: 'app', reason: 'attach', revision: cached.revision, document: cached.document, icons: cached.icons });
+        this.client = createSyncClient({
+            namespace: this.namespace,
+            bridge: this.bridge(),
+            transport: this.transport(),
+            localStore: this.store,
+            clientId: this.viewId,
+            onStatus: (report) => this.onSyncStatus(report),
+            onRejected: (rejection) => {
+                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason } });
+            }
+        });
+        this.client.start();
+    }
+
+    /** The sync client's view of the frame: state comes in as loads and writes, the frame's own changes go out */
+    private bridge(): StoreBridge {
+        return {
+            load: (state) => this.showState(viewState(state)),
+            write: (path, value) => {
+                const next = copy(this.synced ?? this.shown);
+                applyTo(next, path, value === undefined ? 'delete' : 'set', value);
+                this.showState(next);
+            },
+            subscribe: (onChanges) => {
+                this.listeners.add(onChanges);
+                return () => this.listeners.delete(onChanges);
+            }
+        };
+    }
+
+    /** The page's WebSocket: view frames go to the host, everything else to the sync client */
+    private transport(): SyncTransport {
+        const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${this.appId}/sync?view=${this.viewId}&kind=${this.viewKind}`;
+        return {
+            connect: (handlers) => {
+                const socket = new WebSocket(url);
+                let closed = false;
+                socket.addEventListener('open', () => handlers.onOpen());
+                socket.addEventListener('message', (event: MessageEvent<unknown>) => {
+                    if (typeof event.data !== 'string') return;
+                    if (event.data.startsWith(VIEW_FRAME)) this.onViewFrame(event.data);
+                    else handlers.onMessage(event.data);
+                });
+                socket.addEventListener('close', () => {
+                    if (closed) return;
+                    closed = true;
+                    handlers.onClose();
+                });
+                return {
+                    send: (text) => {
+                        if (socket.readyState === WebSocket.OPEN) socket.send(text);
+                    },
+                    close: () => socket.close()
+                };
+            }
+        };
     }
 
     private setStatus(status: 'loading' | 'ready' | 'failed', note?: string): void {
@@ -296,15 +397,23 @@ class LiveView {
         this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
     }
 
-    private onServerMessage(text: string): void {
-        let message: ServerMessage;
+    private onViewFrame(text: string): void {
+        let frame: { message?: ServerMessage };
         try {
-            message = JSON.parse(text) as ServerMessage;
+            frame = JSON.parse(text) as { message?: ServerMessage };
         } catch {
             return;
         }
-        switch (message.type) {
+        const message = frame.message;
+        if (!isRecord(message as unknown)) return;
+        switch (message?.type) {
             case 'app':
+                if (!isAppMessage(message)) return;
+                try {
+                    this.store.write(this.namespace, 'document', { type: 'app', reason: 'attach', revision: message.revision, document: message.document, icons: message.icons });
+                } catch {
+                    // a full local store keeps the app working in memory; the document comes again with the next connection
+                }
                 this.onApp(message);
                 break;
             case 'command':
@@ -318,15 +427,20 @@ class LiveView {
                 if (message.kind === 'mode') this.mode = message.name;
                 if (this.ready) this.post({ type: 'theme', kind: message.kind, name: message.name });
                 break;
-            case 'snapshot-request':
-                this.requestSnapshot(message.requestId);
-                break;
             case 'deleted':
+                this.client?.stop();
+                for (const part of ['confirmed', 'outbox', 'document'] as const) this.store.remove(this.namespace, part);
                 this.setStatus('failed', 'This app was deleted');
                 this.frame?.remove();
                 this.frame = undefined;
                 break;
         }
+    }
+
+    private onSyncStatus(report: SyncStatusReport): void {
+        this.syncStatus = { mode: 'full', status: report.status, waiting: report.waiting };
+        this.body.dataset['sync'] = report.status;
+        if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
     }
 
     private ensureFrame(): void {
@@ -336,11 +450,7 @@ class LiveView {
         frame.title = 'App';
         frame.addEventListener('load', () => {
             this.frameLoaded = true;
-            if (this.pending !== undefined) {
-                const app = this.pending;
-                this.pending = undefined;
-                this.sendLoad(app);
-            }
+            if (this.app !== undefined) this.sendLoad();
         });
         frame.src = `${this.runtimeUrl}#${this.nonce}`;
         this.body.append(frame);
@@ -348,22 +458,17 @@ class LiveView {
     }
 
     private onApp(app: AppMessage): void {
+        const previous = this.app;
+        this.app = app;
         this.ensureFrame();
-        if (!this.frameLoaded) {
-            this.pending = app;
-            return;
-        }
-        if (this.sentDocument === undefined || !this.ready) {
-            this.sendLoad(app);
-            return;
-        }
-        if (app.reason === 'state') {
-            this.applyState(app);
+        if (!this.frameLoaded) return;
+        if (!this.loaded || this.sentDocument === undefined || previous === undefined) {
+            this.sendLoad();
             return;
         }
         const plan = planDocumentUpdate(this.sentDocument, app.document);
         if (plan === 'load') {
-            this.sendLoad(app);
+            this.sendLoad();
             return;
         }
         if (plan !== 'none') {
@@ -375,75 +480,40 @@ class LiveView {
         this.markRendered(app.revision);
     }
 
-    private applyState(app: AppMessage): void {
-        const base = this.runtimeState ?? this.sentState;
-        if (app.statePath !== undefined) {
-            //only the written path: the snapshot also holds runtime properties the view reported earlier (a formatted
-            //value, a measured size), and writing those back would undo what the view has computed since
-            const writes = statePathWrites(app.statePath, base, app.stateSnapshot, this.serverSnapshot);
-            this.serverSnapshot = app.stateSnapshot;
-            if (writes === undefined) {
-                this.sendLoad(app);
-                return;
-            }
-            if (writes.length > 0) {
-                this.post({ type: 'write', writes });
-                //the view reports its state after it applied the writes; until then the next write is planned on this copy
-                this.runtimeState = withWrites(base, writes);
-            }
-            this.markRendered(app.revision);
-            return;
-        }
+    /** Shows a synced state: as writes once the frame has a load, else it goes into the next load */
+    private showState(next: ViewState): void {
+        this.synced = next;
+        if (!this.loaded || this.app === undefined) return;
         const writes: PathWrite[] = [];
-        const snapshotData = app.stateSnapshot['data'];
-        const snapshotApp = app.stateSnapshot['app'];
         const ok =
-            (snapshotData === undefined || diffLeaves('$.data', base.data, snapshotData, writes)) &&
-            (snapshotApp === undefined || diffLeaves('$.app', base.app, snapshotApp, writes));
+            diffComplete('$.data', this.shown.data, next.data, writes) &&
+            diffArticulation('$.app', this.shown.app, next.app, this.app.document['app'], writes);
         if (!ok) {
-            this.sendLoad(app);
+            this.sendLoad();
             return;
         }
+        this.shown = copy(next);
         if (writes.length > 0) this.post({ type: 'write', writes });
-        this.markRendered(app.revision);
     }
 
-    /**
-     * Answers with the view's state once the runtime has applied every message sent before: it handles messages in
-     * order and posts its snapshot after each write, so by its pong the snapshot of the last write has arrived. A
-     * reply from the copy alone could miss a write the runtime had not reported yet
-     */
-    private requestSnapshot(requestId: string): void {
-        if (!this.ready || this.frame === undefined) {
-            this.report({ type: 'snapshot-reply', requestId, snapshot: this.runtimeState ?? null });
-            return;
-        }
-        const id = ++this.pingId;
-        this.snapshotRequests.set(id, requestId);
-        this.post({ type: 'ping', id });
-        window.setTimeout(() => this.replySnapshot(id), PONG_TIMEOUT_MS);
-    }
-
-    private replySnapshot(id: number): void {
-        const requestId = this.snapshotRequests.get(id);
-        if (requestId === undefined) return;
-        this.snapshotRequests.delete(id);
-        this.report({ type: 'snapshot-reply', requestId, snapshot: this.runtimeState ?? null });
-    }
-
-    private sendLoad(app: AppMessage): void {
-        const state = loadState(app.document, app.stateSnapshot);
+    private sendLoad(): void {
+        const app = this.app;
+        if (app === undefined || !this.frameLoaded) return;
         const icons = iconsMessage(app.icons, new Set());
+        const documentData = app.document['data'];
+        this.shown = this.synced !== undefined ? copy(this.synced) : { data: isRecord(documentData) ? copy(documentData) : {}, app: {} };
         this.ready = false;
         this.setStatus('loading');
-        this.post({ type: 'load', document: app.document, ...(state !== undefined && { state }), ...(icons !== undefined && { icons }) });
+        this.post({
+            type: 'load',
+            document: app.document,
+            mode: 'full',
+            ...(this.synced !== undefined && { state: this.synced }),
+            ...(icons !== undefined && { icons })
+        });
+        this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
+        this.loaded = true;
         this.sentDocument = app.document;
-        this.sentState = {
-            data: state !== undefined && isRecord(state.data) ? state.data : {},
-            app: state !== undefined && isRecord(state.app) ? state.app : {}
-        };
-        this.runtimeState = undefined;
-        this.serverSnapshot = app.stateSnapshot;
         this.sentIcons.clear();
         Object.keys(app.icons).forEach((name) => this.sentIcons.add(name));
         this.revision = app.revision;
@@ -477,16 +547,11 @@ class LiveView {
             case 'ready':
                 this.onReady();
                 break;
-            case 'snapshot':
-                this.onSnapshot(message);
-                break;
-            case 'pong':
-                if (typeof message['id'] === 'number') this.replySnapshot(message['id']);
+            case 'change':
+                this.onChange(message['change']);
                 break;
             case 'emit':
-                if (typeof message['name'] === 'string') {
-                    this.report({ type: 'emit', name: message['name'], ...(message['payload'] !== undefined && { payload: message['payload'] }) });
-                }
+                if (typeof message['name'] === 'string') this.client?.emit(message['name'], message['payload'] as Json | undefined);
                 break;
             case 'error':
                 if (Array.isArray(message['errors'])) this.report({ type: 'errors', errors: message['errors'], revision: this.revision });
@@ -515,26 +580,19 @@ class LiveView {
         this.report({ type: 'ready', revision: this.revision });
     }
 
-    private onSnapshot(message: RuntimeMessage): void {
-        const data = message['data'];
-        const app = message['app'];
-        if (!isRecord(data) || !isRecord(app)) return;
-        this.runtimeState = { data, app };
-        this.snapshotWaiting = true;
-        const wait = Math.max(0, SNAPSHOT_THROTTLE_MS - (Date.now() - this.lastSnapshotAt));
-        if (this.snapshotTimer !== undefined) return;
-        this.snapshotTimer = window.setTimeout(() => this.flushSnapshot(), wait);
-    }
-
-    private flushSnapshot(): void {
-        if (this.snapshotTimer !== undefined) {
-            window.clearTimeout(this.snapshotTimer);
-            this.snapshotTimer = undefined;
-        }
-        if (!this.snapshotWaiting || this.runtimeState === undefined) return;
-        this.snapshotWaiting = false;
-        this.lastSnapshotAt = Date.now();
-        this.report({ type: 'state', revision: this.revision, snapshot: this.runtimeState });
+    /** A change the user made in the frame: what is synced goes to the sync client, which sends it or keeps it for later */
+    private onChange(change: unknown): void {
+        if (!isRecord(change) || typeof change['path'] !== 'string') return;
+        const op = change['op'];
+        if (op !== 'set' && op !== 'replace' && op !== 'merge' && op !== 'delete') return;
+        const value = change['value'];
+        if (value !== undefined && !isJson(value)) return;
+        const synced = toSyncedChange(change['path'], op, value);
+        if (synced === undefined) return;
+        applyTo(this.shown, synced.path, synced.op, synced.value);
+        if (this.synced !== undefined) applyTo(this.synced, synced.path, synced.op, synced.value);
+        const local: LocalChange = { id: crypto.randomUUID(), ...synced };
+        for (const listener of [...this.listeners]) listener([local]);
     }
 
     private onFile(message: RuntimeMessage): void {

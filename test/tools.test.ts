@@ -26,7 +26,7 @@ async function createForm(name = 'form'): Promise<string> {
     return created.body['appId'] as string;
 }
 
-/** A view that is open: it records what the server sends and answers a snapshot request */
+/** A view that is open: it records what the server sends */
 function openView(appId: string, kind: 'browser' | 'headless' = 'browser'): ViewMessage[] {
     const received: ViewMessage[] = [];
     harness.services.hub.attach(appId, {
@@ -34,13 +34,20 @@ function openView(appId: string, kind: 'browser' | 'headless' = 'browser'): View
         kind,
         send: (message) => {
             received.push(message);
-            if (message.type === 'snapshot-request') {
-                harness.services.hub.answerSnapshot(appId, message.requestId, { data: { typed: 'live' }, app: {} });
-            }
         }
     });
     harness.services.hub.touch(appId, `${kind}-view`, { ready: true, revision: 1 });
     return received;
+}
+
+/** A sync connection to the app's authority, as a view's socket makes one: it says hello and records what comes back */
+async function syncView(appId: string): Promise<{ readonly received: Record<string, unknown>[]; send(message: object): void }> {
+    const authority = await harness.services.authorities.authority(appId, FORM_DOCUMENT);
+    const received: Record<string, unknown>[] = [];
+    const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Record<string, unknown>), close: () => undefined });
+    const send = (message: object): void => session.receive(JSON.stringify(message));
+    send({ type: 'hello', namespace: `apps.${appId}`, revision: 0, clientId: 'view-1', protocol: 1 });
+    return { received, send };
 }
 
 beforeEach(async () => {
@@ -266,49 +273,66 @@ describe('write tools', () => {
         expect(Object.keys(get.body['value'] as object)).toEqual(['save', 'email']);
     });
 
-    it('should set a data path in the state snapshot and refuse $.runtime and a stale revision', async () => {
+    it('should set a data path in the state without raising the revision and refuse $.runtime and a stale revision', async () => {
         const appId = await createForm();
 
         const set = await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'Ada' });
         const runtime = await call(harness.client, 'ui_state_set', { appId, path: '$.runtime.x', value: 1 });
-        const stale = await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'B', expectedRevision: 1 });
+        const stale = await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'B', expectedRevision: 2 });
         const state = await call(harness.client, 'ui_state_get', { appId });
 
-        expect(set.body).toMatchObject({ revision: 2, path: '$.data.name' });
+        expect(set.body).toMatchObject({ revision: 1, path: '$.data.name' });
         expect(runtime.body['error']).toBe('runtime-path');
         expect(stale.body['error']).toBe('conflict');
-        expect(state.body['source']).toBe('stored');
-        expect(state.body['snapshot']).toEqual({ data: { name: 'Ada' } });
+        expect(state.body['state']).toEqual({ data: { name: 'Ada' }, app: {} });
     });
 
-    it('should push every document and state write to the open views', async () => {
+    it('should push a document write to the open views and a state write to the synced views', async () => {
+        // Arrange
         const appId = await createForm();
         const received = openView(appId);
+        const synced = await syncView(appId);
 
+        // Act
         await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'app._title', value: 'Hi' }] });
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.k', value: 1 });
+        await call(harness.client, 'ui_state_set', { appId, path: '$.app.children.form.children.email.value', value: 'a@b.c' });
 
+        // Assert
         const apps = received.filter((message) => message.type === 'app');
-        expect(apps.map((message) => (message.type === 'app' ? [message.reason, message.revision] : []))).toEqual([
-            ['document', 2],
-            ['state', 3]
-        ]);
+        expect(apps.map((message) => (message.type === 'app' ? [message.reason, message.revision] : []))).toEqual([['document', 2]]);
+        expect(synced.received.at(-1)).toMatchObject({
+            type: 'changes',
+            changes: [{ path: '$.app.children.form.children.email.value', op: 'set', value: 'a@b.c', revision: 1 }]
+        });
     });
 });
 
 describe('live tools', () => {
-    it('should read the state live from an open view and fall back to the stored snapshot', async () => {
+    it('should read the state a view changed over its sync connection, below a parent the state did not have', async () => {
+        // Arrange
         const appId = await createForm();
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.stored', value: 1 });
-        const closed = await call(harness.client, 'ui_state_get', { appId });
         openView(appId);
+        const synced = await syncView(appId);
 
-        const live = await call(harness.client, 'ui_state_get', { appId });
+        // Act
+        synced.send({ type: 'change', change: { id: 'c1', path: '$.app.children.form.children.email.value', op: 'set', value: 'typed', base: 0 } });
+        const state = await call(harness.client, 'ui_state_get', { appId });
 
-        expect(closed.body['source']).toBe('stored');
-        expect(live.body['source']).toBe('live');
-        expect(live.body['snapshot']).toEqual({ data: { typed: 'live' }, app: {} });
-        expect((live.body['preview'] as { attached: boolean }).attached).toBe(true);
+        // Assert
+        expect(synced.received.at(-1)).toEqual({ type: 'ack', id: 'c1', result: 'applied', revision: 1 });
+        expect(state.body['state']).toEqual({ data: {}, app: { children: { form: { children: { email: { value: 'typed' } } } } } });
+        expect((state.body['preview'] as { attached: boolean }).attached).toBe(true);
+    });
+
+    it('should queue the emits of a synced view for ui_events_read', async () => {
+        const appId = await createForm();
+        openView(appId);
+        const synced = await syncView(appId);
+
+        synced.send({ type: 'emit', name: 'form.saved', value: 'ok' });
+        const events = await call(harness.client, 'ui_events_read', { appId });
+
+        expect((events.body['events'] as { name: string; payload: unknown }[]).map((event) => [event.name, event.payload])).toEqual([['form.saved', 'ok']]);
     });
 
     it('should open the headless page and return the url a person can open', async () => {

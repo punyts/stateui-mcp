@@ -1,4 +1,5 @@
-import type { UiApp, UiDocument, UiStateSnapshot } from '../../domain/UiApp.js';
+import type { JsonValue } from '../../domain/JsonValue.js';
+import type { UiApp, UiDocument } from '../../domain/UiApp.js';
 
 /** What a caller supplies to create an app. The id, revision and timestamps come from the adapter */
 export interface CreateUiAppInput {
@@ -6,7 +7,7 @@ export interface CreateUiAppInput {
     readonly document: UiDocument;
 }
 
-/** One row of the app list: no document, no snapshot */
+/** One row of the app list: no document, no state */
 export interface UiAppSummary {
     readonly id: string;
     readonly name: string;
@@ -30,22 +31,20 @@ export type UiAppDeleteResult =
     | { readonly kind: 'not-found' };
 
 /**
- * Storage of apps. Writes take `expectedRevision`: a stale one returns `conflict` and changes nothing. A committed
- * write raises the revision by one. Documents and snapshots keep their key order
+ * Storage of apps. Writes take `expectedRevision`: a stale one returns `conflict` and changes nothing. The revision
+ * counts document writes. The state (`stateSnapshot` of a found app) is the app's synced state, which the open views
+ * change too, so a state write does not raise the revision. Documents and states keep their key order
  */
 export interface UiAppRepository {
     create(input: CreateUiAppInput): Promise<CreateUiAppResult>;
     findById(appId: string): Promise<UiApp | undefined>;
     list(): Promise<readonly UiAppSummary[]>;
     writeDocument(appId: string, document: UiDocument, expectedRevision: number): Promise<UiAppWriteResult>;
-    writeStateSnapshot(appId: string, snapshot: UiStateSnapshot, expectedRevision: number): Promise<UiAppWriteResult>;
     /**
-     * Stores the state snapshot a preview reports. Unlike `writeStateSnapshot` it does NOT raise the revision:
-     * the revision counts document and tool writes, and `expectedRevision` is the revision the preview rendered.
-     * A tool write since then makes it stale: `conflict` with the current revision, nothing stored, so a snapshot
-     * older than the latest tool write loses. Snapshots among themselves are last-writer-wins
+     * Sets one value of the state, at `statePath` from its root (`['data', 'total']`), creating missing parents. Every
+     * open view gets the change at once. The revision stays as it is; `written` carries it
      */
-    savePreviewSnapshot(appId: string, snapshot: UiStateSnapshot, expectedRevision: number): Promise<UiAppWriteResult>;
+    writeState(appId: string, statePath: readonly string[], value: JsonValue, expectedRevision: number): Promise<UiAppWriteResult>;
     /** Removes the app folder: document, state, error log and files */
     delete(appId: string, expectedRevision: number): Promise<UiAppDeleteResult>;
 }

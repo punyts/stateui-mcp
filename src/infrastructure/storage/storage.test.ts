@@ -11,11 +11,18 @@ import { FileUiErrorLog } from './FileUiErrorLog.js';
 import { FileUiFileRepository } from './FileUiFileRepository.js';
 import { FsUiFileStore } from './FsUiFileStore.js';
 import { KeyedLock } from './KeyedLock.js';
+import { AppAuthorities } from '../sync/AppAuthorities.js';
+import { FileNamespaceStorage } from '../sync/FileNamespaceStorage.js';
 
 let dir: string;
 let folders: AppFolders;
 let lock: KeyedLock;
 let apps: FileUiAppRepository;
+let authorities: AppAuthorities;
+
+function createAuthorities(): AppAuthorities {
+    return new AppAuthorities(new FileNamespaceStorage(folders), () => undefined);
+}
 
 const ORDERED: UiDocument = {
     app: { component: 'page', children: { zeta: { component: 'text' }, a: { component: 'text' }, mm: { component: 'text' } } },
@@ -32,10 +39,12 @@ beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-mcp-'));
     folders = new AppFolders(dir);
     lock = new KeyedLock();
-    apps = new FileUiAppRepository(folders, lock);
+    authorities = createAuthorities();
+    apps = new FileUiAppRepository(folders, lock, authorities);
 });
 
 afterEach(async () => {
+    await authorities.close();
     await rm(dir, { recursive: true, force: true });
 });
 
@@ -89,22 +98,22 @@ describe('FileUiAppRepository', () => {
         const next: UiDocument = { app: { component: 'page', children: { y: { component: 'text' }, b: { component: 'text' } } } };
 
         await apps.writeDocument(id, next, 1);
-        await apps.writeStateSnapshot(id, { data: { z: 1, a: 2 } }, 2);
+        await apps.writeState(id, ['data'], { z: 1, a: 2 }, 2);
         const found = await apps.findById(id);
 
         expect(Object.keys((found?.document['app'] as { children: object }).children)).toEqual(['y', 'b']);
         expect(Object.keys(found?.stateSnapshot['data'] as object)).toEqual(['z', 'a']);
     });
 
-    it('should start at revision 1 and raise it by one per committed write', async () => {
+    it('should start at revision 1 and raise it by one per document write but not per state write', async () => {
         const id = await createApp();
 
         const first = await apps.writeDocument(id, ORDERED, 1);
-        const second = await apps.writeStateSnapshot(id, { data: {} }, 2);
+        const second = await apps.writeState(id, ['data', 'total'], 3, 2);
 
         expect(first).toEqual({ kind: 'written', revision: 2 });
-        expect(second).toEqual({ kind: 'written', revision: 3 });
-        expect((await apps.findById(id))?.revision).toBe(3);
+        expect(second).toEqual({ kind: 'written', revision: 2 });
+        expect((await apps.findById(id))?.revision).toBe(2);
     });
 
     it('should return a conflict with the current revision for a stale write and change nothing', async () => {
@@ -125,26 +134,22 @@ describe('FileUiAppRepository', () => {
         expect(results.map((result) => result.kind).sort()).toEqual(['conflict', 'written']);
     });
 
-    it('should store a preview snapshot without raising the revision and refuse a stale one', async () => {
+    it('should start the state from the document data, keep state writes across a restart and refuse a stale one', async () => {
+        // Arrange
         const id = await createApp();
         await apps.writeDocument(id, ORDERED, 1);
 
-        const saved = await apps.savePreviewSnapshot(id, { data: { typed: 'x' } }, 2);
-        const stale = await apps.savePreviewSnapshot(id, { data: { typed: 'old' } }, 1);
+        // Act
+        const written = await apps.writeState(id, ['app', 'children', 'a', 'open'], true, 2);
+        const stale = await apps.writeState(id, ['data', 'typed'], 'old', 1);
+        await authorities.close();
+        authorities = createAuthorities();
+        const found = await new FileUiAppRepository(folders, lock, authorities).findById(id);
 
-        expect(saved).toEqual({ kind: 'written', revision: 2 });
+        // Assert
+        expect(written).toEqual({ kind: 'written', revision: 2 });
         expect(stale).toEqual({ kind: 'conflict', currentRevision: 2 });
-        const found = await apps.findById(id);
-        expect(found?.revision).toBe(2);
-        expect(found?.stateSnapshot).toEqual({ data: { typed: 'x' } });
-    });
-
-    it('should read the higher revision when a crash left state.json ahead of app.json', async () => {
-        const id = await createApp();
-        await writeFile(folders.stateFile(id), JSON.stringify({ revision: 5, snapshot: { data: {} } }));
-
-        expect((await apps.findById(id))?.revision).toBe(5);
-        expect(await apps.writeDocument(id, ORDERED, 5)).toEqual({ kind: 'written', revision: 6 });
+        expect(found?.stateSnapshot).toEqual({ data: ORDERED['data'], app: { children: { a: { open: true } } } });
     });
 
     it('should refuse a duplicate name', async () => {
@@ -168,7 +173,9 @@ describe('FileUiAppRepository', () => {
         const id = await createApp();
 
         expect(await apps.delete(id, 9)).toEqual({ kind: 'conflict', currentRevision: 1 });
+        await apps.writeState(id, ['data', 'typed'], 'x', 1);
         expect(await apps.delete(id, 1)).toEqual({ kind: 'deleted' });
+        await authorities.close();
 
         expect(await apps.findById(id)).toBeUndefined();
         expect(await apps.delete(id, 1)).toEqual({ kind: 'not-found' });
@@ -256,7 +263,8 @@ describe('files', () => {
         const dropped = '66666666-6666-4666-8666-666666666666';
         await files.add({ id: kept, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
         await files.add({ id: dropped, appId: id, name: 'd', size: 1, type: 'text/plain', sha256: 'h' });
-        await apps.writeStateSnapshot(id, { data: { file: { id: kept } } }, 1);
+        await apps.writeState(id, ['data', 'file'], { id: kept }, 1);
+        await authorities.close();
 
         const unreferenced = await files.findUnreferenced(id, new Date(Date.now() + 60_000));
 

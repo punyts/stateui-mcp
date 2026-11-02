@@ -1,5 +1,6 @@
 import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
 import { FORM_DOCUMENT, call, httpHarness, noBrowser, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
@@ -258,59 +259,115 @@ describe('POST /apps/:appId/files', () => {
     });
 });
 
-describe('GET /apps/:appId/events and POST /apps/:appId/report', () => {
+describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     const VIEW = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
 
-    async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, needle: string): Promise<string> {
-        const decoder = new TextDecoder();
-        let text = '';
-        const deadline = Date.now() + 5000;
-        while (!text.includes(needle) && Date.now() < deadline) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            text += decoder.decode(value);
-        }
-        return text;
+    interface OpenSocket {
+        readonly socket: WebSocket;
+        readonly received: Record<string, unknown>[];
+        next(match: (message: Record<string, unknown>) => boolean): Promise<Record<string, unknown>>;
+        send(message: object): void;
+    }
+
+    /** A view's sync socket: it records every frame and resolves a wait when a matching one comes */
+    function openSync(id: string, headers: Record<string, string> = { Origin: origin }): Promise<OpenSocket> {
+        const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${id}/sync?view=${VIEW}&kind=browser`, { headers });
+        const received: Record<string, unknown>[] = [];
+        const waits: { match: (message: Record<string, unknown>) => boolean; resolve: (message: Record<string, unknown>) => void }[] = [];
+        socket.on('message', (data) => {
+            const message = JSON.parse(String(data)) as Record<string, unknown>;
+            received.push(message);
+            for (const wait of [...waits]) {
+                if (!wait.match(message)) continue;
+                waits.splice(waits.indexOf(wait), 1);
+                wait.resolve(message);
+            }
+        });
+        const next = (match: (message: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> => {
+            const found = received.find(match);
+            if (found !== undefined) return Promise.resolve(found);
+            return new Promise((resolve, reject) => {
+                waits.push({ match, resolve });
+                setTimeout(() => reject(new Error('no matching frame')), 5000);
+            });
+        };
+        return new Promise((resolve, reject) => {
+            socket.once('open', () => resolve({ socket, received, next, send: (message) => socket.send(JSON.stringify(message)) }));
+            socket.once('error', reject);
+        });
+    }
+
+    /** The status a refused upgrade answers with */
+    function refusedStatus(id: string, view: string, headers: Record<string, string> = {}): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${id}/sync?view=${view}`, { headers });
+            socket.once('unexpected-response', (_request, response) => {
+                resolve(response.statusCode ?? 0);
+                socket.terminate();
+            });
+            socket.once('open', () => {
+                socket.close();
+                reject(new Error('the upgrade was accepted'));
+            });
+            socket.once('error', () => undefined);
+        });
+    }
+
+    function hello(view: OpenSocket): void {
+        view.send({ type: 'hello', namespace: `apps.${appId.toLowerCase()}`, revision: 0, clientId: VIEW, protocol: 1 });
     }
 
     function report(body: Record<string, unknown>): Promise<Response> {
         return fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ viewId: VIEW, ...body }) });
     }
 
-    it('should stream the app on connect and every later write, and detach when the view closes', async () => {
-        const controller = new AbortController();
-        const response = await fetch(`${origin}/apps/${appId}/events?view=${VIEW}&kind=browser`, { signal: controller.signal });
-        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    it('should send the app first, sync the state and a tool write, and detach when the socket closes', async () => {
+        // Arrange
+        const view = await openSync(appId);
 
-        const first = await readUntil(reader, '"reason":"attach"');
+        // Act
+        const first = await view.next((message) => message['type'] === 'view');
+        hello(view);
+        const welcome = await view.next((message) => message['type'] === 'welcome');
         const attachedWhileOpen = harness.server.services.hub.viewCount(appId);
         await call(harness.client, 'ui_state_set', { appId, path: '$.data.live', value: 'yes' });
-        const second = await readUntil(reader, '"reason":"state"');
-        controller.abort();
+        const changes = await view.next((message) => message['type'] === 'changes');
+        view.socket.close();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        expect(response.headers.get('content-type')).toContain('text/event-stream');
-        expect(first).toContain('"type":"app"');
-        expect(first).toContain('"component":"panel"');
+        // Assert
+        expect(first['message']).toMatchObject({ type: 'app', reason: 'attach' });
+        expect(JSON.stringify(first['message'])).toContain('"component":"panel"');
+        expect(welcome).toMatchObject({ type: 'welcome' });
         expect(attachedWhileOpen).toBe(1);
-        expect(second).toContain('"live":"yes"');
+        expect(changes['changes']).toEqual([expect.objectContaining({ path: '$.data.live', op: 'set', value: 'yes' })]);
         expect(harness.server.services.hub.viewCount(appId)).toBe(0);
     });
 
-    it('should refuse a view id that is not a UUID and an unknown app', async () => {
-        const malformed = await fetch(`${origin}/apps/${appId}/events?view=x`);
-        const unknown = await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111/events?view=${VIEW}`);
+    it('should apply a change a view sends and queue its emit for ui_events_read', async () => {
+        const view = await openSync(appId);
+        hello(view);
+        await view.next((message) => message['type'] === 'welcome');
 
-        expect(malformed.status).toBe(400);
-        expect(unknown.status).toBe(404);
+        view.send({ type: 'change', change: { id: 'typed-1', path: '$.data.typed', op: 'set', value: 'x', base: 0 } });
+        const ack = await view.next((message) => message['type'] === 'ack');
+        view.send({ type: 'emit', name: 'form.saved', value: { ok: true } });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const state = await call(harness.client, 'ui_state_get', { appId });
+        const events = await call(harness.client, 'ui_events_read', { appId });
+        view.socket.close();
+
+        expect(ack).toMatchObject({ id: 'typed-1', result: 'applied' });
+        expect((state.body['state'] as { data: Record<string, unknown> }).data['typed']).toBe('x');
+        expect((events.body['events'] as { name: string; payload: unknown }[]).at(-1)).toMatchObject({ name: 'form.saved', payload: { ok: true } });
     });
 
-    it('should queue an emit report for ui_events_read', async () => {
-        const response = await report({ type: 'emit', name: 'form.saved', payload: { ok: true } });
-        const events = await call(harness.client, 'ui_events_read', { appId });
+    it('should refuse a view id that is not a UUID, an unknown app and another origin', async () => {
+        const malformed = await refusedStatus(appId, 'x');
+        const unknown = await refusedStatus('11111111-1111-4111-8111-111111111111', VIEW);
+        const crossOrigin = await refusedStatus(appId, VIEW, { Origin: 'http://evil.example' });
 
-        expect(response.status).toBe(200);
-        expect((events.body['events'] as { name: string; payload: unknown }[]).at(-1)).toMatchObject({ name: 'form.saved', payload: { ok: true } });
+        expect([malformed, unknown, crossOrigin]).toEqual([400, 404, 403]);
     });
 
     it('should keep the runtime errors a view reports and show them in ui_validate', async () => {
@@ -321,23 +378,14 @@ describe('GET /apps/:appId/events and POST /apps/:appId/report', () => {
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toContain('SUI-RUN-BINDING');
     });
 
-    it('should save a preview snapshot at the rendered revision and refuse a stale one with 409', async () => {
-        const current = (await call(harness.client, 'ui_app_get', { appId, depth: 0, path: 'app' })).body['revision'] as number;
-
-        const saved = await report({ type: 'state', revision: current, snapshot: { data: { typed: 'x' }, app: {} } });
-        const stale = await report({ type: 'state', revision: current - 1, snapshot: { data: { typed: 'old' }, app: {} } });
-
-        expect(saved.status).toBe(200);
-        expect(stale.status).toBe(409);
-        expect(((await stale.json()) as { currentRevision: number }).currentRevision).toBe(current);
-    });
-
-    it('should refuse a report that is not valid', async () => {
+    it('should refuse a report that is not valid, and the state and emit reports the sync socket replaced', async () => {
         const noView = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
         const unknownType = await report({ type: 'launch' });
+        const state = await report({ type: 'state', revision: 1, snapshot: { data: {} } });
+        const emit = await report({ type: 'emit', name: 'form.saved' });
         const notJson = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', body: 'x' });
 
-        expect([noView.status, unknownType.status, notJson.status]).toEqual([400, 400, 400]);
+        expect([noView.status, unknownType.status, state.status, emit.status, notJson.status]).toEqual([400, 400, 400, 400, 400]);
     });
 });
 

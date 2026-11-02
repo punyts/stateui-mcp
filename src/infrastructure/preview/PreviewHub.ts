@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 
@@ -12,19 +11,15 @@ const MAX_RECENT_ERRORS = 200;
 export type ViewMessage =
     | {
           readonly type: 'app';
-          /** `document`: load or write the document; `state`: write the changed state paths */
-          readonly reason: 'attach' | 'document' | 'state';
-          /** With `state`: the one path the write changed, so a view writes only that path */
-          readonly statePath?: string;
+          /** `attach`: the first message of a view; `document`: load or write the changed document */
+          readonly reason: 'attach' | 'document';
           readonly revision: number;
           readonly document: JsonObject;
-          readonly stateSnapshot: JsonObject;
           readonly icons: Readonly<Record<string, string>>;
       }
     | { readonly type: 'command'; readonly id: string; readonly target: string; readonly command: string; readonly value?: JsonValue; readonly expiresAt: string }
     | { readonly type: 'locale'; readonly locale: string }
     | { readonly type: 'theme'; readonly kind: string; readonly name: string }
-    | { readonly type: 'snapshot-request'; readonly requestId: string }
     | { readonly type: 'deleted' };
 
 /** One open view of an app: a browser tab of the human, or the headless page of Playwright */
@@ -55,15 +50,6 @@ export interface RecentError {
     readonly error: UiBuildError;
 }
 
-/** What `snapshot-request` returned: `{ data, app }` the runtime holds now, or `null` when the view has none yet */
-export type LiveSnapshot = JsonObject | null;
-
-interface PendingSnapshot {
-    readonly appId: string;
-    readonly resolve: (snapshot: LiveSnapshot | undefined) => void;
-    readonly timer: NodeJS.Timeout;
-}
-
 interface AppChannel {
     readonly views: Map<string, ViewState>;
     events: UiEvent[];
@@ -79,16 +65,19 @@ interface AppChannel {
  */
 export class PreviewHub {
     private readonly channels = new Map<string, AppChannel>();
-    private readonly pending = new Map<string, PendingSnapshot>();
 
     constructor(private readonly now: () => Date = () => new Date()) {}
 
-    /** Registers a view and returns the function that removes it */
+    /**
+     * Registers a view and returns the function that removes it. A view that reconnects with its id replaces its old
+     * connection, and the old connection's removal then leaves the new one alone
+     */
     attach(appId: string, connection: ViewConnection): () => void {
         const channel = this.channel(appId);
         channel.views.set(connection.id, { connection, renderedRevision: undefined, ready: false, lastSeenAt: this.now() });
         this.wake(channel);
         return () => {
+            if (channel.views.get(connection.id)?.connection !== connection) return;
             channel.views.delete(connection.id);
             this.wake(channel);
         };
@@ -191,35 +180,6 @@ export class PreviewHub {
 
     errorsSince(appId: string, cursor: number): readonly UiBuildError[] {
         return (this.channels.get(appId)?.errors ?? []).filter((entry) => entry.cursor > cursor).map((entry) => entry.error);
-    }
-
-    /**
-     * Asks one open, ready view for the state its runtime holds now. Resolves to `undefined` when no view answers in
-     * time (or none is open), and to `null` when the view answered that its runtime has no snapshot yet
-     */
-    requestSnapshot(appId: string, timeoutMs: number): Promise<LiveSnapshot | undefined> {
-        const channel = this.channels.get(appId);
-        const view = [...(channel?.views.values() ?? [])].find((candidate) => candidate.ready);
-        if (view === undefined) return Promise.resolve(undefined);
-        const requestId = randomUUID();
-        return new Promise((resolve) => {
-            const timer = setTimeout(() => {
-                this.pending.delete(requestId);
-                resolve(undefined);
-            }, timeoutMs);
-            this.pending.set(requestId, { appId, resolve, timer });
-            view.connection.send({ type: 'snapshot-request', requestId });
-        });
-    }
-
-    /** A view answered a `snapshot-request`. Unknown or foreign request ids are ignored */
-    answerSnapshot(appId: string, requestId: string, snapshot: LiveSnapshot): boolean {
-        const pending = this.pending.get(requestId);
-        if (pending === undefined || pending.appId !== appId) return false;
-        clearTimeout(pending.timer);
-        this.pending.delete(requestId);
-        pending.resolve(snapshot);
-        return true;
     }
 
     /** Tells the views the app is gone and forgets everything about it */

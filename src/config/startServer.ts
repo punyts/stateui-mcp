@@ -63,6 +63,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         useCases: services.useCases,
         repository: services.repository,
         hub: services.hub,
+        authorities: services.authorities,
         liveViews: services.liveViews,
         mcp: sessions,
         runtime,
@@ -89,6 +90,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
             if (stdioServer !== undefined) await stdioServer.close().catch(() => undefined);
             await services.browser.close();
             await http.close();
+            await services.authorities.close();
         }
     };
 }
