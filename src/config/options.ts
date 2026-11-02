@@ -4,6 +4,8 @@ export interface CliOptions {
     readonly dataDir: string;
     readonly host: string;
     readonly port: number;
+    /** `undefined`: the next port after `port` */
+    readonly runtimePort: number | undefined;
     readonly stdio: boolean;
     readonly runtimeDir: string | undefined;
     readonly help: boolean;
@@ -18,6 +20,8 @@ Options:
                        (env STATEUI_MCP_DATA_DIR, default ./data)
   --port <number>      Port of the HTTP server: /mcp and the browser view
                        (env STATEUI_MCP_PORT, default 4100)
+  --runtime-port <n>   Port that serves the app frame, a second origin
+                       (env STATEUI_MCP_RUNTIME_PORT, default: the next port, 4101)
   --host <address>     Address to bind (env STATEUI_MCP_HOST, default 127.0.0.1).
                        There is no authentication: bind a non-loopback address only on a network you trust
   --stdio              Speak MCP over stdin and stdout. The HTTP server still listens,
@@ -43,6 +47,7 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
     let dataDir = env['STATEUI_MCP_DATA_DIR'] ?? './data';
     let host = env['STATEUI_MCP_HOST'] ?? '127.0.0.1';
     let port = env['STATEUI_MCP_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_PORT']) : 4100;
+    let runtimePort = env['STATEUI_MCP_RUNTIME_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_RUNTIME_PORT']) : undefined;
     let runtimeDir = env['STATEUI_MCP_RUNTIME_DIR'];
     let stdio = false;
     let help = false;
@@ -63,6 +68,9 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
             case '--port':
                 port = parsePort(value());
                 break;
+            case '--runtime-port':
+                runtimePort = parsePort(value());
+                break;
             case '--host':
                 host = value();
                 break;
@@ -80,5 +88,5 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
                 throw new UsageError(`Unknown option: ${argument}`);
         }
     }
-    return { dataDir: resolve(dataDir), host, port, stdio, runtimeDir: runtimeDir === undefined ? undefined : resolve(runtimeDir), help };
+    return { dataDir: resolve(dataDir), host, port, runtimePort, stdio, runtimeDir: runtimeDir === undefined ? undefined : resolve(runtimeDir), help };
 }

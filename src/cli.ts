@@ -25,6 +25,7 @@ async function main(): Promise<void> {
         dataDir: options.dataDir,
         host: options.host,
         port: options.port,
+        ...(options.runtimePort !== undefined && { runtimePort: options.runtimePort }),
         stdio: options.stdio,
         report: reporter.report,
         ...(options.runtimeDir !== undefined && { runtimeDir: options.runtimeDir })

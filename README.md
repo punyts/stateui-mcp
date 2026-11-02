@@ -32,6 +32,7 @@ node dist/cli.js --stdio --port 4100 --data-dir ./data
 |---|---|---|
 | `--data-dir <dir>` | `STATEUI_MCP_DATA_DIR` | `./data` |
 | `--port <n>` | `STATEUI_MCP_PORT` | `4100` (`0` picks a free port) |
+| `--runtime-port <n>` | `STATEUI_MCP_RUNTIME_PORT` | the next port, `4101` (a free one when `--port` is `0`) |
 | `--host <address>` | `STATEUI_MCP_HOST` | `127.0.0.1` |
 | `--stdio` | | off |
 | `--runtime-dir <dir>` | `STATEUI_MCP_RUNTIME_DIR` | the bundle in `@punyts/stateui-app` |
@@ -111,10 +112,15 @@ Differences from `ui-builder`: no `workspace-missing` or `user-missing`, no `own
 | `POST /apps/:appId/files` | an upload from a `fileField`: `multipart/form-data` with one field `file`; `201 { id, name, size, type }`, `409 quota`, `413 too_large`, `415 unsupported_type` |
 | `GET /apps/:appId/files/:fileId` | the bytes, as an attachment, `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` |
 | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
-| `GET /runtime/<hash>.html`, `/runtime/<hash>.js` | the content-hashed StateUI runtime page and bundle |
 | `POST`, `GET`, `DELETE /mcp` | MCP over streamable HTTP, with sessions |
 
-**How the view works.** The page is a shell with one external script. The script puts the runtime page into a sandboxed iframe (`sandbox="allow-scripts"`, so the frame has an opaque origin), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source and nonce. This is the same arrangement as the preview of the minion UI, so the runtime bundle is used as built, with no Vite or bundling step. It opens an event stream to the server and gets the app on connect and again after every `ui_app_write` (written into the running app as path writes where it can, or as a new load), `ui_state_set`, `ui_command` and theme or locale switch. It sends back the state snapshot (throttled to one per second, saved without raising the revision), `emit` events, runtime errors and the answer to a live-state request. Query parameters `?mode=dark` and `?locale=fr` apply a theme overlay or a language to a view.
+The runtime port is a second origin that serves only the app frame; every other path there answers 404:
+
+| Route | What |
+|---|---|
+| `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
+
+**How the view works.** The page is a shell with one external script. The script puts the runtime page into a sandboxed iframe served from the runtime port (`sandbox="allow-scripts allow-same-origin"`), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source, origin and nonce. The frame keeps its own origin, which is not the page's, so it cannot reach the page; the page allows frames only from the runtime origin and the runtime page allows only the page to frame it, both by the host name the page was opened with. An opaque origin (`allow-scripts` alone) would isolate the frame the same way, but some embedded browsers refuse to load such a frame and show nothing. The message protocol is the same as in the preview of the minion UI, so the runtime bundle is used as built, with no Vite or bundling step. It opens an event stream to the server and gets the app on connect and again after every `ui_app_write` (written into the running app as path writes where it can, or as a new load), `ui_state_set`, `ui_command` and theme or locale switch. It sends back the state snapshot (throttled to one per second, saved without raising the revision), `emit` events, runtime errors and the answer to a live-state request. Query parameters `?mode=dark` and `?locale=fr` apply a theme overlay or a language to a view.
 
 **Playwright.** The server keeps one headless Chromium, started on the first call that needs it and closed on shutdown, with one page per app. The page loads the same `/apps/:appId` URL a person opens, so it is a view like any other: it receives the same messages, and `ui_command` and `ui_state_get` reach it. `ui_screenshot` and `ui_interact` look up the element in the runtime frame and use Playwright's own click, fill, press, hover and select on the native control inside it, so the events are the ones a user raises.
 
@@ -138,7 +144,7 @@ Every file is written to a temporary file in the same folder and renamed into pl
 
 - **Local only by default.** The server binds `127.0.0.1`. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused.
 - **No authentication.** Anyone who can reach the port can read, change and delete every app and use the headless browser. `--host 0.0.0.0` exposes all of that to the network and turns the Host check off. Do it only on a network you trust, or put your own authentication in front.
-- **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network, cookies or storage, but the headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
+- **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network (`connect-src 'none'`) and no forms. Its origin has its own storage, and it can read cookies that other local servers set for the same host name, but it has no way to send them anywhere except as app events to this server. The headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
 - **Paths.** Only UUIDs reach a file path. A file name is metadata and never part of a path.
 - **Uploads.** The type is sniffed from the bytes; the type the client claims is ignored. HTML, SVG, XML and executables are refused.
 

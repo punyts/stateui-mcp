@@ -16,6 +16,8 @@ export interface ServerOptions {
     readonly host: string;
     /** 0 picks a free port */
     readonly port: number;
+    /** The port of the runtime origin that serves the app frame; default the next port after `port` (a free one when `port` is 0) */
+    readonly runtimePort?: number;
     /** Speak MCP over stdin and stdout as well. The HTTP server still listens, so the browser view works */
     readonly stdio: boolean;
     readonly report: UseCaseReport;
@@ -28,6 +30,7 @@ export interface ServerOptions {
 export interface RunningServer {
     readonly origin: string;
     readonly port: number;
+    readonly runtimePort: number;
     readonly services: Services;
     readonly sessions: McpHttpSessions;
     /** Closes the MCP sessions, the HTTP server and the headless browser. Safe to call twice */
@@ -56,6 +59,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     const http = await startHttpServer({
         host: options.host,
         port: options.port,
+        runtimePort: options.runtimePort ?? (options.port === 0 ? 0 : options.port + 1),
         useCases: services.useCases,
         repository: services.repository,
         hub: services.hub,
@@ -75,6 +79,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     return {
         origin,
         port: http.port,
+        runtimePort: http.runtimePort,
         services,
         sessions,
         stop: async () => {

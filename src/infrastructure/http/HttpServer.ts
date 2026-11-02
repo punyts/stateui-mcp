@@ -16,7 +16,7 @@ import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/Preview
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
-import { COMMON_HEADERS, FILE_CSP, HOST_PAGE_CSP, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, RUNTIME_CSP } from './security.js';
+import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
 /** The MCP side of `/mcp`: sessions of the streamable HTTP transport */
 export interface McpEndpoint {
@@ -27,6 +27,8 @@ export interface McpEndpoint {
 export interface HttpServerOptions {
     readonly host: string;
     readonly port: number;
+    /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
+    readonly runtimePort: number;
     readonly useCases: UiBuilderUseCases;
     readonly repository: UiAppRepository;
     readonly hub: PreviewHub;
@@ -42,6 +44,8 @@ export interface RunningHttpServer {
     /** The origin the server listens on, such as `http://127.0.0.1:4100`. Known after `listen`, so a port of 0 works */
     readonly origin: string;
     readonly port: number;
+    /** The port of the runtime origin */
+    readonly runtimePort: number;
     close(): Promise<void>;
 }
 
@@ -130,12 +134,48 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
+ *
+ * A second listener on `runtimePort` is the runtime origin. It serves only the app frame:
+ *
+ * | Route | What |
+ * |---|---|
  * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
+ *
+ * The frame is sandboxed with `allow-scripts allow-same-origin`. Its own origin keeps it apart from the host page, and
+ * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
     const { useCases, repository, hub, liveViews, runtime, report } = options;
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
+    // Both known after listen, so a port of 0 works
+    let mainPort = 0;
+    let runtimePort = 0;
+
+    /** The host name the request used, so the other origin is reached by the same name */
+    function hostNameOf(request: IncomingMessage): string {
+        const name = requestHostName(request.headers.host);
+        if (name === undefined) throw new HttpError(400, 'The Host header is not a host name', 'bad_host');
+        return name;
+    }
+
+    async function runtimeRoute(request: IncomingMessage, response: ServerResponse): Promise<void> {
+        const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+        if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
+            const csp = runtimeCsp(`http://${hostNameOf(request)}:${mainPort}`);
+            send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': csp, 'Cache-Control': 'no-cache' });
+            return;
+        }
+        if (request.method === 'GET' && path === `${runtimeBase}/runtime.css`) {
+            send(response, 200, 'text/css; charset=utf-8', RUNTIME_CSS, { 'Cache-Control': 'no-cache' });
+            return;
+        }
+        if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {
+            send(response, 200, 'text/javascript; charset=utf-8', runtime.script, { 'Cache-Control': 'public, max-age=31536000, immutable' });
+            return;
+        }
+        throw new HttpError(404, 'Not found', 'not_found');
+    }
 
     async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
         const url = new URL(request.url ?? '/', 'http://localhost');
@@ -159,24 +199,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             send(response, 200, 'text/css; charset=utf-8', PAGE_CSS, { 'Cache-Control': 'no-cache' });
             return;
         }
-        if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
-            send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': RUNTIME_CSP, 'Cache-Control': 'no-cache' });
-            return;
-        }
-        if (method === 'GET' && path === `${runtimeBase}/runtime.css`) {
-            // loaded by the sandboxed frame, whose origin is opaque, like the script below
-            send(response, 200, 'text/css; charset=utf-8', RUNTIME_CSS, { 'Cache-Control': 'no-cache', 'Cross-Origin-Resource-Policy': 'cross-origin' });
-            return;
-        }
-        if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {
-            send(response, 200, 'text/javascript; charset=utf-8', runtime.script, {
-                'Content-Security-Policy': RUNTIME_CSP,
-                'Cache-Control': 'public, max-age=31536000, immutable',
-                // The frame is sandboxed without allow-same-origin, so its origin is opaque and its script load is cross-origin
-                'Cross-Origin-Resource-Policy': 'cross-origin'
-            });
-            return;
-        }
 
         const parts = path.split('/').filter((part) => part !== '');
         if (parts[0] === 'apps' && parts[1] !== undefined && SEGMENT.test(parts[1])) {
@@ -196,12 +218,13 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const app = await repository.findById(appId);
         if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
+        const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
         send(
             response,
             200,
             'text/html; charset=utf-8',
-            appPage({ appId, name: app.name, runtimeUrl: `${runtimeBase}/${runtime.hash}.html`, viewKind: headless ? 'headless' : 'browser' }),
-            { 'Content-Security-Policy': HOST_PAGE_CSP, 'Cache-Control': 'no-store' }
+            appPage({ appId, name: app.name, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: headless ? 'headless' : 'browser' }),
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
         );
     }
 
@@ -352,12 +375,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         result.content.pipe(response);
     }
 
-    const server: Server = createServer((request, response) => {
+    const handler = (handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) => (request: IncomingMessage, response: ServerResponse) => {
         void (async () => {
             try {
                 if (!isAllowedHost(request.headers.host, options.host)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
                 if (request.method !== 'GET' && request.method !== 'HEAD' && !isSameOrigin(request)) throw new HttpError(403, 'Cross-origin requests are refused', 'forbidden_origin');
-                await route(request, response);
+                await handle(request, response);
             } catch (error) {
                 if (response.headersSent) {
                     response.end();
@@ -371,23 +394,39 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 sendError(response, new HttpError(500, 'Internal error', 'internal_error'));
             }
         })();
-    });
+    };
 
-    await new Promise<void>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(options.port, options.host, () => {
-            server.off('error', reject);
-            resolve();
+    const listen = (target: Server, port: number): Promise<AddressInfo> =>
+        new Promise<AddressInfo>((resolve, reject) => {
+            target.once('error', reject);
+            target.listen(port, options.host, () => {
+                target.off('error', reject);
+                resolve(target.address() as AddressInfo);
+            });
         });
-    });
-    const address = server.address() as AddressInfo;
+    const stop = async (target: Server): Promise<void> => {
+        if (!target.listening) return;
+        target.closeAllConnections();
+        await new Promise<void>((resolve) => target.close(() => resolve()));
+    };
+
+    const server: Server = createServer(handler(route));
+    const runtimeServer: Server = createServer(handler(runtimeRoute));
+    const address = await listen(server, options.port);
+    mainPort = address.port;
+    try {
+        runtimePort = (await listen(runtimeServer, options.runtimePort)).port;
+    } catch (error) {
+        await stop(server);
+        throw error instanceof Error ? new Error(`The runtime port ${options.runtimePort}: ${error.message}`) : error;
+    }
     const hostForUrl = address.family === 'IPv6' ? `[${address.address}]` : address.address;
     return {
         origin: `http://${hostForUrl}:${address.port}`,
         port: address.port,
+        runtimePort,
         close: async () => {
-            server.closeAllConnections();
-            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await Promise.all([stop(server), stop(runtimeServer)]);
         }
     };
 }

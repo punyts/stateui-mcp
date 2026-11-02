@@ -1,41 +1,46 @@
 import type { IncomingMessage } from 'node:http';
 
 /**
- * The policy of the runtime page, which the app iframe loads. Scripts and styles only from the origin of the page,
- * no network, images and fonts only as `data:`, no forms, and only pages of this server may frame it.
+ * The policy of the runtime page, which the app iframe loads from the runtime origin (its own port). Scripts and styles
+ * only from that origin, no network, images and fonts only as `data:`, no forms, and only the host page of this server
+ * (`hostOrigin`) may frame it.
  *
  * `script-src` has one source beyond `'self'`: `'unsafe-eval'`. `@punyts/expression` turns the literal parts of a
  * binding expression into values with `Function(...)`, so without it every component whose template has a ternary or a
- * comparison fails to mount. The frame is sandboxed without `allow-same-origin` and `connect-src` is `'none'`, so
- * evaluated code has no network, no cookies and no storage
+ * comparison fails to mount. `connect-src` is `'none'`, so evaluated code has no network; the frame is sandboxed and
+ * its origin is not the host page's, so it cannot reach the host page either
  */
-export const RUNTIME_CSP = [
-    "default-src 'none'",
-    "script-src 'self' 'unsafe-eval'",
-    "style-src 'self'",
-    'img-src data:',
-    'font-src data:',
-    "connect-src 'none'",
-    "form-action 'none'",
-    "base-uri 'none'",
-    "frame-ancestors 'self'"
-].join('; ');
+export function runtimeCsp(hostOrigin: string): string {
+    return [
+        "default-src 'none'",
+        "script-src 'self' 'unsafe-eval'",
+        "style-src 'self'",
+        'img-src data:',
+        'font-src data:',
+        "connect-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+        `frame-ancestors ${hostOrigin}`
+    ].join('; ');
+}
 
 /**
  * The policy of the host page: its own script and stylesheet, its own event stream and reports, the runtime frame
- * from the same origin, and nothing else. No inline script and no inline style. No other page may frame it
+ * from the runtime origin (`runtimeOrigin`), and nothing else. No inline script and no inline style. No other page may frame it
  */
-export const HOST_PAGE_CSP = [
-    "default-src 'none'",
-    "script-src 'self'",
-    "style-src 'self'",
-    "connect-src 'self'",
-    "frame-src 'self'",
-    'img-src data:',
-    "form-action 'none'",
-    "base-uri 'none'",
-    "frame-ancestors 'none'"
-].join('; ');
+export function hostPageCsp(runtimeOrigin: string): string {
+    return [
+        "default-src 'none'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "connect-src 'self'",
+        `frame-src ${runtimeOrigin}`,
+        'img-src data:',
+        "form-action 'none'",
+        "base-uri 'none'",
+        "frame-ancestors 'none'"
+    ].join('; ');
+}
 
 /** The policy of a page that only lists links: a stylesheet from its own origin and nothing else */
 export const LIST_PAGE_CSP = ["default-src 'none'", "style-src 'self'", "form-action 'none'", "base-uri 'none'", "frame-ancestors 'none'"].join('; ');
@@ -51,6 +56,16 @@ export const COMMON_HEADERS: Readonly<Record<string, string>> = {
 function hostName(hostHeader: string): string {
     if (hostHeader.startsWith('[')) return hostHeader.slice(0, hostHeader.indexOf(']') + 1).toLowerCase();
     return (hostHeader.split(':')[0] ?? '').toLowerCase();
+}
+
+/**
+ * The host name of a `Host` header (`localhost`, `127.0.0.1`, `[::1]`, a LAN name or address), or `undefined` when it
+ * holds anything else. The pages build the other origin from it, in an attribute and in a policy header
+ */
+export function requestHostName(hostHeader: string | undefined): string | undefined {
+    if (hostHeader === undefined) return undefined;
+    const name = hostName(hostHeader);
+    return /^[a-z0-9.-]+$/.test(name) || /^[[0-9a-f:.]+]$/.test(name) ? name : undefined;
 }
 
 /**

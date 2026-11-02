@@ -79,38 +79,67 @@ describe('GET /apps/:appId', () => {
         expect(csp).toContain("script-src 'self'");
         expect(csp).not.toContain('unsafe');
         expect(csp).toContain("frame-ancestors 'none'");
-        expect(csp).toContain("frame-src 'self'");
+        expect(csp).toContain(`frame-src http://127.0.0.1:${harness.server.runtimePort}`);
     });
 
-    it('should point the frame at the content-hashed runtime page', async () => {
+    it('should point the frame at the content-hashed runtime page on the runtime origin', async () => {
         const html = await (await fetch(`${origin}/apps/${appId}`)).text();
         const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
+        const runtimeOrigin = `http://127.0.0.1:${harness.server.runtimePort}`;
 
-        const page = await fetch(`${origin}${runtime}`);
-        const script = await fetch(`${origin}${runtime.replace('.html', '.js')}`);
+        const page = await fetch(runtime);
+        const script = await fetch(runtime.replace('.html', '.js'));
 
-        expect(runtime).toMatch(/^\/runtime\/[0-9a-f]{16}\.html$/);
+        expect(harness.server.runtimePort).not.toBe(harness.server.port);
+        expect(runtime).toMatch(new RegExp(`^${runtimeOrigin}/runtime/[0-9a-f]{16}\.html$`));
         expect(page.status).toBe(200);
         expect(page.headers.get('content-security-policy')).toContain("script-src 'self' 'unsafe-eval'");
         expect(page.headers.get('content-security-policy')).toContain("connect-src 'none'");
+        expect(page.headers.get('content-security-policy')).toContain(`frame-ancestors ${origin}`);
         expect(script.status).toBe(200);
         expect(script.headers.get('cache-control')).toContain('immutable');
         expect((await script.text()).length).toBeGreaterThan(100_000);
-        expect((await fetch(`${origin}/runtime/0000000000000000.html`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/runtime/0000000000000000.html`)).status).toBe(404);
+    });
+
+    it('should serve the runtime only from the runtime origin, and nothing else there', async () => {
+        const html = await (await fetch(`${origin}/apps/${appId}`)).text();
+        const path = new URL(/data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '').pathname;
+        const runtimeOrigin = `http://127.0.0.1:${harness.server.runtimePort}`;
+
+        expect((await fetch(`${origin}${path}`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/apps/${appId}`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/mcp`, { method: 'POST' })).status).toBe(404);
+    });
+
+    it('should frame the runtime by the host name the page was opened with', async () => {
+        const port = new URL(origin).port;
+        const response = await new Promise<{ html: string; csp: string }>((resolve, reject) => {
+            const req = httpRequest({ host: '127.0.0.1', port, path: `/apps/${appId}`, headers: { Host: `localhost:${port}` } }, (res) => {
+                let html = '';
+                res.on('data', (chunk: Buffer) => (html += chunk.toString('utf8')));
+                res.on('end', () => resolve({ html, csp: String(res.headers['content-security-policy'] ?? '') }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+
+        expect(response.html).toContain(`data-runtime-url="http://localhost:${harness.server.runtimePort}/runtime/`);
+        expect(response.csp).toContain(`frame-src http://localhost:${harness.server.runtimePort}`);
     });
 
     it('should link the runtime stylesheet that removes the body margin and lets the root fill the frame', async () => {
         const html = await (await fetch(`${origin}/apps/${appId}`)).text();
         const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
 
-        const page = await (await fetch(`${origin}${runtime}`)).text();
-        const sheet = await fetch(`${origin}/runtime/runtime.css`);
+        const page = await (await fetch(runtime)).text();
+        const sheet = await fetch(new URL('./runtime.css', runtime));
         const css = await sheet.text();
 
         expect(page).toContain('<link rel="stylesheet" href="./runtime.css">');
         expect(sheet.status).toBe(200);
         expect(sheet.headers.get('content-type')).toContain('text/css');
-        expect(sheet.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
         expect(css).toContain('margin: 0');
         expect(css).toContain('min-height: 100%');
     });

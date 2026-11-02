@@ -4,8 +4,10 @@
  * origin only.
  *
  * It does what the minion UI's preview host does for the runtime: it puts the content-hashed runtime page into a
- * sandboxed iframe (`allow-scripts`, so an opaque origin), speaks the versioned message protocol of
- * `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source and nonce. Where the
+ * sandboxed iframe served from the runtime origin (the server's second port, `allow-scripts allow-same-origin`: the
+ * frame keeps that origin, which is not the page's, so it cannot reach the page; a browser that refuses frames with an
+ * opaque origin still shows it), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a
+ * per-load nonce, and checks every message by source, origin and nonce. Where the
  * minion UI talks to the API over a socket, this host talks to the server over one server-sent event stream (server
  * to view) and `POST /apps/:appId/report` (view to server).
  *
@@ -233,6 +235,7 @@ class LiveView {
     private readonly viewId = crypto.randomUUID();
     private readonly viewKind: string;
     private readonly runtimeUrl: string;
+    private readonly runtimeOrigin: string;
     private readonly nonce = createNonce();
     private frame: HTMLIFrameElement | undefined;
     private frameLoaded = false;
@@ -260,6 +263,7 @@ class LiveView {
         this.appId = body.dataset['appId'] ?? '';
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
+        this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
         const query = new URLSearchParams(window.location.search);
         this.mode = query.get('mode') ?? undefined;
         this.locale = query.get('locale') ?? undefined;
@@ -289,7 +293,7 @@ class LiveView {
     }
 
     private post(message: Record<string, unknown>): void {
-        this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, '*');
+        this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
     }
 
     private onServerMessage(text: string): void {
@@ -328,7 +332,7 @@ class LiveView {
     private ensureFrame(): void {
         if (this.frame !== undefined) return;
         const frame = document.createElement('iframe');
-        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.title = 'App';
         frame.addEventListener('load', () => {
             this.frameLoaded = true;
@@ -466,7 +470,7 @@ class LiveView {
     }
 
     private onRuntimeMessage(event: MessageEvent<unknown>): void {
-        if (this.frame === undefined || event.source !== this.frame.contentWindow) return;
+        if (this.frame === undefined || event.source !== this.frame.contentWindow || event.origin !== this.runtimeOrigin) return;
         const message = event.data as RuntimeMessage;
         if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
         switch (message['type']) {

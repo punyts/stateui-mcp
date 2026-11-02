@@ -6,7 +6,7 @@ describe('parseOptions', () => {
     it('should default to ./data, port 4100 and the loopback address', () => {
         const options = parseOptions([], {});
 
-        expect(options).toEqual({ dataDir: resolve('./data'), host: '127.0.0.1', port: 4100, stdio: false, runtimeDir: undefined, help: false });
+        expect(options).toEqual({ dataDir: resolve('./data'), host: '127.0.0.1', port: 4100, runtimePort: undefined, stdio: false, runtimeDir: undefined, help: false });
     });
 
     it('should read the environment and let a flag win over it', () => {
@@ -15,6 +15,12 @@ describe('parseOptions', () => {
         expect(options.port).toBe(5000);
         expect(options.dataDir).toBe(resolve('other'));
         expect(options.host).toBe('0.0.0.0');
+    });
+
+    it('should read the runtime port from the flag or the environment', () => {
+        expect(parseOptions(['--runtime-port', '5001'], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(5001);
+        expect(parseOptions([], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(4300);
+        expect(() => parseOptions(['--runtime-port', 'x'], {})).toThrow('Invalid port');
     });
 
     it('should turn on stdio and help', () => {
