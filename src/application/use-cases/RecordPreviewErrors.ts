@@ -1,6 +1,6 @@
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import type { UiPreviewLog } from '../ports/UiPreviewLog.js';
+import type { UiPreviewLog, UiViewLoad } from '../ports/UiPreviewLog.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 
 export type RecordPreviewErrorsResult =
@@ -10,7 +10,8 @@ export type RecordPreviewErrorsResult =
 
 /**
  * Appends the runtime errors a preview reports to the bounded error log, and counts the report as a sign of life.
- * More errors than the log holds in one report keeps the newest, as the log itself drops the oldest
+ * More errors than the log holds in one report keeps the newest, as the log itself drops the oldest. `source` is the
+ * view load the errors came from
  */
 export class RecordPreviewErrors {
     constructor(
@@ -22,7 +23,8 @@ export class RecordPreviewErrors {
     async execute(
         appId: string,
         errors: readonly UiBuildError[],
-        revision?: number
+        revision?: number,
+        source?: UiViewLoad
     ): Promise<RecordPreviewErrorsResult> {
         if (errors.length === 0) {
             return this.finish({ kind: 'invalid', appId, reason: 'At least one error is required' });
@@ -30,7 +32,7 @@ export class RecordPreviewErrors {
         const occurredAt = this.now();
         const kept = errors.slice(-MAX_PREVIEW_ERRORS);
         for (const error of kept) {
-            const appended = await this.previewLog.appendError(appId, error, occurredAt);
+            const appended = await this.previewLog.appendError(appId, error, source, occurredAt);
             if (!appended) return this.finish({ kind: 'not-found', appId });
         }
         await this.previewLog.recordHeartbeat(appId, revision, occurredAt);

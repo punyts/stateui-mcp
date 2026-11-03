@@ -201,6 +201,33 @@ describe('FileUiErrorLog', () => {
         expect(kept.at(-1)?.message).toBe(`e${MAX_PREVIEW_ERRORS + 4}`);
     });
 
+    it('should keep only the errors of the view load a view rendered from', async () => {
+        // Arrange
+        const id = await createApp();
+        const log = new FileUiErrorLog(folders, lock);
+        await log.append(id, { code: 'A', message: 'no source' });
+        await log.append(id, { code: 'B', message: 'other view' }, { viewId: 'v2', load: 5 });
+        await log.append(id, { code: 'C', message: 'first load' }, { viewId: 'v1', load: 1 });
+        await log.append(id, { code: 'D', message: 'second load' }, { viewId: 'v1', load: 2 });
+
+        // Act
+        const kept = await log.keepFrom(id, { viewId: 'v1', load: 2 });
+
+        // Assert
+        expect(kept).toBe(true);
+        expect((await log.list(id)).map((error) => error.code)).toEqual(['D']);
+    });
+
+    it('should read a log written before errors kept their source', async () => {
+        const id = await createApp();
+        await writeFileAtomic(folders.errorsFile(id), JSON.stringify([{ code: 'OLD', message: 'm' }]));
+        const log = new FileUiErrorLog(folders, lock);
+
+        expect(await log.list(id)).toEqual([{ code: 'OLD', message: 'm' }]);
+        await log.keepFrom(id, { viewId: 'v1', load: 1 });
+        expect(await log.list(id)).toEqual([]);
+    });
+
     it('should not create a folder for an app that does not exist', async () => {
         const log = new FileUiErrorLog(folders, lock);
 

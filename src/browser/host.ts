@@ -313,6 +313,8 @@ class LiveView {
     private syncStatus: { mode: 'full' | 'persisted'; status: string; waiting: number };
     private readonly sentIcons = new Set<string>();
     private revision = 0;
+    /** Counts the loads and in-place renders, so the server can drop the errors an earlier one reported */
+    private load = 0;
     private mode: string | undefined;
     private locale: string | undefined;
     private readonly queuedCommands: Extract<ServerMessage, { type: 'command' }>[] = [];
@@ -522,6 +524,7 @@ class LiveView {
             return;
         }
         if (plan !== 'none') {
+            this.load++;
             const icons = iconsMessage(app.icons, this.sentIcons);
             this.post({ type: 'write', writes: plan, ...(icons !== undefined && { icons }) });
             Object.keys(app.icons).forEach((name) => this.sentIcons.add(name));
@@ -553,6 +556,7 @@ class LiveView {
         const documentData = app.document['data'];
         this.shown = this.synced !== undefined ? copy(this.synced) : { data: isRecord(documentData) ? copy(documentData) : {}, app: {} };
         this.ready = false;
+        this.load++;
         this.setStatus('loading');
         this.post({
             type: 'load',
@@ -572,7 +576,7 @@ class LiveView {
     private markRendered(revision: number): void {
         this.revision = revision;
         this.body.dataset['revision'] = String(revision);
-        this.report({ type: 'rendered', revision });
+        this.report({ type: 'rendered', revision, load: this.load });
     }
 
     private onCommand(command: Extract<ServerMessage, { type: 'command' }>): void {
@@ -604,7 +608,7 @@ class LiveView {
                 if (typeof message['name'] === 'string') this.client?.emit(message['name'], message['payload'] as Json | undefined);
                 break;
             case 'error':
-                if (Array.isArray(message['errors'])) this.report({ type: 'errors', errors: message['errors'], revision: this.revision });
+                if (Array.isArray(message['errors'])) this.report({ type: 'errors', errors: message['errors'], revision: this.revision, load: this.load });
                 break;
             case 'file':
                 this.onFile(message);
@@ -627,7 +631,7 @@ class LiveView {
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
         }
-        this.report({ type: 'ready', revision: this.revision });
+        this.report({ type: 'ready', revision: this.revision, load: this.load });
     }
 
     /** A change the user made in the frame: what is synced goes to the sync client, which sends it or keeps it for later */

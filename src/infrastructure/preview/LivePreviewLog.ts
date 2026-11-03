@@ -1,5 +1,5 @@
 import type { UiFileRepository } from '../../application/ports/UiFileRepository.js';
-import type { UiPreviewLog, UiPreviewStatus } from '../../application/ports/UiPreviewLog.js';
+import type { UiPreviewLog, UiPreviewStatus, UiViewLoad } from '../../application/ports/UiPreviewLog.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import type { FileUiErrorLog } from '../storage/FileUiErrorLog.js';
 import type { PreviewHub } from './PreviewHub.js';
@@ -20,8 +20,12 @@ export class LivePreviewLog implements UiPreviewLog {
         return this.files.appExists(appId);
     }
 
-    async appendError(appId: string, error: UiBuildError, _occurredAt: Date): Promise<boolean> {
-        return this.errors.append(appId, error);
+    async appendError(appId: string, error: UiBuildError, source: UiViewLoad | undefined, _occurredAt: Date): Promise<boolean> {
+        return this.errors.append(appId, error, source);
+    }
+
+    async recordLoad(appId: string, source: UiViewLoad): Promise<boolean> {
+        return this.errors.keepFrom(appId, source);
     }
 
     async status(appId: string, _now: Date): Promise<UiPreviewStatus> {

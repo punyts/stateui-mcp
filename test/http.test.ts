@@ -378,6 +378,20 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toContain('SUI-RUN-BINDING');
     });
 
+    it('should drop the errors of an earlier load when the view renders again', async () => {
+        // Arrange
+        await report({ type: 'errors', errors: [{ code: 'SUI-RUN-STALE', message: 'old bundle' }], revision: 1, load: 1 });
+
+        // Act
+        const ready = await report({ type: 'ready', revision: 1, load: 2 });
+        await report({ type: 'errors', errors: [{ code: 'SUI-RUN-BINDING', message: 'still there' }], revision: 1, load: 2 });
+        const validated = await call(harness.client, 'ui_validate', { appId });
+
+        // Assert
+        expect(ready.status).toBe(200);
+        expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toEqual(['SUI-RUN-BINDING']);
+    });
+
     it('should refuse a report that is not valid, and the state and emit reports the sync socket replaced', async () => {
         const noView = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
         const unknownType = await report({ type: 'launch' });

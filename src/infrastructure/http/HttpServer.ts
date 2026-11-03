@@ -249,20 +249,20 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
         const viewId = body['viewId'] as string;
         const revision = typeof body['revision'] === 'number' ? body['revision'] : undefined;
+        // The load the view counts: a ready or rendered report drops the errors earlier loads left
+        const source = Number.isSafeInteger(body['load']) ? { viewId, load: body['load'] as number } : undefined;
         switch (body['type']) {
             case 'ready':
-                hub.touch(appId, viewId, { ready: true, ...(revision !== undefined && { revision }) });
-                sendJson(response, 200, { ok: true });
-                return;
             case 'rendered':
-                hub.touch(appId, viewId, { ...(revision !== undefined && { revision }) });
+                hub.touch(appId, viewId, { ...(body['type'] === 'ready' && { ready: true }), ...(revision !== undefined && { revision }) });
+                if (source !== undefined) await useCases.recordPreviewLoad.execute(appId, source);
                 sendJson(response, 200, { ok: true });
                 return;
             case 'errors': {
                 const errors = toBuildErrors(body['errors']);
                 if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
                 hub.recordErrors(appId, errors);
-                const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision);
+                const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision, source);
                 if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
                 hub.touch(appId, viewId);
                 sendJson(response, 200, { ok: true });
