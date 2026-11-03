@@ -2,7 +2,7 @@ import { libraryFromCatalog } from '@punyts/stateui-app/core';
 import type { CatalogSource } from '@punyts/stateui-app/core';
 import { createAuthority, createMemoryNamespaceStorage } from '@punyts/state-sync/authority';
 import type { Authority } from '@punyts/state-sync/authority';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import { loadCatalogFile } from '../stateUiLibrary.js';
@@ -164,6 +164,98 @@ describe('AppLogic', () => {
 
         expect(authority.get('$.data.contacts')).toEqual({});
         expect(authority.get('$.app.children.addContact.error')).toBe('Draft is not a name');
+    });
+
+    it('should give a client change and a tool write the value they replaced as $previous', async () => {
+        // Arrange
+        const document = {
+            ...DOCUMENT,
+            logic: { rules: { moved: { when: { path: '$.data.stats.contacts', was: 0 }, do: [{ command: 'set', target: '$.data.moved', value: '{{ $previous }}>{{ $trigger }}' }] } } }
+        } as unknown as UiDocument;
+        const first = await setup(document);
+        const second = await setup(document);
+
+        // Act
+        first.session.receive(change('$.data.stats.contacts', 3));
+        second.logic.write('$.data.stats.contacts', 5);
+        second.logic.write('$.data.stats.contacts', 6);
+
+        // Assert
+        expect(first.authority.get('$.data.moved')).toBe('0>3');
+        expect(second.authority.get('$.data.moved')).toBe('0>5');
+    });
+
+    it('should fire an after transition on a timer and stop its timers with the logic', async () => {
+        vi.useFakeTimers();
+        try {
+            // Arrange
+            const document = {
+                ...DOCUMENT,
+                logic: {
+                    machines: {
+                        toast: {
+                            state: '$.app.toast',
+                            initial: 'hidden',
+                            transitions: [
+                                { from: 'hidden', when: { path: '$.data.stats.contacts' }, to: 'shown' },
+                                { from: 'shown', when: { after: 1000 }, to: 'hidden' }
+                            ]
+                        }
+                    }
+                }
+            } as unknown as UiDocument;
+            const first = await setup(document);
+            const second = await setup(document);
+
+            // Act
+            first.logic.write('$.data.stats.contacts', 1);
+            second.logic.write('$.data.stats.contacts', 1);
+            second.logic.dispose();
+            vi.advanceTimersByTime(1000);
+
+            // Assert
+            expect(first.authority.get('$.app.toast')).toBe('hidden');
+            expect(second.authority.get('$.app.toast')).toBe('shown');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('should give a call the answer of its procedure', async () => {
+        // Arrange
+        const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true });
+        const asked: [string, JsonValue][] = [];
+        const logic = new AppLogic(authority, library, () => undefined, () => undefined, async (name, payload) => {
+            asked.push([name, payload]);
+            return { status: 'accepted', value: 42 };
+        });
+        logic.setDocument({
+            data: {},
+            app: { component: 'page' },
+            logic: {
+                machines: {
+                    ask: {
+                        state: '$.data.phase',
+                        initial: 'idle',
+                        transitions: [
+                            { from: 'idle', when: { path: '$.data.question' }, do: [{ command: 'call', target: 'answer', value: '$trigger', as: 'reply' }], to: 'waiting' },
+                            { from: 'waiting', when: { result: 'reply', is: 'accepted' }, do: [{ command: 'set', target: '$.data.answer', value: '$result.value' }], to: 'idle' }
+                        ]
+                    }
+                }
+            }
+        } as unknown as UiDocument);
+
+        // Act
+        logic.write('$.data.question', 'life');
+        const waiting = authority.get('$.data.phase');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Assert
+        expect(waiting).toBe('waiting');
+        expect(asked).toEqual([['answer', 'life']]);
+        expect(authority.get('$.data.answer')).toBe(42);
+        expect(authority.get('$.data.phase')).toBe('idle');
     });
 
     it('should stop running when the document has no logic', async () => {

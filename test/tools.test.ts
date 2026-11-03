@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe('tool list', () => {
-    it('should list the sixteen ui-builder tools and the three new ones', async () => {
+    it('should list the sixteen ui-builder tools and the four new ones', async () => {
         const { tools } = await harness.client.listTools();
 
         expect(tools.map((tool) => tool.name).sort()).toEqual(
@@ -85,7 +85,8 @@ describe('tool list', () => {
                 'ui_app_delete',
                 'ui_screenshot',
                 'ui_interact',
-                'ui_events_read'
+                'ui_events_read',
+                'ui_call_answer'
             ].sort()
         );
     });
@@ -311,6 +312,43 @@ describe('write tools', () => {
         expect(accepted.isError).toBe(false);
         expect(refused.body).toMatchObject({ error: 'logic-guard', message: `A guard rule of the app's logic refused the value: A task needs a title` });
         expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t1: { title: 'first' } }, stats: { tasks: 1 } });
+    });
+
+    it('should queue a logic call for the agent and give the machine the answer from ui_call_answer', async () => {
+        // Arrange
+        const document = {
+            data: { phase: 'idle' },
+            app: { component: 'page' },
+            logic: {
+                machines: {
+                    lookup: {
+                        state: '$.data.phase',
+                        initial: 'idle',
+                        transitions: [
+                            { from: 'idle', when: { path: '$.data.query' }, do: [{ command: 'call', target: 'findCompany', value: { name: '$trigger' }, as: 'found' }], to: 'waiting' },
+                            { from: 'waiting', when: { result: 'found', is: 'accepted' }, do: [{ command: 'set', target: '$.data.company', value: '$result.value' }], to: 'idle' }
+                        ]
+                    }
+                }
+            }
+        };
+        const created = await call(harness.client, 'ui_app_create', { name: 'Company lookup', document });
+        const appId = created.body['appId'] as string;
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.query', value: 'Acme' });
+
+        // Act
+        const read = await call(harness.client, 'ui_events_read', { appId });
+        const event = (read.body['events'] as { name: string; payload: { id: string; name: string; payload: unknown } }[]).find((item) => item.name === 'logic.call');
+        const answered = await call(harness.client, 'ui_call_answer', { appId, id: event?.payload.id, status: 'accepted', value: { id: 'k1', name: 'Acme BV' } });
+        const again = await call(harness.client, 'ui_call_answer', { appId, id: event?.payload.id, status: 'accepted' });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(event?.payload).toMatchObject({ name: 'findCompany', payload: { name: 'Acme' } });
+        expect(answered.body).toEqual({ appId, id: event?.payload.id, answered: true });
+        expect(again.body['error']).toBe('not-waiting');
+        expect((state.body['state'] as { data: unknown }).data).toMatchObject({ phase: 'idle', company: { id: 'k1', name: 'Acme BV' } });
     });
 
     it('should remove a record under $.data with remove and refuse a missing entry, $.data itself and value with remove', async () => {

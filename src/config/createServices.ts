@@ -16,6 +16,7 @@ import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileReposi
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
+import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
 import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import { PersistedStates } from '../infrastructure/sync/PersistedStates.js';
 import { StatenetRelayStorage } from '../infrastructure/sync/StatenetRelayStorage.js';
@@ -33,6 +34,8 @@ export interface ServicesOptions {
     readonly statenet?: string;
     /** The key that encrypts `$.server` at rest */
     readonly serverKey?: Uint8Array;
+    /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
+    readonly procedures?: Readonly<Record<string, AppProcedure>>;
 }
 
 /** Everything the transports need: the use cases, the live views, the browser and the repository */
@@ -42,6 +45,8 @@ export interface Services {
     readonly hub: PreviewHub;
     /** The sync authority of each app: the views connect to it, the tools write through it */
     readonly authorities: AppAuthorities;
+    /** The calls of Full-mode logic that wait for the agent's answer */
+    readonly calls: AppCalls;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
@@ -66,7 +71,7 @@ export function createServices(options: ServicesOptions): Services {
             hub.touch(appId, viewId);
         },
         options.serverKey,
-        { library, report: options.report }
+        { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) }
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
@@ -82,6 +87,7 @@ export function createServices(options: ServicesOptions): Services {
         repository,
         hub,
         authorities,
+        calls: authorities.calls,
         liveViews: new LiveViews(useCases.getUiApp, hub, browser),
         browser,
         report: options.report,

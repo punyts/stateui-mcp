@@ -44,6 +44,46 @@ describe('formatLogic', () => {
         expect(lines[1]).toBe('  machine addContact: editing (at $.app.children.addContact.phase)');
     });
 
+    it('should list tables with their rows, and timers, was and call targets', () => {
+        // Arrange
+        const logic = {
+            machines: {
+                lookup: {
+                    state: '$.app.lookup',
+                    initial: 'idle',
+                    transitions: [
+                        { from: 'idle', when: { path: '$.app.query', was: 'none', debounce: 300 }, do: [{ command: 'call', target: 'find', as: 'found' }], to: 'waiting' },
+                        { from: 'waiting', when: { after: 5000 }, to: 'idle' }
+                    ]
+                }
+            },
+            tables: {
+                shipping: {
+                    when: { path: '$.data.order' },
+                    inputs: { country: '$.data.order.country' },
+                    rows: [
+                        { match: { country: 'NL' }, if: '$total >= 50', do: [{ command: 'set', target: '$.data.order.shipping', value: 0 }] },
+                        { do: [{ command: 'set', target: '$.data.order.shipping', value: 5 }] }
+                    ]
+                }
+            }
+        } as unknown as JsonValue;
+
+        // Act
+        const lines = formatLogic(logic, () => undefined);
+
+        // Assert
+        expect(lines).toEqual([
+            'logic',
+            '  machine lookup: idle (at $.app.lookup)',
+            '    idle → waiting when $.app.query was none debounce 300 ms: call find as found',
+            '    waiting → idle after 5000 ms',
+            '  table shipping when $.data.order inputs country',
+            '    country = NL, if $total >= 50: set',
+            '    otherwise: set'
+        ]);
+    });
+
     it('should return no lines when the document has no logic', () => {
         expect(formatLogic(undefined, () => undefined)).toEqual([]);
     });

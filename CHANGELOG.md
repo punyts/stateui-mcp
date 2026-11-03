@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: logic epic 2 in Full mode. The authority gives the logic `$previous` (the value a client change or a tool write replaced) and runs the `after` and `debounce` timers on the server. A `call` command runs a procedure of the new `procedures` option of `startServer` and `createServices`, or is queued as a `logic.call` event (`{ id, name, payload }`) for `ui_events_read`; the new tool `ui_call_answer` answers it (`not-waiting` when none waits). At most 100 calls wait per app. `ui_outline` lists decision tables with their rows, and shows `after`, `was`, `debounce` and the `call` target. The server instructions describe tables, timers and calls.
 - New: app logic in Full mode. Each app's authority runs the document's `logic` (`AppLogic`): a client change runs it after it is applied, guard rules refuse a client change before (the view gets `sync.rejected`), `ui_state_set` asks the guards and runs the logic too, and a transition's writes reach the views as one `changes` message. `$.app` is read as the document's value with the shape defaults under the authority's sparse value. `notify` and `logic.failed` reach the views as app events; `emit` and failures are queued for `ui_events_read`. A value a guard refuses is `logic-guard` from `ui_state_set`.
 - New: `ui_outline` of the root ends with the logic: each machine with its current state and transitions, then the rules and guards. The server instructions describe the logic.
 - Depends on `@punyts/state-sync` ^0.8.0.

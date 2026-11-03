@@ -6,6 +6,8 @@ import type { Authority, NamespaceStorage } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
+import { AppCalls } from './AppCalls.js';
+import type { AppProcedure } from './AppCalls.js';
 import { AppLogic } from './AppLogic.js';
 import { appNamespace } from './FileNamespaceStorage.js';
 
@@ -19,6 +21,8 @@ export const LOGIC_VIEW_ID = 'logic';
 export interface AppLogicOptions {
     library: ComponentLibrary;
     report: Pick<Report, 'info'>;
+    /** The server procedures a `call` runs by name; a call to any other name waits for the agent (`ui_call_answer`) */
+    procedures?: Readonly<Record<string, AppProcedure>>;
 }
 
 /**
@@ -30,6 +34,8 @@ export interface AppLogicOptions {
 export class AppAuthorities {
     private readonly authorities = new Map<string, Promise<Authority>>();
     private readonly logics = new Map<string, AppLogic>();
+    /** The answers to the apps' `call` commands */
+    readonly calls: AppCalls;
 
     constructor(
         private readonly storage: NamespaceStorage,
@@ -37,7 +43,9 @@ export class AppAuthorities {
         /** The key that encrypts `$.server` at rest; without it an app whose state has `$.server` is refused */
         private readonly serverKey?: Uint8Array,
         private readonly logic?: AppLogicOptions
-    ) {}
+    ) {
+        this.calls = new AppCalls((appId, name, payload) => this.onEmit(appId.toLowerCase(), name, payload, LOGIC_VIEW_ID), logic?.procedures);
+    }
 
     /** The authority of an app; `document` gives the state at revision 0 when nothing is stored */
     authority(appId: string, document: UiDocument): Promise<Authority> {
@@ -71,7 +79,8 @@ export class AppAuthorities {
             authority,
             library,
             (name, payload) => this.onEmit(appId, name, payload, LOGIC_VIEW_ID),
-            (message, failure) => report.info(message, { app: appId, machine: failure.machine, from: failure.from, command: failure.command, reason: failure.reason })
+            (message, failure) => report.info(message, { app: appId, machine: failure.machine, from: failure.from, command: failure.command, reason: failure.reason }),
+            (name, payload) => this.calls.ask(appId, name, payload)
         );
         this.logics.set(appId, logic);
         try {
@@ -127,6 +136,7 @@ export class AppAuthorities {
         this.authorities.delete(key);
         this.logics.get(key)?.dispose();
         this.logics.delete(key);
+        this.calls.forget(key);
         const created = await authority.catch(() => undefined);
         if (created === undefined) return;
         created.close();

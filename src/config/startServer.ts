@@ -9,6 +9,7 @@ import { McpHttpSessions } from '../infrastructure/mcp/McpHttpSessions.js';
 import { createStateUiMcpServer } from '../infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
 import { createServices } from './createServices.js';
+import type { ServicesOptions } from './createServices.js';
 import type { Services } from './createServices.js';
 
 export interface ServerOptions {
@@ -29,6 +30,8 @@ export interface ServerOptions {
     readonly statenet?: string;
     /** The key that encrypts `$.server` at rest */
     readonly serverKey?: Uint8Array;
+    /** The server procedures Full-mode logic `call`s by name; other names wait for the agent (`ui_call_answer`) */
+    readonly procedures?: ServicesOptions['procedures'];
 }
 
 export interface RunningServer {
@@ -58,7 +61,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         origin: () => origin,
         ...(options.browser !== undefined && { browser: options.browser }),
         ...(options.statenet !== undefined && { statenet: options.statenet }),
-        ...(options.serverKey !== undefined && { serverKey: options.serverKey })
+        ...(options.serverKey !== undefined && { serverKey: options.serverKey }),
+        ...(options.procedures !== undefined && { procedures: options.procedures })
     });
     const dependencies = { ...services, useCases: services.useCases };
     const sessions = new McpHttpSessions(() => createStateUiMcpServer(dependencies), options.report);

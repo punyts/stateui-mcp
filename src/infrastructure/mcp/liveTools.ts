@@ -4,6 +4,8 @@ import { BrowserUnavailableError, INTERACT_ACTIONS } from '../preview/BrowserPre
 import type { InteractStep, PreviewBrowser } from '../preview/BrowserPreview.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
+import type { LogicAnswer } from '@punyts/stateui-app/core';
+import type { AppCalls } from '../sync/AppCalls.js';
 import { READ_ONLY, SHOWS, WRITES, defineInput, fail, succeed } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
@@ -51,6 +53,14 @@ const EVENTS_READ = defineInput({
     since: { type: 'integer', minimum: 0, description: 'The cursor a previous call returned: only newer events come back. Without it every queued event comes back' }
 });
 
+const CALL_ANSWER = defineInput({
+    appId: APP_ID,
+    id: { type: 'string', required: true, description: 'The id of the logic.call event from ui_events_read' },
+    status: { type: 'string', required: true, enum: ['accepted', 'rejected'], description: 'accepted gives the machine $result.value; rejected gives it $result.reason' },
+    value: { type: 'json', description: 'The answer, for accepted' },
+    reason: { type: 'string', description: 'Why, for rejected; shown to the machine as $result.reason' }
+});
+
 function notFound(appId: string): ToolOutcome {
     return fail('not-found', 'No application with this id', { appId });
 }
@@ -68,13 +78,14 @@ export interface LiveToolDependencies {
     readonly hub: PreviewHub;
     readonly liveViews: Pick<LiveViews, 'command'>;
     readonly browser: Pick<PreviewBrowser, 'open' | 'screenshot' | 'interact'>;
+    readonly calls: Pick<AppCalls, 'answer'>;
     /** The URL a person opens for an app, such as `http://127.0.0.1:4100/apps/<id>` */
     readonly viewUrl: (appId: string) => string;
 }
 
 /** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and `emit` events */
 export function createLiveTools(dependencies: LiveToolDependencies): readonly UiToolDefinition[] {
-    const { useCases, hub, liveViews, browser, viewUrl } = dependencies;
+    const { useCases, hub, liveViews, browser, viewUrl, calls } = dependencies;
 
     async function revisionOf(appId: string): Promise<number | undefined> {
         const result = await useCases.getApp.execute(appId, { depth: 0 });
@@ -188,7 +199,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Read the "emit" events the running application raised (a button with an emit action, a form submit), oldest first. There is no chat turn to carry them, so poll this tool after the user has had a chance to act, and pass the returned cursor as since next time. At most 500 events are kept per application and a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Read the "emit" events the running application raised (a button with an emit action, a form submit), the logic.failed events and the logic.call events of its logic, oldest first. Answer a logic.call (payload { id, name, payload }) with ui_call_answer. There is no chat turn to carry them, so poll this tool after the user has had a chance to act, and pass the returned cursor as since next time. At most 500 events are kept per application and a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -198,6 +209,25 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if ((await revisionOf(appId)) === undefined) return notFound(appId);
                 const { events, cursor } = hub.readEvents(appId, since);
                 return succeed({ appId, events, cursor });
+            }
+        },
+        {
+            name: 'ui_call_answer',
+            description:
+                'Answer a "call" command of the app\'s logic (Full mode): the logic.call event from ui_events_read carries its id, the procedure name and the payload. The machine that called gets accepted with $result.value, or rejected with $result.reason, and moves on. Returns { appId, id, answered }; an id that is not waiting (answered already, or lost on a restart) is the error not-waiting.',
+            inputSchema: CALL_ANSWER.schema,
+            annotations: WRITES,
+            run: async (args) => {
+                const parsed = CALL_ANSWER.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const { appId, id, status, value, reason } = parsed.value;
+                if ((await revisionOf(appId)) === undefined) return notFound(appId);
+                const answer =
+                    status === 'accepted'
+                        ? { status: 'accepted' as const, ...(value !== undefined && { value: value as LogicAnswer['value'] }) }
+                        : { status: 'rejected' as const, ...(reason !== undefined && { reason }) };
+                if (!calls.answer(appId, id, answer)) return fail('not-waiting', 'No call with this id is waiting for an answer', { appId, id });
+                return succeed({ appId, id, answered: true });
             }
         },
         {
