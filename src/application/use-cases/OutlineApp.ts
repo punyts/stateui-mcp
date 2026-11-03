@@ -2,6 +2,7 @@ import { parseDocumentPath, resolveDocumentPath } from '../../domain/DocumentPat
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import { isNodeValue } from '../../domain/nodeDepth.js';
+import { formatLogic } from '../outline/formatLogic.js';
 import { formatOutline } from '../outline/formatOutline.js';
 import type { UiAppRepository } from '../ports/UiAppRepository.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
@@ -39,7 +40,8 @@ const DATA_PREFIX = '$.data.';
 
 /**
  * A text outline of what the user will see, from the resolved document and the latest state snapshot: no browser.
- * Record counts and the `open` and `hidden` marks follow the snapshot when it has them
+ * Record counts and the `open` and `hidden` marks follow the snapshot when it has them. The outline of the root
+ * ends with the document's logic: machines with their current state, rules and guards
  */
 export class OutlineApp {
     constructor(
@@ -78,14 +80,18 @@ export class OutlineApp {
         const snapshotData = app.stateSnapshot['data'];
         const data: JsonValue | undefined = isJsonObject(snapshotData) ? snapshotData : app.document['data'];
 
+        const isRoot = segments.length === 1 && segments[0] === 'app';
+        const snapshot = { app: snapshotApp ?? {}, data: data ?? {} } as JsonObject;
+        const trailer = isRoot ? formatLogic(app.document['logic'], (path) => this.stateAt(snapshot, path)) : [];
         const outline = formatOutline({
             root,
-            rootKey: segments.length === 1 && segments[0] === 'app' ? undefined : segments[segments.length - 1],
+            rootKey: isRoot ? undefined : segments[segments.length - 1],
             appPath: segments[0] === 'app' ? segments.slice(1) : undefined,
             overlay,
             snapshotApp,
             recordCount: (target) => this.countRecords(data, target),
-            depth
+            depth,
+            trailer
         });
         return this.finish(appId, {
             kind: 'outline',
@@ -96,6 +102,13 @@ export class OutlineApp {
             cutLines: outline.cutLines,
             localeApplied: locale === undefined || overlay !== undefined
         });
+    }
+
+    /** A `$.app` or `$.data` path read from the snapshot */
+    private stateAt(snapshot: JsonObject, path: string): JsonValue | undefined {
+        if (!path.startsWith('$.')) return undefined;
+        const found = resolveDocumentPath(snapshot, path.slice(2).split('.'));
+        return found.found ? found.value : undefined;
     }
 
     private countRecords(data: JsonValue | undefined, target: string): number | undefined {

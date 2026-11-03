@@ -287,6 +287,32 @@ describe('write tools', () => {
         expect(state.body['state']).toEqual({ data: { name: 'Ada' }, app: {} });
     });
 
+    it('should refuse a value a guard rule of the logic refuses, and run the other rules', async () => {
+        // Arrange
+        const document = {
+            data: { tasks: {}, stats: { tasks: 0 } },
+            app: { component: 'page' },
+            logic: {
+                rules: {
+                    count: { when: { path: '$.data.tasks' }, do: [{ command: 'set', target: '$.data.stats.tasks', value: '{{ size($.data.tasks) }}' }] },
+                    titled: { when: { path: '$.data.tasks.{id}', if: "$trigger.title == ''" }, do: [{ command: 'reject', reason: 'A task needs a title' }] }
+                }
+            }
+        };
+        const created = await call(harness.client, 'ui_app_create', { name: 'Guarded tasks', document });
+        const appId = created.body['appId'] as string;
+
+        // Act
+        const accepted = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', value: { title: 'first' } });
+        const refused = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', value: { title: '' } });
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(accepted.isError).toBe(false);
+        expect(refused.body).toMatchObject({ error: 'logic-guard', message: `A guard rule of the app's logic refused the value: A task needs a title` });
+        expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t1: { title: 'first' } }, stats: { tasks: 1 } });
+    });
+
     it('should remove a record under $.data with remove and refuse a missing entry, $.data itself and value with remove', async () => {
         // Arrange
         const appId = await createForm();

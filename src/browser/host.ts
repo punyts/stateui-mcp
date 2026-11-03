@@ -30,6 +30,11 @@ import type { JsonValue, LocalChange, LocalStore, StoreBridge, SyncClient, SyncS
 type Json = JsonValue;
 type JsonRecord = { [key: string]: Json };
 
+/** The app events an app server's logic sends to the views: failures and `notify.<name>` */
+function isLogicEvent(name: string): boolean {
+    return name === 'logic.failed' || /^notify\.[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name);
+}
+
 /** The synced part of the runtime store that the frame shows */
 interface ViewState {
     data: JsonRecord;
@@ -340,6 +345,9 @@ class LiveView {
             localStore: this.store,
             clientId: this.viewId,
             onStatus: (report) => this.onSyncStatus(report),
+            onEmit: (name, value) => {
+                if (this.loaded && isLogicEvent(name)) this.post({ type: 'event', name, ...(value === undefined ? {} : { payload: value }) });
+            },
             onRejected: (rejection) => {
                 if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason } });
             }

@@ -58,18 +58,19 @@ export function createServices(options: ServicesOptions): Services {
     const hub = new PreviewHub(now);
     const relay = options.statenet === undefined ? undefined : new StatenetRelayStorage(options.statenet, options.serverKey);
     const persisted = options.statenet === undefined ? undefined : new PersistedStates(options.statenet);
+    const { validator, catalog, library } = createStateUiAdapters();
     const authorities = new AppAuthorities(
         relay ?? new FileNamespaceStorage(folders),
         (appId, name, value, viewId) => {
             hub.recordEvent(appId, viewId, name, value);
             hub.touch(appId, viewId);
         },
-        options.serverKey
+        options.serverKey,
+        { library, report: options.report }
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
-    const { validator, catalog } = createStateUiAdapters();
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
         { repository, validator, previewLog, catalog, fileRepository, fileStore },

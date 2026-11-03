@@ -22,12 +22,16 @@ const LIVE_VIEW = [
     'Files a user uploads to a fileField are listed as { id, name, size, type } references in ui_state_get and in emit payloads. ui_file_read reads text, CSV, Markdown and JSON files (up to 256 KiB); other types return the reference with text null.'
 ];
 
+const LOGIC = [
+    'Behavior goes in the "logic" of the document: machines (a state path, an initial state and transitions from one state to another when a trigger matches) and rules (a trigger and commands). A trigger is a state path ("$.data.contacts.{id}"; * and {name} match one segment) or the result of a save-data or delete-data command ("result": its "as" name), narrowed by "is" and "if". Commands: set, merge, copy, toggle, increment, reset, save-data, delete-data, pull-data, query, notify, emit, reject. A rule whose only command is reject is a guard: it refuses the change. A Save button sets a flag the machine watches; save-data copies the form into $.data. ui_outline lists the machines with their current state, and failures arrive as logic.failed events.'
+];
+
 const SAFETY = [
     'ui_app_delete cannot be undone. Ask the user before you call it, and pass the revision you read as expectedRevision; a conflict means the app changed and nothing was deleted.'
 ];
 
 /** The `instructions` field of the server, shown by the client to the model */
-export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LIVE_VIEW, ...SAFETY].join('\n\n');
+export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LOGIC, ...LIVE_VIEW, ...SAFETY].join('\n\n');
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
 export const START_HERE = 'Start of the working loop: ui_components_list, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, record keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';

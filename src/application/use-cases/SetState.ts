@@ -31,7 +31,9 @@ export type SetStateRefusal =
     | 'runtime-property'
     | 'exposed-property'
     | 'content-locale-active'
-    | 'persisted-app';
+    | 'persisted-app'
+    /** A guard rule of the app's logic refused the value */
+    | 'logic-guard';
 
 export type SetStateResult =
     /** `statePath` is where the value was written in the state, such as `$.data.totals` or `$.app.children.name.value` */
@@ -53,6 +55,11 @@ type Resolved =
 
 function refuse(appId: string, reason: SetStateRefusal, message: string): { ok: false; result: SetStateResult } {
     return { ok: false, result: { kind: 'refused', appId, reason, message } };
+}
+
+/** A value a guard rule of the app's logic refused */
+function guardRefusal(appId: string, reason: string): SetStateResult {
+    return { kind: 'refused', appId, reason: 'logic-guard', message: `A guard rule of the app's logic refused the value: ${reason}` };
 }
 
 /**
@@ -124,6 +131,7 @@ export class SetState {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
         }
         if (written.kind === 'not-found') return this.finish(appId, { kind: 'not-found', appId });
+        if (written.kind === 'refused') return this.finish(appId, guardRefusal(appId, written.reason));
         return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path, statePath });
     }
 
@@ -143,6 +151,7 @@ export class SetState {
         const written = await this.repository.writeState(appId, ['data', ...parsed.path], undefined, app.revision);
         if (written.kind === 'conflict') return { kind: 'conflict', appId, currentRevision: written.currentRevision };
         if (written.kind === 'not-found') return { kind: 'not-found', appId };
+        if (written.kind === 'refused') return guardRefusal(appId, written.reason);
         return { kind: 'written', appId, revision: written.revision, path: statePath, statePath };
     }
 

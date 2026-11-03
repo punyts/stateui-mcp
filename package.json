@@ -34,7 +34,7 @@
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@punyts/core": "^1.0.0",
-        "@punyts/state-sync": "^0.7.0",
+        "@punyts/state-sync": "^0.8.0",
         "@punyts/stateui-app": "^0.1.0",
         "@punyts/stateui-components": "^0.1.0",
         "busboy": "^1.6.0",

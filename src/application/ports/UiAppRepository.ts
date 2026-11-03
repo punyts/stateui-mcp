@@ -28,6 +28,11 @@ export type UiAppWriteResult =
     | { readonly kind: 'conflict'; readonly currentRevision: number }
     | { readonly kind: 'not-found' };
 
+export type UiAppStateWriteResult =
+    | UiAppWriteResult
+    /** A guard rule of the app's logic refused the value; `reason` is the rule's */
+    | { readonly kind: 'refused'; readonly reason: string };
+
 export type UiAppDeleteResult =
     | { readonly kind: 'deleted' }
     | { readonly kind: 'conflict'; readonly currentRevision: number }
@@ -48,7 +53,7 @@ export interface UiAppRepository {
      * removes the entry there when `value` is undefined. Every open view gets the change at once. The revision stays as
      * it is; `written` carries it
      */
-    writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppWriteResult>;
+    writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppStateWriteResult>;
     /** Removes the app folder: document, state, error log and files */
     delete(appId: string, expectedRevision: number): Promise<UiAppDeleteResult>;
 }

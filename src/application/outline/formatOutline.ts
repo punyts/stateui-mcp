@@ -31,6 +31,8 @@ export interface OutlineSource {
     /** How many records a `$.data...` target holds, or `undefined` when it is not data or not a list */
     readonly recordCount: (target: string) => number | undefined;
     readonly depth: number | undefined;
+    /** Lines shown after the tree, such as the document's logic */
+    readonly trailer?: readonly string[];
 }
 
 export interface Outline {
@@ -179,11 +181,13 @@ class Formatter {
  * out when it repeats the component), the component, its main content (`_title`, `_label` or `_text`, in the chosen
  * language when an overlay is given), its links as `<-target`, and `(hidden)` or `(closed)` marks. Hidden and closed
  * nodes stay in. A toolbar of leaf nodes shares one line. A `row` template is shown once, with the record count of
- * the link that feeds it; data values are never shown. Output past `MAX_OUTLINE_LINES` is cut and counted
+ * the link that feeds it; data values are never shown. The `trailer` lines follow the tree. Output past
+ * `MAX_OUTLINE_LINES` is cut and counted
  */
 export function formatOutline(source: OutlineSource): Outline {
     const formatter = new Formatter(source);
     if (isNodeValue(source.root)) formatter.emit(source.root, source.rootKey, source.appPath, 0, 0);
+    if (source.trailer !== undefined) formatter.lines.push(...source.trailer);
     const lineCount = formatter.lines.length;
     if (lineCount <= MAX_OUTLINE_LINES) return { text: formatter.lines.join('\n'), lineCount, cutLines: 0 };
     const cutLines = lineCount - MAX_OUTLINE_LINES;
