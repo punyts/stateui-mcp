@@ -1,8 +1,15 @@
+import { COMPONENT_CATEGORIES, createSearchIndex } from '@punyts/stateui-app/core';
+import type { SearchEntry, SearchIndex } from '@punyts/stateui-app/core';
 import { createIconNames } from '@punyts/stateui-components';
 import type { IconEntry, IconNames, IconPath, IconsFile } from '@punyts/stateui-components';
+import { InvalidSearchArgumentError } from '../application/ports/ComponentCatalog.js';
 import type {
+    CategoryIndexEntry,
     ComponentCatalog,
     ComponentEntry,
+    ComponentSearchHit,
+    ComponentSearchQuery,
+    ComponentSearchResult,
     ComponentSummary,
     IconMatch,
     IconQuery,
@@ -14,6 +21,40 @@ import type { CatalogFile, CatalogFileComponent } from './stateUiLibrary.js';
 
 export const DEFAULT_ICON_LIMIT = 30;
 export const MAX_ICON_LIMIT = 100;
+
+export const DEFAULT_SEARCH_LIMIT = 5;
+export const MAX_SEARCH_LIMIT = 20;
+
+/**
+ * Below this best score a search is weak. Set between the score of a need whose only match is one word of one
+ * component's summary (weak) and one whose only match is one word of one purpose phrase (not weak); the catalog tests
+ * pin both on the real catalog. One summary word scores above it: `delete`, in the short summary of `crudTable`
+ */
+export const WEAK_SCORE_FLOOR = 4.9;
+
+/** The lowercased words of a camelCase name: `dateRangeField` is date, range, field */
+function nameWords(name: string): string[] {
+    return name.split(/(?=[A-Z])/).map((word) => word.toLowerCase());
+}
+
+/** The four search fields of a catalog entry: purposes, name words, summary, and the property and event names of a root */
+function searchEntry(component: CatalogFileComponent): SearchEntry {
+    const properties = component.tier === 'root' ? [...Object.keys((component.shape?.['properties'] as object | undefined) ?? {}), ...(component.events ?? [])] : [];
+    return {
+        id: component.name,
+        fields: { purposes: component.purposes, name: nameWords(component.name), summary: component.summary === '' ? [] : [component.summary], properties }
+    };
+}
+
+/** The letter trigrams of a text, with word edges, for the no-match fallback */
+function trigrams(text: string): Set<string> {
+    const grams = new Set<string>();
+    for (const word of text.toLowerCase().split(/[^a-z]+/).filter((part) => part !== '')) {
+        const padded = ` ${word} `;
+        for (let index = 0; index + 3 <= padded.length; index++) grams.add(padded.slice(index, index + 3));
+    }
+    return grams;
+}
 
 function toSummary(component: CatalogFileComponent): ComponentSummary {
     return { name: component.name, tier: component.tier, size: component.size, summary: component.summary };
@@ -64,12 +105,28 @@ export class StateUiComponentCatalog implements ComponentCatalog {
     private readonly aliasesByIcon: ReadonlyMap<string, readonly string[]>;
     private readonly tokens: readonly ThemeToken[];
     private readonly overlays: readonly ThemeOverlayEntry[];
+    private readonly components: readonly CatalogFileComponent[];
+    private readonly categories: readonly CategoryIndexEntry[];
+    private readonly tiers: readonly string[];
+    /** One search index per narrowing (`category`/`tier`), built on first use */
+    private readonly indexes = new Map<string, SearchIndex>();
 
     constructor(
         catalog: CatalogFile,
         private readonly icons: IconsFile
     ) {
         this.summaries = catalog.components.map(toSummary);
+        this.components = catalog.components;
+        this.tiers = [...new Set(catalog.components.map((component) => component.tier))].sort();
+        this.categories = COMPONENT_CATEGORIES.flatMap((category) => {
+            const members = catalog.components.filter((component) => component.category === category);
+            if (members.length === 0) return [];
+            const typical = [...members]
+                .sort((a, b) => b.purposes.length - a.purposes.length || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+                .slice(0, 3)
+                .map((component) => component.name);
+            return [{ category, count: members.length, typical }];
+        });
         this.byName = new Map(catalog.components.map((component) => [component.name, component]));
         this.iconNames = createIconNames(icons);
         const aliases = new Map<string, string[]>();
@@ -90,6 +147,68 @@ export class StateUiComponentCatalog implements ComponentCatalog {
     get(name: string): ComponentEntry | undefined {
         const component = this.byName.get(name);
         return component === undefined ? undefined : toEntry(component);
+    }
+
+    search(query: ComponentSearchQuery): ComponentSearchResult {
+        const { category, tier } = query;
+        if (category !== undefined && !(COMPONENT_CATEGORIES as readonly string[]).includes(category)) {
+            throw new InvalidSearchArgumentError('category', COMPONENT_CATEGORIES);
+        }
+        if (tier !== undefined && !this.tiers.includes(tier)) throw new InvalidSearchArgumentError('tier', this.tiers);
+        const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_SEARCH_LIMIT), 1), MAX_SEARCH_LIMIT);
+
+        const hits = this.indexFor(category, tier).search(query.need, limit);
+        if (hits.length > 0) {
+            return {
+                results: hits.map((hit) => this.hit(hit.id, hit.matched)),
+                weak: (hits[0]?.score ?? 0) < WEAK_SCORE_FLOOR
+            };
+        }
+        if (category !== undefined) {
+            return { results: this.candidates(category, tier).slice(0, limit).map((component) => this.hit(component.name, [])), weak: true };
+        }
+        const nearest = this.nearestCategory(query.need, tier);
+        return {
+            results: this.candidates(nearest, tier).slice(0, limit).map((component) => this.hit(component.name, [])),
+            weak: true,
+            categories: this.categories
+        };
+    }
+
+    categoryIndex(): readonly CategoryIndexEntry[] {
+        return this.categories;
+    }
+
+    private candidates(category: string | undefined, tier: string | undefined): readonly CatalogFileComponent[] {
+        return this.components.filter((component) => (category === undefined || component.category === category) && (tier === undefined || component.tier === tier));
+    }
+
+    private indexFor(category: string | undefined, tier: string | undefined): SearchIndex {
+        const key = `${category ?? ''}/${tier ?? ''}`;
+        let index = this.indexes.get(key);
+        if (index === undefined) {
+            index = createSearchIndex(this.candidates(category, tier).map(searchEntry));
+            this.indexes.set(key, index);
+        }
+        return index;
+    }
+
+    /** The category whose name and typical members share the most letter trigrams with the need; ties by the order of the list */
+    private nearestCategory(need: string, tier: string | undefined): string {
+        const wanted = trigrams(need);
+        let best: { category: string; shared: number } | undefined;
+        for (const entry of this.categories) {
+            if (this.candidates(entry.category, tier).length === 0) continue;
+            const grams = trigrams([entry.category, ...entry.typical.flatMap(nameWords)].join(' '));
+            const shared = [...wanted].filter((gram) => grams.has(gram)).length;
+            if (best === undefined || shared > best.shared) best = { category: entry.category, shared };
+        }
+        return best?.category ?? this.categories[0]?.category ?? '';
+    }
+
+    private hit(name: string, matched: readonly string[]): ComponentSearchHit {
+        const component = this.byName.get(name) as CatalogFileComponent;
+        return { name, category: component.category, tier: component.tier, summary: component.summary, matched, example: component.example };
     }
 
     searchIcons(query: IconQuery): IconSearchResult {

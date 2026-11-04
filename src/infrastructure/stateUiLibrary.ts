@@ -8,7 +8,12 @@ export interface CatalogFileComponent {
     readonly tier: 'root' | 'composed';
     readonly tag: string;
     readonly size: string;
+    /** One line; a composed entry has it since `@punyts/stateui-components` keys its composed files */
     readonly summary: string;
+    /** One of `COMPONENT_CATEGORIES` */
+    readonly category: string;
+    /** Three to eight phrases of what the component is for */
+    readonly purposes: readonly string[];
     readonly example: JsonObject;
     readonly locales: readonly string[];
     readonly shape?: JsonObject;
@@ -49,7 +54,15 @@ const requireJson = createRequire(import.meta.url);
 let catalogFile: CatalogFile | undefined;
 let iconsFile: IconsFile | undefined;
 
-function isCatalogFile(value: unknown): value is CatalogFile {
+/** True when every component carries the search keys `category` and `purposes` */
+export function hasSearchKeys(components: readonly unknown[]): boolean {
+    return components.every((component) => {
+        const entry = component as { category?: unknown; purposes?: unknown } | null;
+        return typeof entry?.category === 'string' && Array.isArray(entry.purposes) && entry.purposes.every((phrase) => typeof phrase === 'string');
+    });
+}
+
+export function isCatalogFile(value: unknown): value is CatalogFile {
     if (typeof value !== 'object' || value === null) return false;
     const file = value as { components?: unknown; theme?: unknown };
     if (!Array.isArray(file.components)) return false;
@@ -68,6 +81,9 @@ export function loadCatalogFile(): CatalogFile {
     if (catalogFile === undefined) {
         const parsed: unknown = requireJson('@punyts/stateui-components/catalog.json');
         if (!isCatalogFile(parsed)) throw new Error('@punyts/stateui-components/catalog.json has no components list and theme section; rebuild @punyts/stateui-components');
+        if (!hasSearchKeys(parsed.components)) {
+            throw new Error('@punyts/stateui-components/catalog.json has components without "category" or "purposes"; rebuild @punyts/stateui-components');
+        }
         catalogFile = parsed;
     }
     return catalogFile;

@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { InvalidSearchArgumentError } from '../application/ports/ComponentCatalog.js';
 import { createStateUiAdapters } from '../config/createStateUiAdapters.js';
-import { loadCatalogFile, loadIconsFile } from './stateUiLibrary.js';
-import { DEFAULT_ICON_LIMIT, MAX_ICON_LIMIT, StateUiComponentCatalog } from './StateUiComponentCatalog.js';
+import { hasSearchKeys, loadCatalogFile, loadIconsFile } from './stateUiLibrary.js';
+import { DEFAULT_ICON_LIMIT, MAX_ICON_LIMIT, MAX_SEARCH_LIMIT, StateUiComponentCatalog, WEAK_SCORE_FLOOR } from './StateUiComponentCatalog.js';
 
 const catalog = new StateUiComponentCatalog(loadCatalogFile(), loadIconsFile());
 
@@ -168,5 +170,147 @@ describe('StateUiComponentCatalog', () => {
 
             expect(adapters.catalog.iconPaths(['trash'])).toEqual(catalog.iconPaths(['trash']));
         });
+    });
+});
+
+interface Need {
+    readonly need: string;
+    readonly expected: string;
+}
+
+const NEEDS: readonly Need[] = Object.freeze(JSON.parse(readFileSync(new URL('../../test/measurement/needs.json', import.meta.url), 'utf8')) as Need[]);
+
+const namesFor = (need: string, limit?: number): string[] => catalog.search({ need, ...(limit === undefined ? {} : { limit }) }).results.map((hit) => hit.name);
+
+describe('StateUiComponentCatalog search', () => {
+    it('should return dateRangeField first for "pick a date range", with that phrase matched', () => {
+        const result = catalog.search({ need: 'pick a date range' });
+
+        expect(result.results[0]?.name).toBe('dateRangeField');
+        expect(result.results[0]?.matched).toContain('pick a date range');
+        expect(result.weak).toBe(false);
+    });
+
+    it('should return dateRangeField first for "choose start and end dates" by a purpose phrase', () => {
+        const result = catalog.search({ need: 'choose start and end dates' });
+
+        expect(result.results[0]?.name).toBe('dateRangeField');
+        expect(result.results[0]?.matched).toContain('choose start and end dates');
+    });
+
+    it('should return stepper or wizard in the top three for "step through checkout"', () => {
+        const top = namesFor('step through checkout', 3);
+
+        expect(top.some((name) => name === 'stepper' || name === 'wizard')).toBe(true);
+    });
+
+    it('should find every need of the measurement fixture within five, and at least 80% within three', () => {
+        const ranks = NEEDS.map(({ need, expected }) => ({ need, expected, rank: namesFor(need).indexOf(expected) }));
+
+        expect(ranks.filter((entry) => entry.rank < 0)).toEqual([]);
+        expect(ranks.filter((entry) => entry.rank < 3).length / ranks.length).toBeGreaterThanOrEqual(0.8);
+    });
+
+    it('should call a need weak when its only match is one word of one summary, and not when it is one purpose word', () => {
+        // "faq" is only in the summary of accordion; "budget" only in a purpose phrase of progress
+        const summaryOnly = catalog.search({ need: 'faq' });
+        const purposeOnly = catalog.search({ need: 'budget' });
+
+        expect(summaryOnly.results[0]?.name).toBe('accordion');
+        expect(summaryOnly.weak).toBe(true);
+        expect(purposeOnly.results[0]?.name).toBe('progress');
+        expect(purposeOnly.weak).toBe(false);
+        expect(WEAK_SCORE_FLOOR).toBeGreaterThan(0);
+    });
+
+    it('should answer a nonsense need with the weak result, the category index and the nearest category', () => {
+        const result = catalog.search({ need: 'xyzzy' });
+
+        expect(result.weak).toBe(true);
+        expect(result.categories).toEqual(catalog.categoryIndex());
+        expect(result.results.length).toBeGreaterThan(0);
+        expect(result.results.every((hit) => hit.matched.length === 0)).toBe(true);
+    });
+
+    it('should pick the fallback category by shared letter trigrams with the need', () => {
+        const result = catalog.search({ need: 'navigatio' });
+
+        expect(result.weak).toBe(true);
+        expect(new Set(result.results.map((hit) => hit.category))).toEqual(new Set(['navigation']));
+    });
+
+    it('should treat a whitespace-only need as a need with no match', () => {
+        const result = catalog.search({ need: '   ' });
+
+        expect(result.weak).toBe(true);
+        expect(result.categories).toBeDefined();
+        expect(result.results.length).toBeGreaterThan(0);
+    });
+
+    it('should answer no match within a category with the entries of that category and no index', () => {
+        const result = catalog.search({ need: 'xyzzy', category: 'feedback' });
+
+        expect(result.weak).toBe(true);
+        expect(result.categories).toBeUndefined();
+        expect(result.results.length).toBeGreaterThan(0);
+        expect(result.results.every((hit) => hit.category === 'feedback')).toBe(true);
+    });
+
+    it('should narrow by category and by tier before ranking', () => {
+        const forms = catalog.search({ need: 'pick a date', category: 'forms', limit: 20 });
+        const composed = catalog.search({ need: 'confirm before deleting', tier: 'composed', limit: 20 });
+
+        expect(forms.results.every((hit) => hit.category === 'forms')).toBe(true);
+        expect(composed.results.every((hit) => hit.tier === 'composed')).toBe(true);
+        expect(composed.results[0]?.name).toBe('confirmDialog');
+    });
+
+    it('should default the limit to five and cap it at twenty', () => {
+        expect(catalog.search({ need: 'show' }).results.length).toBeLessThanOrEqual(5);
+        expect(catalog.search({ need: 'show', limit: 50 }).results.length).toBe(MAX_SEARCH_LIMIT);
+    });
+
+    it('should give every result an example', () => {
+        const results = [...catalog.search({ need: 'show', limit: 20 }).results, ...catalog.search({ need: 'xyzzy', limit: 20 }).results];
+
+        expect(results.every((hit) => typeof hit.example === 'object' && hit.example !== null && hit.example['component'] !== undefined)).toBe(true);
+    });
+
+    it('should reject an unknown category with the allowed list, and an unknown tier with the tiers of the catalog', () => {
+        expect(() => catalog.search({ need: 'x', category: 'tables' })).toThrow(InvalidSearchArgumentError);
+        expect(() => catalog.search({ need: 'x', category: 'tables' })).toThrow(/layout, navigation, forms/);
+        expect(() => catalog.search({ need: 'x', tier: 'shape' })).toThrow(/composed, root/);
+    });
+});
+
+describe('StateUiComponentCatalog categoryIndex', () => {
+    it('should list each category with members, in list order, with its count and three typical members', () => {
+        const index = catalog.categoryIndex();
+
+        expect(index.map((entry) => entry.category)).toEqual(['layout', 'navigation', 'forms', 'data', 'feedback', 'overlays', 'content', 'conversation']);
+        expect(index.reduce((sum, entry) => sum + entry.count, 0)).toBe(loadCatalogFile().components.length);
+        expect(index.every((entry) => entry.typical.length === Math.min(3, entry.count))).toBe(true);
+    });
+
+    it('should have no graphics entry while no graphics component exists', () => {
+        expect(catalog.categoryIndex().some((entry) => entry.category === 'graphics')).toBe(false);
+    });
+
+    it('should pick the members with the most purposes, ties by name', () => {
+        const conversation = loadCatalogFile().components.filter((component) => component.category === 'conversation');
+        const expected = [...conversation]
+            .sort((a, b) => b.purposes.length - a.purposes.length || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+            .slice(0, 3)
+            .map((component) => component.name);
+
+        expect(catalog.categoryIndex().find((entry) => entry.category === 'conversation')?.typical).toEqual(expected);
+    });
+});
+
+describe('the catalog file check', () => {
+    it('should accept components that carry category and purposes and reject one without', () => {
+        expect(hasSearchKeys([{ category: 'forms', purposes: ['a', 'b', 'c'] }])).toBe(true);
+        expect(hasSearchKeys([{ category: 'forms' }])).toBe(false);
+        expect(hasSearchKeys([{ purposes: ['a', 'b', 'c'] }])).toBe(false);
     });
 });
