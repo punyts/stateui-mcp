@@ -1,0 +1,14 @@
+{"at":"2026-11-04T10:00:00.000Z","tool":"ui_components_list","ok":true,"requestChars":2,"responseChars":4000}
+{"at":"2026-11-04T10:00:01.000Z","tool":"ui_component_get","ok":true,"requestChars":17,"responseChars":800}
+{"at":"2026-11-04T10:00:02.000Z","tool":"ui_components_search","ok":true,"requestChars":40,"responseChars":400}
+{"at":"2026-11-04T10:00:03.000Z","tool":"ui_app_create","ok":true,"requestChars":30,"responseChars":120}
+{"at":"2026-11-04T10:00:04.000Z","tool":"ui_app_write","ok":false,"errorCode":"invalid-document","requestChars":900,"responseChars":300,"target":"a1","errorCount":3,"warningCount":0}
+{"at":"2026-11-04T10:00:05.000Z","tool":"ui_app_write","ok":false,"errorCode":"invalid-document","requestChars":900,"responseChars":200,"target":"a1","errorCount":2,"warningCount":0}
+{"at":"2026-11-04T10:00:06.000Z","tool":"ui_app_write","ok":true,"requestChars":900,"responseChars":100,"target":"a1","errorCount":0,"warningCount":1}
+
+{"at":"2026-11-04T10:00:07.000Z","tool":"ui_validate","ok":true,"requestChars":15,"responseChars":150,"target":"a1","errorCount":1,"warningCount":1}
+{"at":"2026-11-04T10:00:08.000Z","tool":"ui_icons_list","ok":true,"requestChars":2,"responseChars":200}
+{"at":"2026-11-04T10:00:09.000Z","tool":"ui_app_write","ok":true,"requestChars":400,"responseChars":100,"target":"a1","errorCount":0,"warningCount":2}
+{"at":"2026-11-04T10:00:10.000Z","tool":"ui_state_set","ok":false,"errorCode":"logic-guard","requestChars":60,"responseChars":90,"target":"a1"}
+{"at":"2026-11-04T10:00:11.000Z","tool":"ui_tokens_list","ok":true,"requestChars":2,"responseChars":600}
+{"at":"2026-11-04T10:00:12.000Z","tool":"ui_app_write","ok":false,"errorCode":"invalid-document","requestChars":500,"responseChars":250,"target":"a2","errorCount":2,"warningCount":0}
