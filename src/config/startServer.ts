@@ -32,6 +32,8 @@ export interface ServerOptions {
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent (`ui_call_answer`) */
     readonly procedures?: ServicesOptions['procedures'];
+    /** A file that gets one JSON line per tool call */
+    readonly toolLog?: string;
 }
 
 export interface RunningServer {
@@ -62,7 +64,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         ...(options.browser !== undefined && { browser: options.browser }),
         ...(options.statenet !== undefined && { statenet: options.statenet }),
         ...(options.serverKey !== undefined && { serverKey: options.serverKey }),
-        ...(options.procedures !== undefined && { procedures: options.procedures })
+        ...(options.procedures !== undefined && { procedures: options.procedures }),
+        ...(options.toolLog !== undefined && { toolLog: options.toolLog })
     });
     const dependencies = { ...services, useCases: services.useCases };
     const sessions = new McpHttpSessions(() => createStateUiMcpServer(dependencies), options.report);

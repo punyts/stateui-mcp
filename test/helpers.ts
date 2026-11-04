@@ -70,8 +70,9 @@ export interface InMemoryHarness {
 }
 
 /** The real tools, use cases and file storage, with an in-memory MCP client and a stand-in browser */
-export async function inMemoryHarness(dataDir: string, browser: PreviewBrowser = noBrowser): Promise<InMemoryHarness> {
-    const services = createServices({ dataDir, report: silentReport, origin: () => 'http://127.0.0.1:4100', browser });
+/** `toolLog` turns the tool-call log on, writing to that file */
+export async function inMemoryHarness(dataDir: string, browser: PreviewBrowser = noBrowser, toolLog?: string): Promise<InMemoryHarness> {
+    const services = createServices({ dataDir, report: silentReport, origin: () => 'http://127.0.0.1:4100', browser, ...(toolLog !== undefined && { toolLog }) });
     const server = createStateUiMcpServer(services);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: 'test', version: '1.0.0' });

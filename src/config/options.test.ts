@@ -16,6 +16,7 @@ describe('parseOptions', () => {
             statenet: undefined,
             secretKeyFile: undefined,
             secretKey: undefined,
+            toolLog: undefined,
             help: false
         });
     });
@@ -25,6 +26,13 @@ describe('parseOptions', () => {
         expect(parseOptions([], { STATEUI_MCP_STATENET: 'ws://other/sync' }).statenet).toBe('ws://other/sync');
         expect(parseOptions(['--secret-key-file', 'key.bin'], {}).secretKeyFile).toBe(resolve('key.bin'));
         expect(parseOptions([], { STATEUI_MCP_SECRET_KEY_FILE: 'env.bin', STATEUI_MCP_SECRET_KEY: 'abc' })).toMatchObject({ secretKeyFile: resolve('env.bin'), secretKey: 'abc' });
+    });
+
+    it('should read the tool log from the flag or the environment, the flag winning, as an absolute path', () => {
+        expect(parseOptions(['--tool-log', 'calls.jsonl'], {}).toolLog).toBe(resolve('calls.jsonl'));
+        expect(parseOptions([], { STATEUI_MCP_TOOL_LOG: 'env.jsonl' }).toolLog).toBe(resolve('env.jsonl'));
+        expect(parseOptions(['--tool-log=flag.jsonl'], { STATEUI_MCP_TOOL_LOG: 'env.jsonl' }).toolLog).toBe(resolve('flag.jsonl'));
+        expect(parseOptions([], { STATEUI_MCP_TOOL_LOG: '' }).toolLog).toBeUndefined();
     });
 
     it('should refuse a statenet URL that is not a WebSocket URL', () => {

@@ -21,6 +21,7 @@ import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js'
 import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import { PersistedStates } from '../infrastructure/sync/PersistedStates.js';
 import { StatenetRelayStorage } from '../infrastructure/sync/StatenetRelayStorage.js';
+import type { ToolCallLog } from '../application/ports/ToolCallLog.js';
 import type { UiAppRepository } from '../application/ports/UiAppRepository.js';
 
 export interface ServicesOptions {
@@ -37,6 +38,8 @@ export interface ServicesOptions {
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
     readonly procedures?: Readonly<Record<string, AppProcedure>>;
+    /** A file that gets one JSON line per tool call; absent: no log */
+    readonly toolLog?: string;
 }
 
 /** Everything the transports need: the use cases, the live views, the browser and the repository */
@@ -52,6 +55,8 @@ export interface Services {
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
     readonly viewUrl: (appId: string) => string;
+    /** Records every tool call, when `toolLog` is set */
+    readonly toolCallLog?: ToolCallLog;
     /** Stops relaying to the statenet, after the relayed changes are acknowledged; after `authorities.close()` */
     close(): Promise<void>;
 }
@@ -64,7 +69,7 @@ export function createServices(options: ServicesOptions): Services {
     const hub = new PreviewHub(now);
     const relay = options.statenet === undefined ? undefined : new StatenetRelayStorage(options.statenet, options.serverKey);
     const persisted = options.statenet === undefined ? undefined : new PersistedStates(options.statenet);
-    const { validator, catalog, library } = createStateUiAdapters();
+    const { validator, catalog, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
     const authorities = new AppAuthorities(
         relay ?? new FileNamespaceStorage(folders),
         (appId, name, value, viewId) => {
@@ -93,6 +98,7 @@ export function createServices(options: ServicesOptions): Services {
         browser,
         report: options.report,
         viewUrl: (appId) => `${options.origin()}/apps/${appId}`,
+        ...(toolCallLog !== undefined && { toolCallLog }),
         close: async () => {
             await relay?.close();
             await persisted?.close();

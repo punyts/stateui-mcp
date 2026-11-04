@@ -14,6 +14,8 @@ export interface CliOptions {
     readonly secretKeyFile: string | undefined;
     /** The key itself, from the environment only (hex or base64) */
     readonly secretKey: string | undefined;
+    /** A file that gets one JSON line per tool call (the tool, the outcome and sizes, never arguments or bodies) */
+    readonly toolLog: string | undefined;
     readonly help: boolean;
 }
 
@@ -41,6 +43,9 @@ Options:
                        The key that encrypts $.server at rest: 32 raw bytes, 64 hex
                        characters or base64 (env STATEUI_MCP_SECRET_KEY_FILE, or the key
                        itself in STATEUI_MCP_SECRET_KEY)
+  --tool-log <file>    Append one JSON line per tool call to this file: the tool, whether
+                       it failed, the error code, request and response sizes and the app.
+                       Never arguments or response bodies (env STATEUI_MCP_TOOL_LOG)
   -h, --help           Show this help
 
 Without --stdio the server speaks streamable HTTP at http://<host>:<port>/mcp.
@@ -64,6 +69,7 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
     let runtimeDir = env['STATEUI_MCP_RUNTIME_DIR'];
     let statenet = env['STATEUI_MCP_STATENET'];
     let secretKeyFile = env['STATEUI_MCP_SECRET_KEY_FILE'];
+    let toolLog = env['STATEUI_MCP_TOOL_LOG'];
     let stdio = false;
     let help = false;
 
@@ -98,6 +104,9 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
             case '--secret-key-file':
                 secretKeyFile = value();
                 break;
+            case '--tool-log':
+                toolLog = value();
+                break;
             case '--stdio':
                 stdio = true;
                 break;
@@ -120,6 +129,7 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
         statenet: statenet === '' ? undefined : statenet,
         secretKeyFile: secretKeyFile === undefined || secretKeyFile === '' ? undefined : resolve(secretKeyFile),
         secretKey: env['STATEUI_MCP_SECRET_KEY'],
+        toolLog: toolLog === undefined || toolLog === '' ? undefined : resolve(toolLog),
         help
     };
 }

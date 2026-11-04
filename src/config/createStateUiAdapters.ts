@@ -1,7 +1,8 @@
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import { libraryFromCatalog } from '@punyts/stateui-app/core';
 import type { CatalogSource, ComponentLibrary } from '@punyts/stateui-app/core';
-import type { ComponentCatalog, UiAppValidator } from '../application/ports/index.js';
+import type { ComponentCatalog, ToolCallLog, UiAppValidator, UseCaseReport } from '../application/ports/index.js';
+import { FileToolCallLog } from '../infrastructure/storage/FileToolCallLog.js';
 import { StateUiAppValidator } from '../infrastructure/StateUiAppValidator.js';
 import { StateUiComponentCatalog } from '../infrastructure/StateUiComponentCatalog.js';
 import { loadCatalogFile, loadIconsFile } from '../infrastructure/stateUiLibrary.js';
@@ -14,12 +15,29 @@ export interface StateUiAdapters {
     readonly coreIconNames: readonly string[];
     /** The component library, for running app logic on the server */
     readonly library: ComponentLibrary;
+    /** The tool-call log, when a file is configured */
+    readonly toolCallLog?: ToolCallLog;
 }
 
-export function createStateUiAdapters(): StateUiAdapters {
+export interface StateUiAdapterOptions {
+    /** The file of the tool-call log; absent: no log */
+    readonly toolLog?: string;
+    /** Where a failed log write is reported */
+    readonly report?: UseCaseReport;
+}
+
+export function createStateUiAdapters(options: StateUiAdapterOptions = {}): StateUiAdapters {
     const catalogFile = loadCatalogFile();
     const catalog = new StateUiComponentCatalog(catalogFile, loadIconsFile());
     const validator = new StateUiAppValidator(catalogFile, (name) => catalog.isIconName(name));
     // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
-    return { validator, catalog, coreIconNames: CORE_ICON_NAMES, library: libraryFromCatalog(catalogFile as unknown as CatalogSource) };
+    const report = options.report ?? { info: (): void => undefined };
+    const toolCallLog = options.toolLog === undefined ? undefined : new FileToolCallLog(options.toolLog, report);
+    return {
+        validator,
+        catalog,
+        coreIconNames: CORE_ICON_NAMES,
+        library: libraryFromCatalog(catalogFile as unknown as CatalogSource),
+        ...(toolCallLog !== undefined && { toolCallLog })
+    };
 }

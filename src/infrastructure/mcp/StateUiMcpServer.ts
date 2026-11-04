@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
+import type { ToolCallEntry, ToolCallLog } from '../../application/ports/ToolCallLog.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { PreviewBrowser } from '../preview/BrowserPreview.js';
 import type { LiveViews } from '../preview/LiveViews.js';
@@ -33,6 +34,8 @@ export interface StateUiToolDependencies {
     /** The address a person opens for an app */
     readonly viewUrl: (appId: string) => string;
     readonly report: UseCaseReport;
+    /** Records every tool call for measurement; absent: nothing is recorded */
+    readonly toolCallLog?: ToolCallLog;
 }
 
 const START_HERE_TOOLS = new Set(['ui_components_list', 'ui_app_create']);
@@ -49,6 +52,43 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createDeleteTools(useCases, liveViews)
     ];
     return tools.map((tool) => (START_HERE_TOOLS.has(tool.name) ? { ...tool, description: `${tool.description} ${START_HERE}` } : tool));
+}
+
+const MAX_TARGET = 80;
+
+/** The app a call is about: `appId`, or `app` with `/` and `screen` */
+function targetOf(args: Readonly<Record<string, unknown>>): string | undefined {
+    const appId = args['appId'];
+    if (typeof appId === 'string') return appId.slice(0, MAX_TARGET);
+    const app = args['app'];
+    if (typeof app !== 'string') return undefined;
+    const screen = args['screen'];
+    return (typeof screen === 'string' ? `${app}/${screen}` : app).slice(0, MAX_TARGET);
+}
+
+/** What the tool-call log keeps of one call: sizes and counts, never the arguments or the body */
+function logEntry(tool: string, args: Readonly<Record<string, unknown>>, outcome: ToolOutcome, content: CallContent): ToolCallEntry {
+    const body = outcome.body as Record<string, unknown>;
+    const errorCode = outcome.isError && typeof body['error'] === 'string' ? body['error'] : undefined;
+    const target = targetOf(args);
+    const errors = body['errors'];
+    const warnings = body['warnings'];
+    return {
+        at: new Date().toISOString(),
+        tool,
+        ok: !outcome.isError,
+        ...(errorCode !== undefined && { errorCode }),
+        requestChars: JSON.stringify(args).length,
+        responseChars: content.content.reduce((total, item) => total + (item.type === 'text' ? item.text.length : 0), 0),
+        ...(target !== undefined && { target }),
+        ...(Array.isArray(errors) && { errorCount: errors.length }),
+        ...(Array.isArray(warnings) && { warningCount: warnings.length })
+    };
+}
+
+interface CallContent {
+    content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[];
+    isError: boolean;
 }
 
 function toContent(outcome: ToolOutcome): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; isError: boolean } {
@@ -85,17 +125,26 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
     }));
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        const { name, arguments: args } = request.params;
+        const { name } = request.params;
+        const args = request.params.arguments ?? {};
+        const outcome = await runTool(name, args);
+        const content = toContent(outcome);
+        // Not awaited: the log never slows or fails a call (a failed append is reported by the adapter)
+        void dependencies.toolCallLog?.record(logEntry(name, args, outcome, content));
+        return content;
+    });
+
+    async function runTool(name: string, args: Readonly<Record<string, unknown>>): Promise<ToolOutcome> {
         const tool = byName.get(name);
-        if (tool === undefined) return toContent(fail('unknown-tool', `Unknown tool: ${name}`));
+        if (tool === undefined) return fail('unknown-tool', `Unknown tool: ${name}`);
         try {
-            return toContent(await tool.run(args ?? {}));
+            return await tool.run(args);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             dependencies.report.info('Tool failed', { tool: name, error: message });
-            return toContent(fail('internal-error', message));
+            return fail('internal-error', message);
         }
-    });
+    }
 
     return server;
 }

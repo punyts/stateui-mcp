@@ -6,3 +6,4 @@ export type * from './UiFileStore.js';
 export type * from './UiPreviewLog.js';
 export type * from './UseCaseReport.js';
 export type * from './LiveStateReader.js';
+export type * from './ToolCallLog.js';

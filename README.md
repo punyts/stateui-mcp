@@ -38,6 +38,9 @@ node dist/cli.js --stdio --port 4100 --data-dir ./data
 | `--runtime-dir <dir>` | `STATEUI_MCP_RUNTIME_DIR` | the bundle in `@punyts/stateui-app` |
 | `--statenet <url>` | `STATEUI_MCP_STATENET` | none: the state stays in the data folder |
 | `--secret-key-file <file>` | `STATEUI_MCP_SECRET_KEY_FILE`, or the key itself in `STATEUI_MCP_SECRET_KEY` | none: an app that keeps `$.server` is refused |
+| `--tool-log <file>` | `STATEUI_MCP_TOOL_LOG` | none: no tool calls are logged |
+
+**Tool-call log.** With `--tool-log <file>` the server appends one JSON line per tool call: `{ at, tool, ok, errorCode?, requestChars, responseChars, target?, errorCount?, warningCount? }`. `requestChars` is the length of the JSON arguments, `responseChars` the length of the result's text (images are not counted), `errorCode` the `error` of a failed result, `errorCount` and `warningCount` the lengths of its `errors` and `warnings`, and `target` the call's `appId` (or `app`, with `/` and `screen`), cut to 80 characters. Nothing else is written: no arguments, no response bodies. A failed write is reported once on stderr and never fails the call. It is for measuring how agents use the tools.
 
 `npm start` runs `node dist/cli.js`; `stateui-mcp --help` lists the options. In stdio mode every log line goes to stderr, because stdout is the protocol. `Ctrl+C`, `SIGTERM`, or the client closing stdin stops the server, closes the MCP sessions and closes the headless browser.
 

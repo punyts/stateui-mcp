@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreviewBrowser } from '../src/infrastructure/preview/BrowserPreview.js';
 import { BrowserUnavailableError } from '../src/infrastructure/preview/BrowserPreview.js';
@@ -814,5 +816,66 @@ describe('unknown tool', () => {
         expect(result.isError).toBe(true);
         expect(result.body['error']).toBe('unknown-tool');
         expect(noBrowser).toBeDefined();
+    });
+});
+
+describe('tool-call log', () => {
+    it('should log a failed call with its error code and a successful call as ok, with no argument text', async () => {
+        // Arrange
+        const file = join(data.dir, 'calls.jsonl');
+        const logged = await inMemoryHarness(data.dir, noBrowser, file);
+        const read = async (): Promise<Record<string, unknown>[]> =>
+            (await readFile(file, 'utf8').catch(() => '')).split('\n').filter((line) => line !== '').map((line) => JSON.parse(line) as Record<string, unknown>);
+
+        try {
+            // Act
+            await call(logged.client, 'ui_component_get', { name: 'buton' });
+            await call(logged.client, 'ui_component_get', { name: 'button' });
+            await call(logged.client, 'ui_nothing', { appId: 'a1' });
+
+            // Assert
+            await vi.waitFor(async () => expect(await read()).toHaveLength(3));
+            const [failed, ok, unknown] = await read();
+            expect(failed).toMatchObject({ tool: 'ui_component_get', ok: false, errorCode: 'unknown-component', requestChars: JSON.stringify({ name: 'buton' }).length });
+            expect(ok).toMatchObject({ tool: 'ui_component_get', ok: true });
+            expect(ok?.['errorCode']).toBeUndefined();
+            expect(ok?.['responseChars']).toBeGreaterThan(100);
+            expect(unknown).toMatchObject({ tool: 'ui_nothing', ok: false, errorCode: 'unknown-tool', target: 'a1' });
+            expect(await readFile(file, 'utf8')).not.toContain('buton');
+        } finally {
+            await logged.close();
+        }
+    });
+
+    it('should log the app as the target and count errors and warnings of a write', async () => {
+        // Arrange
+        const file = join(data.dir, 'calls.jsonl');
+        const logged = await inMemoryHarness(data.dir, noBrowser, file);
+        try {
+            const created = await call(logged.client, 'ui_app_create', { name: 'Logged' });
+            const appId = created.body['appId'] as string;
+
+            // Act
+            const validated = await call(logged.client, 'ui_validate', { appId });
+
+            // Assert
+            await vi.waitFor(async () => expect((await readFile(file, 'utf8')).trim().split('\n')).toHaveLength(2));
+            const lines = (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+            expect(lines[0]).toMatchObject({ tool: 'ui_app_create', ok: true });
+            expect(lines[0]).not.toHaveProperty('target');
+            expect(lines[1]).toMatchObject({ tool: 'ui_validate', target: appId });
+            if (Array.isArray(validated.body['errors'])) expect(lines[1]?.['errorCount']).toBe((validated.body['errors'] as unknown[]).length);
+            if (Array.isArray(validated.body['warnings'])) expect(lines[1]?.['warningCount']).toBe((validated.body['warnings'] as unknown[]).length);
+        } finally {
+            await logged.close();
+        }
+    });
+
+    it('should write no file when no log is configured', async () => {
+        // Act
+        await call(harness.client, 'ui_component_get', { name: 'button' });
+
+        // Assert
+        await expect(readFile(join(data.dir, 'calls.jsonl'), 'utf8')).rejects.toThrow();
     });
 });
