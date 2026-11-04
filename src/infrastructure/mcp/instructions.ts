@@ -17,7 +17,7 @@ const WORKING_LOOP = [
 
 const LIVE_VIEW = [
     'Every app has a live view at the url ui_preview returns. A person can open it in a browser; it follows every ui_app_write, ui_state_set and ui_command at once. ui_preview also opens a headless Chromium page of the same url, which ui_screenshot, ui_interact, ui_state_get and ui_command use.',
-    'ui_state_get reads the state the open views sync with the server, so it holds what a user typed a moment ago. ui_validate and ui_state_get include a preview block: whether a view is open (attached) and the runtime errors the views reported.',
+    'ui_state_get reads the state from an open view (source "live") and falls back to the stored copy (source "stored") when no view is open. ui_validate and ui_state_get include a preview block: whether a view is open (attached) and the runtime errors the views reported.',
     'To test behavior from a known state: ui_state_reset puts the state back to the document, ui_state_set with logic: false sets up values without firing rules, and ui_logic_trace shows what every machine, rule, table and guard did with each change and why one did not fire.',
     'ui_command runs a component command (a toast, a focus, a scroll) in the open views. With no view open it answers "no preview is open; the command was not delivered" and nothing happens: call ui_preview first.',
     'No chat turn carries the events a running app raises. When the user may have acted in the app, call ui_events_read with the cursor from the last call. An emit event is the user acting in the app, not a message to answer.',

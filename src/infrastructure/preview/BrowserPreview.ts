@@ -85,7 +85,7 @@ const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
     fill: 'input, textarea',
     press: 'input, textarea, select, button, [role="button"], [role="menuitem"], [tabindex]',
     select: 'select',
-    choose: 'input[type="radio"], [role="radio"]',
+    choose: 'input[type="radio"], [role="radio"], .segment, select',
     focus: '',
     key: '',
     drag: ''
@@ -142,10 +142,19 @@ export class BrowserPreview {
         }
     }
 
-    /** Opens the headless page of the app, or reuses it, and waits until it has rendered `revision` */
+    /**
+     * Opens the headless page of the app and waits until it has rendered `revision`. A page that is already open is
+     * loaded again, so it shows the current document and state and not what it held since the last write
+     */
     async open(appId: string, revision: number): Promise<PreviewOpenResult> {
         return this.lock.run(appId, async () => {
-            await this.pageFor(appId);
+            const existing = this.pages.get(appId);
+            if (existing !== undefined && !existing.isClosed()) {
+                this.hub.markStale(appId, 'headless');
+                await existing.reload({ waitUntil: 'domcontentloaded' });
+            } else {
+                await this.pageFor(appId);
+            }
             const rendered = await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             return { rendered };
         });
@@ -370,8 +379,12 @@ export class BrowserPreview {
             return await control.evaluate((node: HTMLElement, open: HTMLDialogElement[]) => {
                 if (open.length === 0) return false;
                 const top = open[open.length - 1] as HTMLDialogElement;
+                // The control is inside the dialog, or it is the host that draws the dialog in its shadow root
                 for (let current: Node | null = node; current !== null; current = current.parentNode ?? (current as ShadowRoot).host ?? null) {
                     if (current === top) return false;
+                }
+                for (let current: Node | null = top; current !== null; current = current.parentNode ?? (current as ShadowRoot).host ?? null) {
+                    if (current === node) return false;
                 }
                 return true;
             }, modals);
@@ -459,6 +472,7 @@ export class BrowserPreview {
         const element = await this.elementAt(page, statePath);
         if (step.action === 'focus') {
             try {
+                if (await this.behindModal(page, element)) throw new InteractionError(behindModalMessage(statePath));
                 // The control the node draws (the input of a searchBox), else the node's element or its nearest
                 // focusable ancestor: a board card's slot, a list row
                 const focused = await element.evaluate((host: HTMLElement) => {
@@ -485,6 +499,8 @@ export class BrowserPreview {
         const control = await this.controlOf(element, step.action);
         const timeout = 5000;
         try {
+            // A modal dialog covers the page: an action on anything outside it would do nothing, so say so
+            if (await this.behindModal(page, control)) throw new InteractionError(behindModalMessage(statePath));
             switch (step.action) {
                 case 'click':
                     await control.click({ timeout });
@@ -508,45 +524,65 @@ export class BrowserPreview {
                     break;
                 case 'choose': {
                     if (step.value === undefined) throw new InteractionError('choose needs an option value or label');
-                    // The radio of the option whose value or label is the value, in the component's shadow root
+                    // The option whose value or label is the value: a radio, a segment or an option of a native select
                     const option = await element.evaluateHandle((host: HTMLElement, wanted: string) => {
                         const root: ParentNode = host.shadowRoot ?? host;
-                        const radios = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"]'));
-                        const labelOf = (radio: HTMLElement): string =>
-                            (radio.closest('label')?.textContent ?? radio.getAttribute('aria-label') ?? radio.textContent ?? '').trim();
-                        return (
-                            radios.find((radio) => (radio as HTMLInputElement).value === wanted || radio.dataset['value'] === wanted) ??
-                            radios.find((radio) => labelOf(radio) === wanted) ??
-                            null
-                        );
+                        const choices = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"], .segment, select option'));
+                        const valueOf = (choice: HTMLElement): string =>
+                            choice.dataset['key'] ?? choice.dataset['value'] ?? (choice as HTMLInputElement | HTMLOptionElement).value ?? '';
+                        const labelOf = (choice: HTMLElement): string =>
+                            (choice.closest('label')?.textContent ?? choice.querySelector('.label')?.textContent ?? choice.getAttribute('aria-label') ?? choice.textContent ?? '').trim();
+                        return choices.find((choice) => valueOf(choice) === wanted) ?? choices.find((choice) => labelOf(choice) === wanted.trim()) ?? null;
                     }, step.value);
-                    const radio = option.asElement() as ElementHandle<HTMLElement> | null;
-                    if (radio === null) {
+                    const chosen = option.asElement() as ElementHandle<HTMLElement> | null;
+                    if (chosen === null) {
                         await option.dispose();
-                        throw new InteractionError(`${statePath} has no option with the value or label "${step.value}"`);
+                        throw new InteractionError(await this.noOptionMessage(element, statePath, step.value));
                     }
                     try {
-                        await radio.click({ timeout });
+                        const listed = await chosen.evaluate((node: HTMLElement) => node instanceof HTMLOptionElement);
+                        if (listed) {
+                            const select = (await chosen.evaluateHandle((node: HTMLElement) => node.closest('select'))).asElement() as ElementHandle<HTMLSelectElement> | null;
+                            const value = await chosen.evaluate((node: HTMLElement) => (node as HTMLOptionElement).value);
+                            await select?.selectOption(value, { timeout });
+                            await select?.dispose();
+                        } else {
+                            await chosen.click({ timeout });
+                        }
                     } finally {
-                        await radio.dispose();
+                        await chosen.dispose();
                     }
                     break;
                 }
             }
-        } catch (error) {
-            if (error instanceof Error && error.name === 'TimeoutError' && (await this.behindModal(page, control))) {
-                throw new InteractionError(`${statePath} is behind an open modal dialog: act inside the modal, or close it first`);
-            }
-            throw error;
         } finally {
             if (control !== element) await control.dispose();
             await element.dispose();
         }
     }
 
+    /** Says which options a choice component has, by value and by label, when none matched */
+    private async noOptionMessage(element: ElementHandle<HTMLElement>, statePath: string, wanted: string): Promise<string> {
+        const listed = await element.evaluate((host: HTMLElement) => {
+            const root: ParentNode = host.shadowRoot ?? host;
+            const choices = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"], .segment, select option'));
+            return choices.map((choice) => ({
+                value: choice.dataset['key'] ?? choice.dataset['value'] ?? (choice as HTMLInputElement | HTMLOptionElement).value ?? '',
+                label: (choice.closest('label')?.textContent ?? choice.querySelector('.label')?.textContent ?? choice.getAttribute('aria-label') ?? choice.textContent ?? '').trim()
+            }));
+        });
+        if (listed.length === 0) return `${statePath} has no options to choose from`;
+        const quote = (items: readonly string[]): string => items.map((item) => `"${item}"`).join(', ');
+        return `${statePath} has no option "${wanted}". Values: ${quote(listed.map((item) => item.value))}. Labels: ${quote(listed.map((item) => item.label))}`;
+    }
+
     private async settle(page: Page): Promise<void> {
         await page.waitForTimeout(SETTLE_MS);
     }
+}
+
+function behindModalMessage(statePath: string): string {
+    return `${statePath} is behind an open modal dialog: act inside the modal, or close it first`;
 }
 
 /** Accepts `$.app.children.x` and `app.children.x` */

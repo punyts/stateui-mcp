@@ -6,6 +6,7 @@ import { createUiBuilderUseCases } from './createUiBuilder.js';
 import type { UiBuilderUseCases } from './createUiBuilder.js';
 import { BrowserPreview } from '../infrastructure/preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
+import { HubLiveState } from '../infrastructure/preview/HubLiveState.js';
 import { LivePreviewLog } from '../infrastructure/preview/LivePreviewLog.js';
 import { LiveViews } from '../infrastructure/preview/LiveViews.js';
 import { PreviewHub } from '../infrastructure/preview/PreviewHub.js';
@@ -78,7 +79,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { repository, validator, previewLog, catalog, fileRepository, fileStore },
+        { repository, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);

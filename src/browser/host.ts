@@ -84,6 +84,7 @@ type ServerMessage =
     | { type: 'command'; id: string; target: string; command: string; value?: Json; expiresAt: string }
     | { type: 'locale'; locale: string }
     | { type: 'theme'; kind: string; name: string }
+    | { type: 'state'; id: string }
     | { type: 'deleted' };
 
 interface RuntimeMessage {
@@ -180,6 +181,23 @@ function diffArticulation(path: string, before: unknown, after: unknown, documen
     return writes.length <= MAX_WRITES;
 }
 
+/**
+ * True when a write adds, replaces or changes the component of a node, or adds or removes a `<-` link. The runtime
+ * mounts a node, its component defaults and its links only on a load; a plain store write would leave the node
+ * half-mounted (a stat whose `<-value` never links, a panel remounted with the old component's properties)
+ */
+function mountsNodes(write: PathWrite): boolean {
+    const key = write.path.slice(write.path.lastIndexOf('.') + 1);
+    if (key === 'component' || key.startsWith('<-')) return true;
+    return write.remove !== true && holdsNodeOrLink(write.value);
+}
+
+function holdsNodeOrLink(value: unknown): boolean {
+    if (Array.isArray(value)) return value.some(holdsNodeOrLink);
+    if (!isRecord(value)) return false;
+    return Object.entries(value).some(([key, item]) => key === 'component' || key.startsWith('<-') || holdsNodeOrLink(item));
+}
+
 /** A document change as writes: the `app` tree changes through writes, anything else (theme, locales, composed) is a full load. `data` is the synced state's */
 function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
     const { data: _previousData, app: previousApp, ...previousRest } = previous;
@@ -187,6 +205,7 @@ function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[]
     if (!deepEqual(previousRest, nextRest)) return 'load';
     const writes: PathWrite[] = [];
     if (!diffComplete('$.app', previousApp, nextApp, writes) || writes.length > MAX_WRITES) return 'load';
+    if (writes.some(mountsNodes)) return 'load';
     return writes.length === 0 ? 'none' : writes;
 }
 
@@ -442,12 +461,13 @@ class LiveView {
         else delete this.body.dataset['note'];
     }
 
-    private report(body: Record<string, unknown>): void {
+    /** `keepalive` bodies are limited to 64 KiB, so the state, which can be larger, goes without it */
+    private report(body: Record<string, unknown>, keepalive = true): void {
         void fetch(`/apps/${this.appId}/report`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ viewId: this.viewId, ...body }),
-            keepalive: true
+            keepalive
         }).catch(() => undefined);
     }
 
@@ -485,6 +505,12 @@ class LiveView {
                 if (message.kind === 'mode') this.mode = message.name;
                 if (this.ready) this.post({ type: 'theme', kind: message.kind, name: message.name });
                 break;
+            case 'state': {
+                // What the frame shows once it has a load (it includes what the user changed), else what the sync client holds
+                const state = this.loaded ? this.shown : this.synced;
+                this.report({ type: 'state', requestId: message.id, state: state === undefined ? null : copy(state) }, false);
+                break;
+            }
             case 'deleted':
                 this.stopped = true;
                 this.viewSocket?.close();

@@ -4,7 +4,7 @@ import { startStatenet } from '@punyts/statenet';
 import type { RunningStatenet } from '@punyts/statenet';
 import { chromium } from 'playwright';
 import type { Browser, Page, WebSocketRoute } from 'playwright';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
 import { FORM_DOCUMENT, call, httpHarness, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
@@ -131,6 +131,32 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(outline.body['text'])).toContain('Send now');
     });
 
+    it('should swap a node for another component in the open page without a runtime error', async () => {
+        // Arrange
+        const document = Object.freeze({
+            data: Object.freeze({ n: 3 }),
+            app: Object.freeze({ component: 'page', children: Object.freeze({ k: Object.freeze({ component: 'stat', _label: 'Cash', '<-value': '$.data.n' }) }) })
+        });
+        const created = await call(harness.client, 'ui_app_create', { name: 'swap', document });
+        const swapId = created.body['appId'] as string;
+        await call(harness.client, 'ui_preview', { appId: swapId });
+
+        // Act
+        await call(harness.client, 'ui_app_write', {
+            appId: swapId,
+            operations: [{ op: 'set', path: 'app.children.k', value: { component: 'panel', bordered: true, children: { v: { component: 'stat', _label: 'Boxed', '<-value': '$.data.n' } } } }],
+            expectedRevision: 1
+        });
+        await eventually(harness, 'ui_validate', { appId: swapId }, (result) => (result.body['preview'] as { revision?: number }).revision === 2);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const validated = await call(harness.client, 'ui_validate', { appId: swapId });
+        const outline = await call(harness.client, 'ui_outline', { appId: swapId });
+
+        // Assert
+        expect(JSON.stringify((validated.body["preview"] as { errors: unknown[] }).errors)).toBe("[]");
+        expect(String(outline.body['text'])).toContain('Boxed');
+    });
+
     it('should add a new key with ui_state_set to the running page and keep it', async () => {
         // Act: a new object under data, then a new record inside it
         await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks', value: { t1: { title: 'first' } } });
@@ -201,6 +227,156 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
             expect(result.isError).toBe(true);
             expect((result.body['results'] as { error?: string }[])[0]?.error).toContain('behind an open modal dialog');
         });
+
+        it('should refuse fill, choose, press and focus on a node behind the open modal, not report ok', async () => {
+            // Arrange
+            const created = await call(harness.client, 'ui_app_create', {
+                name: 'open modal with fields',
+                document: {
+                    data: { view: 'open' },
+                    app: {
+                        component: 'page',
+                        children: {
+                            name: { component: 'textField', _label: 'Name' },
+                            view: { component: 'segmented', options: { open: { _label: 'Open' }, overdue: { _label: 'Overdue' } }, '<-value': '$.data.view' },
+                            dialog: { component: 'modal', _title: 'Shown', open: true, body: { component: 'text', _text: 'inside' } }
+                        }
+                    }
+                }
+            });
+            const appId = created.body['appId'] as string;
+            await call(harness.client, 'ui_preview', { appId });
+
+            // Act
+            const results: { ok: boolean; error?: string }[] = [];
+            for (const action of [
+                { action: 'fill', path: '$.app.children.name', value: 'x' },
+                { action: 'choose', path: '$.app.children.view', value: 'overdue' },
+                { action: 'press', path: '$.app.children.name', value: 'Enter' },
+                { action: 'focus', path: '$.app.children.name' }
+            ]) {
+                const result = await call(harness.client, 'ui_interact', { appId, actions: [action] });
+                results.push(...(result.body['results'] as { ok: boolean; error?: string }[]));
+            }
+
+            // Assert
+            expect(results.map((result) => result.ok)).toEqual([false, false, false, false]);
+            for (const result of results) expect(result.error).toContain('behind an open modal dialog');
+        });
+    });
+});
+
+describe.skipIf(!installed)('ui_interact choose, ui_preview reload and the live ui_state_get (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let appId = '';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        const created = await call(harness.client, 'ui_app_create', {
+            name: 'choices',
+            document: {
+                data: { view: 'open', pick: 'a', size: 'm' },
+                app: {
+                    component: 'page',
+                    children: {
+                        view: { component: 'segmented', options: { open: { _label: 'Open' }, overdue: { _label: 'Overdue' } }, '<-value': '$.data.view' },
+                        size: { component: 'radioField', _label: 'Size', options: { s: { _label: 'Small' }, m: { _label: 'Medium' } }, '<-value': '$.data.size' },
+                        pick: { component: 'selectField', _label: 'Pick', options: { a: { _label: 'Alpha one' }, b: { _label: 'Beta two' } }, '<-value': '$.data.pick' }
+                    }
+                }
+            }
+        });
+        appId = created.body['appId'] as string;
+        await call(harness.client, 'ui_preview', { appId });
+    });
+
+    afterAll(async () => {
+        await harness.close();
+        await data.cleanup();
+    });
+
+    async function choose(path: string, value: string): Promise<ToolResult> {
+        return call(harness.client, 'ui_interact', { appId, actions: [{ action: 'choose', path: '$.app.children.' + path, value }] });
+    }
+
+    async function dataNow(): Promise<Record<string, unknown>> {
+        const state = await eventually(harness, 'ui_state_get', { appId }, () => true);
+        return (state.body['state'] as { data: Record<string, unknown> }).data;
+    }
+
+    it('should choose a segment by its option value', async () => {
+        // Act
+        const result = await choose('view', 'overdue');
+
+        // Assert
+        expect(result.isError).toBe(false);
+        expect(await dataNow()).toMatchObject({ view: 'overdue' });
+    });
+
+    it('should choose a segment by its label', async () => {
+        // Arrange
+        await choose('view', 'open');
+
+        // Act
+        const result = await choose('view', 'Overdue');
+
+        // Assert
+        expect(result.isError).toBe(false);
+        expect(await dataNow()).toMatchObject({ view: 'overdue' });
+    });
+
+    it('should choose a radio by value and by label, and a select option by value and by label', async () => {
+        // Act
+        const radioByValue = await choose('size', 's');
+        const radioByLabel = await choose('size', 'Medium');
+        const selectByValue = await choose('pick', 'b');
+        const selectByLabel = await choose('pick', 'Alpha one');
+
+        // Assert
+        expect([radioByValue, radioByLabel, selectByValue, selectByLabel].map((result) => result.isError)).toEqual([false, false, false, false]);
+        expect(await dataNow()).toMatchObject({ size: 'm', pick: 'a' });
+    });
+
+    it('should list the values and the labels when no option matches', async () => {
+        // Act
+        const result = await choose('view', 'nothing');
+
+        // Assert
+        expect(result.isError).toBe(true);
+        const message = String((result.body['results'] as { error?: string }[])[0]?.error);
+        expect(message).toContain('Values: "open", "overdue"');
+        expect(message).toContain('Labels: "Open", "Overdue"');
+    });
+
+    it('should load the headless page again on a repeat ui_preview and return the same url', async () => {
+        // Arrange
+        const first = await call(harness.client, 'ui_preview', { appId });
+        const attach = vi.spyOn(harness.server.services.hub, 'attach');
+
+        // Act
+        const second = await call(harness.client, 'ui_preview', { appId });
+
+        // Assert
+        expect(attach).toHaveBeenCalledTimes(1);
+        expect(second.body['rendered']).toBe(true);
+        expect(second.body['url']).toBe(first.body['url']);
+        attach.mockRestore();
+    });
+
+    it('should read the state live from the headless page, and the stored copy once it is closed', async () => {
+        // Arrange
+        const live = await call(harness.client, 'ui_state_get', { appId });
+        await harness.server.services.browser.closePage(appId);
+        await eventually(harness, 'ui_state_get', { appId }, (state) => state.body['source'] === 'stored');
+
+        // Act
+        const stored = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(live.body['source']).toBe('live');
+        expect(stored.body).toMatchObject({ source: 'stored', preview: { attached: false } });
     });
 });
 

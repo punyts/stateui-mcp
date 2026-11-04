@@ -362,6 +362,36 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         expect((events.body['events'] as { name: string; payload: unknown }[]).at(-1)).toMatchObject({ name: 'form.saved', payload: { ok: true } });
     });
 
+    it('should read the state live from an open view that answers the state request, and mark it live', async () => {
+        // Arrange
+        const view = await openSync(appId);
+        await view.next((message) => message['type'] === 'view');
+
+        // Act
+        const reading = call(harness.client, 'ui_state_get', { appId });
+        const asked = await view.next((message) => (message['message'] as { type?: string } | undefined)?.type === 'state');
+        const requestId = (asked['message'] as { id: string }).id;
+        const answered = await report({ type: 'state', requestId, state: { data: { typed: 'live only' }, app: {} } });
+        const result = await reading;
+        view.socket.close();
+
+        // Assert
+        expect(answered.status).toBe(200);
+        expect(result.body).toMatchObject({ source: 'live', state: { data: { typed: 'live only' } }, preview: { attached: true } });
+    });
+
+    it('should read the stored state with source stored when no view is open', async () => {
+        const result = await call(harness.client, 'ui_state_get', { appId });
+
+        expect(result.body).toMatchObject({ source: 'stored', preview: { attached: false } });
+    });
+
+    it('should refuse a state report that is not an object or null', async () => {
+        const response = await report({ type: 'state', requestId: 'r1', state: 'nope' });
+
+        expect(response.status).toBe(400);
+    });
+
     it('should refuse a view id that is not a UUID, an unknown app and another origin', async () => {
         const malformed = await refusedStatus(appId, 'x');
         const unknown = await refusedStatus('11111111-1111-4111-8111-111111111111', VIEW);
@@ -392,7 +422,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toEqual(['SUI-RUN-BINDING']);
     });
 
-    it('should refuse a report that is not valid, and the state and emit reports the sync socket replaced', async () => {
+    it('should refuse a report that is not valid, a state report without a request and the emit report the sync socket replaced', async () => {
         const noView = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
         const unknownType = await report({ type: 'launch' });
         const state = await report({ type: 'state', revision: 1, snapshot: { data: {} } });

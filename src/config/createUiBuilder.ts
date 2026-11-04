@@ -1,4 +1,4 @@
-import type { ComponentCatalog, UiAppRepository, UiAppValidator, UiFileRepository, UiFileStore, UiPreviewLog } from '../application/ports/index.js';
+import type { ComponentCatalog, LiveStateReader, UiAppRepository, UiAppValidator, UiFileRepository, UiFileStore, UiPreviewLog } from '../application/ports/index.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { CreateApp } from '../application/use-cases/CreateApp.js';
 import { DeleteApp } from '../application/use-cases/DeleteApp.js';
@@ -31,6 +31,7 @@ export interface UiBuilderPorts {
     readonly catalog: ComponentCatalog;
     readonly fileRepository: UiFileRepository;
     readonly fileStore: UiFileStore;
+    readonly liveState: LiveStateReader;
 }
 
 /** What the use cases need besides ports: the clock, ids, the reporter and the library's core icons */
@@ -68,7 +69,7 @@ export interface UiBuilderUseCases {
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, validator, previewLog, catalog, fileRepository, fileStore } = ports;
+    const { repository, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     return {
@@ -84,7 +85,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         getUiApp: new GetUiApp(repository, catalog, previewLog, coreIconNames, now, report),
         outlineApp: new OutlineApp(repository, validator, report),
         validateApp: new ValidateApp(repository, validator, previewLog, now, report),
-        getState: new GetState(repository, previewLog, now, report),
+        getState: new GetState(repository, previewLog, liveState, now, report),
         setState: new SetState(repository, validator, report),
         resetState: new ResetState(repository, report),
         runCommand: new RunCommand(repository, catalog, previewLog, now, newId, report),

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: a document write that adds or replaces a node, changes a node's `component` or adds or removes a `<-` link reaches an open view as a load (the view's state is kept), not as store writes. The runtime mounts component defaults and links only on a load, so a write used to leave the node half-mounted: a `stat` swapped for a `panel` reported "Binding or controller of runtime failed at $" and a new node's `<-value` stayed unlinked ("—").
+- New: `ui_state_get` reads the state live: with a view open (the headless page or a tab a person opened) it asks that view for the state it holds and returns `source: "live"`; with none open, or none answering within 2 seconds, it returns the stored copy with `source: "stored"`. The `preview` block is unchanged.
+- Fix: a repeat `ui_preview` loads the headless page again, so it shows the current document and state. It returns the same `url`.
+- Fix: `ui_interact` refuses every action on a node behind an open modal (`fill`, `choose`, `press`, `hover`, `select`, `focus`, as `click` did) instead of reporting ok.
+- Fix: `ui_interact` `choose` takes an option value or label on every choice component (radioField, segmented, selectField); when nothing matches the error lists the values and the labels.
 - New: `ui_tree` lists the structure of an app as a nested list: one line per node with its key, component and state path, indented two spaces per level with bullets alternating `-` and `*`, slot nodes marked `[slot]`. `path`, `depth` and `paths: false` narrow it. `rendered: true` lists what the headless page draws instead, so the rows of a list and the cards of a board show with the state paths they have while the app runs (the paths `ui_interact` takes); a node with no box is `(hidden)` and its subtree is counted.
 - New: `ui_state_reset` puts an app's state back to its document (`$.data` from the document, `$.app` with no articulation) without running the logic, then starts the logic again.
 - New: `ui_logic_trace` returns the last runs of an app's logic: the cause, the changed paths and one event per machine, rule, table or guard whose trigger matched, with the outcome (fired, failed, debounced, already-fired, unchanged, parent-removed, other-state, condition, refused) and the writes.

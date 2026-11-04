@@ -96,7 +96,7 @@ const INTERACT = defineInput({
                 required: true,
                 enum: INTERACT_ACTIONS,
                 description:
-                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick a radio option (radioGroup, segmented). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together'
+                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick an option by its value or label (radioField, segmented, select). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together'
             },
             path: { type: 'string', description: 'The node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths, and with rendered: true the paths of rows and cards' },
             value: {
@@ -158,7 +158,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_state_get',
             description:
-                'Read the app state as { data, app }: the data, and what users typed, picked or opened. Every open view syncs it, so it holds what a user typed a moment ago. path reads one part. Long strings are shortened unless full is true. Returns { appId, revision, state, preview }, or with path { appId, revision, path, value, preview }; preview says whether a view is open and lists its runtime errors.',
+                'Read the app state as { data, app }: the data, and what users typed, picked or opened. With a preview view open (the headless page or a tab a person opened) it asks that view and returns source "live"; with none open, or none answering within 2 seconds, it returns the stored copy with source "stored". path reads one part. Long strings are shortened unless full is true. Returns { appId, revision, source, state, preview }, or with path { appId, revision, source, path, value, preview }; preview says whether a view is open and lists its runtime errors.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -168,16 +168,16 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 const result = await useCases.getState.execute(appId);
                 if (result.kind === 'not-found') return notFound(result.appId);
                 const shown = (value: unknown): unknown => (full === true ? value : elideLong(value));
-                if (path === undefined) return succeed({ appId: result.appId, revision: result.revision, state: shown(result.state), preview: result.preview });
+                if (path === undefined) return succeed({ appId: result.appId, revision: result.revision, source: result.source, state: shown(result.state), preview: result.preview });
                 const at = valueAt(result.state, path);
                 if (!at.found) return fail('unknown-path', `Nothing is at ${path}; the closest part that exists is ${at.closest}`, { appId, path, closest: at.closest });
-                return succeed({ appId: result.appId, revision: result.revision, path, value: shown(at.value), preview: result.preview });
+                return succeed({ appId: result.appId, revision: result.revision, source: result.source, path, value: shown(at.value), preview: result.preview });
             }
         },
         {
             name: 'ui_preview',
             description:
-                'Open or refresh the headless browser page of the application and wait until it has rendered the current revision. Returns { appId, revision, url, rendered, errors }: url is the address a person opens in a browser to watch the same live app (it follows every later write), rendered says whether the headless page showed this revision within 10 seconds, and errors are the runtime errors the views reported. Validate first with ui_validate. If Chromium is not installed the url still works for a person and rendered is false with a note.',
+                'Open the headless browser page of the application, or reload it when it is already open, and wait until it has rendered the current revision. Returns { appId, revision, url, rendered, errors }: url is the address a person opens in a browser to watch the same live app (it follows every later write), rendered says whether the headless page showed this revision within 10 seconds, and errors are the runtime errors the views reported. Validate first with ui_validate. If Chromium is not installed the url still works for a person and rendered is false with a note.',
             inputSchema: PREVIEW.schema,
             annotations: SHOWS,
             run: async (args) => {
@@ -238,7 +238,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Act on the running app in the headless page like a user: click, hover, fill, press, select, choose, focus and drag on nodes by path, and key on whatever has focus. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { appId, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). The call is an error when an action failed.',
+                'Act on the running app in the headless page like a user: click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { appId, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {

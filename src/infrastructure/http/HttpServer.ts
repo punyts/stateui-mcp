@@ -268,6 +268,16 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 sendJson(response, 200, { ok: true });
                 return;
             }
+            case 'state': {
+                const state = body['state'];
+                if (typeof body['requestId'] !== 'string' || (state !== null && !isJsonObject(state))) {
+                    throw new HttpError(400, 'A state report has a requestId and a state object or null', 'invalid_report');
+                }
+                hub.resolveState(appId, body['requestId'], state);
+                hub.touch(appId, viewId);
+                sendJson(response, 200, { ok: true });
+                return;
+            }
             default:
                 throw new HttpError(400, 'Unknown report type', 'invalid_report');
         }
