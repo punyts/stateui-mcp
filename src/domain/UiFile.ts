@@ -35,6 +35,15 @@ export const MAX_FILE_NAME_LENGTH = 255;
 /** A file no state snapshot or document mentions is removed this long after upload */
 export const UNREFERENCED_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Whether a file is referenced: its id appears anywhere in the given values (the app's document and the state its
+ * views hold). The sweep and any release of a file use this one definition
+ */
+export function isFileReferenced(fileId: string, values: readonly unknown[]): boolean {
+    const id = fileId.toLowerCase();
+    return values.some((value) => value !== undefined && JSON.stringify(value).toLowerCase().includes(id));
+}
+
 /** Name used when a file name is empty after normalisation */
 export const DEFAULT_FILE_NAME = 'file';
 

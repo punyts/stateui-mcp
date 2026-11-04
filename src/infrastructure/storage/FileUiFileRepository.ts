@@ -1,11 +1,10 @@
-import { readFile } from 'node:fs/promises';
 import type { AddUiFileInput, AddUiFileResult, UiFileRepository, UiFileUsage } from '../../application/ports/UiFileRepository.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_BYTES_PER_APP, MAX_FILES_PER_APP } from '../../domain/UiFile.js';
 import type { UiFile } from '../../domain/UiFile.js';
 import type { AppFolders } from './AppFolders.js';
 import { isAppId } from './AppFolders.js';
-import { isMissing, readJson, writeJsonAtomic } from './atomicFile.js';
+import { readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
 
 /** One entry of `files.json`. Dates are ISO strings on disk */
@@ -28,15 +27,6 @@ function isFileEntry(value: unknown): value is FileEntry {
         typeof value['sha256'] === 'string' &&
         typeof value['createdAt'] === 'string'
     );
-}
-
-async function readText(path: string): Promise<string> {
-    try {
-        return await readFile(path, 'utf8');
-    } catch (error) {
-        if (isMissing(error)) return '';
-        throw error;
-    }
 }
 
 /** The metadata of the files of an app, in `files.json` of the app folder. It shares the lock of the app with the app repository */
@@ -86,12 +76,9 @@ export class FileUiFileRepository implements UiFileRepository {
         return entries.map((entry) => this.toFile(appId, entry)).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
 
-    async findUnreferenced(appId: string, olderThan: Date): Promise<readonly UiFile[]> {
+    async findOlderThan(appId: string, olderThan: Date): Promise<readonly UiFile[]> {
         const entries = (await this.readEntries(appId)).filter((entry) => new Date(entry.createdAt) < olderThan);
-        if (entries.length === 0) return [];
-        // The documents are searched as text: an id anywhere in the document or the snapshot keeps its file
-        const text = `${await readText(this.folders.appFile(appId))}${await readText(this.folders.stateFile(appId))}`;
-        return entries.filter((entry) => !text.includes(entry.id)).map((entry) => this.toFile(appId, entry));
+        return entries.map((entry) => this.toFile(appId, entry));
     }
 
     async deleteByIds(appId: string, fileIds: readonly string[]): Promise<void> {

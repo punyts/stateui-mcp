@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: the file sweep no longer deletes a file that only the running state holds when the server has a statenet or the app is Persisted. It searched `app.json` and `state.json`, and with a statenet no `state.json` is written, so a `fileField` value set in a view was removed on the next upload 24 hours later. The sweep now reads the state through the app repository (what `ui_state_get` returns) in every mode, and keeps every file when the app or its state cannot be read. `$.server` is not part of that state, so a file referenced only there is not kept. `UiFileRepository.findUnreferenced` is replaced by `findOlderThan`; `isFileReferenced` is the one definition of a referenced file.
 - Fix: a `ui_app_write` that changes the document's `data` writes those changes into the running state at the paths that changed (no guard asks, no rule fires), so open views show them without `ui_state_reset`; the rest of `$.data` keeps what users and tools changed.
 - New: `ui_screenshot` takes `fullPage: true`: the viewport grows to everything the app can scroll to, in its document or a scrolling element of a component, up to 16000 px, measured again as the view grows. Page captures only.
 - Fix: `ui_component_get` returns the component's `tokens` (path, type and default, such as `image.fill`); the catalog had them but the entry dropped them, though the instructions sent agents there for component token names.

@@ -298,18 +298,18 @@ describe('files', () => {
         });
     });
 
-    it('should keep a file whose id is in the document and drop one that is referenced nowhere', async () => {
+    it('should list the files uploaded before a time, referenced or not', async () => {
         const id = await createApp();
         const files = new FileUiFileRepository(folders, lock);
-        const kept = '55555555-5555-4555-8555-555555555555';
-        const dropped = '66666666-6666-4666-8666-666666666666';
-        await files.add({ id: kept, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
-        await files.add({ id: dropped, appId: id, name: 'd', size: 1, type: 'text/plain', sha256: 'h' });
-        await apps.writeState(id, ['data', 'file'], { id: kept }, 1);
-        await authorities.close();
+        const first = '55555555-5555-4555-8555-555555555555';
+        const second = '66666666-6666-4666-8666-666666666666';
+        await files.add({ id: first, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
+        await files.add({ id: second, appId: id, name: 'd', size: 1, type: 'text/plain', sha256: 'h' });
 
-        const unreferenced = await files.findUnreferenced(id, new Date(Date.now() + 60_000));
+        const old = await files.findOlderThan(id, new Date(Date.now() + 60_000));
+        const none = await files.findOlderThan(id, new Date(Date.now() - 60_000));
 
-        expect(unreferenced.map((file) => file.id)).toEqual([dropped]);
+        expect(old.map((file) => file.id).sort()).toEqual([first, second]);
+        expect(none).toEqual([]);
     });
 });

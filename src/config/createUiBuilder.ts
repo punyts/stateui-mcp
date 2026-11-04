@@ -91,7 +91,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         runCommand: new RunCommand(repository, catalog, previewLog, now, newId, report),
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
-        uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, now, report), newId, report),
+        uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, repository, now, report), newId, report),
         readFile,
         readFileText: new ReadFileText(readFile)
     };

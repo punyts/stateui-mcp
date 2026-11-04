@@ -3,6 +3,7 @@ import {
     ALLOWED_FILE_TYPES,
     detectFileType,
     isAllowedFileType,
+    isFileReferenced,
     isTextReadableType,
     MAX_FILE_NAME_LENGTH,
     normaliseFileName,
@@ -128,5 +129,22 @@ describe('isTextReadableType', () => {
     it('should accept the four text types only', () => {
         for (const type of ['text/plain', 'text/csv', 'text/markdown', 'application/json']) expect(isTextReadableType(type)).toBe(true);
         for (const type of ['image/png', 'application/pdf']) expect(isTextReadableType(type)).toBe(false);
+    });
+});
+
+describe('isFileReferenced', () => {
+    const id = '77777777-7777-4777-8777-777777777777';
+
+    it('should find an id at any depth of the document or the state', () => {
+        expect(isFileReferenced(id, [{ app: {} }, { data: { photo: { id, name: 'a.png' } } }])).toBe(true);
+        expect(isFileReferenced(id, [{ data: { list: [{ file: { id } }] } }])).toBe(true);
+    });
+
+    it('should ignore case and undefined values', () => {
+        expect(isFileReferenced(id.toUpperCase(), [undefined, { data: { id } }])).toBe(true);
+    });
+
+    it('should not find an id that appears nowhere', () => {
+        expect(isFileReferenced(id, [{ app: {} }, { data: { other: '88888888-8888-4888-8888-888888888888' } }, undefined])).toBe(false);
     });
 });

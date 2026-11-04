@@ -29,7 +29,7 @@ export interface UiFileRepository {
     findById(appId: string, fileId: string): Promise<UiFile | undefined>;
     /** Newest first */
     list(appId: string): Promise<readonly UiFile[]>;
-    /** Files uploaded before `olderThan` whose id is in neither the app's state snapshot nor its document */
-    findUnreferenced(appId: string, olderThan: Date): Promise<readonly UiFile[]>;
+    /** Files uploaded before `olderThan`, whether or not anything references them */
+    findOlderThan(appId: string, olderThan: Date): Promise<readonly UiFile[]>;
     deleteByIds(appId: string, fileIds: readonly string[]): Promise<void>;
 }
