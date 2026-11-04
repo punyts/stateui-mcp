@@ -157,6 +157,42 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(outline.body['text'])).toContain('Boxed');
     });
 
+    it('should re-point a changed link in the open page', async () => {
+        // Arrange
+        const document = Object.freeze({
+            data: Object.freeze({ n: 'first-value', m: 'second-value' }),
+            app: Object.freeze({ component: 'page', children: Object.freeze({ k: Object.freeze({ component: 'text', '<-_text': '$.data.n' }) }) })
+        });
+        const created = await call(harness.client, 'ui_app_create', { name: 'relink', document });
+        const relinkId = created.body['appId'] as string;
+        const preview = await call(harness.client, 'ui_preview', { appId: relinkId });
+        const browser = await chromium.launch();
+        const page = await browser.newPage();
+        await page.goto(String(preview.body['url']));
+        const shown = page.frameLocator('iframe').getByText('first-value');
+        await shown.waitFor();
+
+        // Act
+        await call(harness.client, 'ui_app_write', {
+            appId: relinkId,
+            operations: [{ op: 'set', path: 'app.children.k.<-_text', value: '$.data.m' }],
+            expectedRevision: 1
+        });
+        await eventually(harness, 'ui_validate', { appId: relinkId }, (result) => (result.body['preview'] as { revision?: number }).revision === 2);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const validated = await call(harness.client, 'ui_validate', { appId: relinkId });
+        const relinked = page.frameLocator('iframe').getByText('second-value');
+        await relinked.waitFor({ timeout: 5000 });
+        const newCount = await relinked.count();
+        const oldCount = await page.frameLocator('iframe').getByText('first-value').count();
+        await browser.close();
+
+        // Assert
+        expect(JSON.stringify((validated.body['preview'] as { errors: unknown[] }).errors)).toBe('[]');
+        expect(newCount).toBe(1);
+        expect(oldCount).toBe(0);
+    });
+
     it('should add a new key with ui_state_set to the running page and keep it', async () => {
         // Act: a new object under data, then a new record inside it
         await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks', value: { t1: { title: 'first' } } });

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix: a document write that adds or replaces a node, changes a node's `component` or adds or removes a `<-` link reaches an open view as a load (the view's state is kept), not as store writes. The runtime mounts component defaults and links only on a load, so a write used to leave the node half-mounted: a `stat` swapped for a `panel` reported "Binding or controller of runtime failed at $" and a new node's `<-value` stayed unlinked ("—").
+- Fix: a document write that adds or replaces a node, changes a node's `component` or adds, changes or removes a `<-` link reaches an open view as a write of the whole node, which the runtime mounts live (component defaults, composed components and links), instead of a load or a plain store write. A plain write left the node half-mounted: a `stat` swapped for a `panel` reported "Binding or controller of runtime failed at $" and a new node's `<-value` stayed unlinked ("—"). A change that belongs to the root node, or to theme, locales or composed, is still a load.
 - New: `ui_state_get` reads the state live: with a view open (the headless page or a tab a person opened) it asks that view for the state it holds and returns `source: "live"`; with none open, or none answering within 2 seconds, it returns the stored copy with `source: "stored"`. The `preview` block is unchanged.
 - Fix: a repeat `ui_preview` loads the headless page again, so it shows the current document and state. It returns the same `url`.
 - Fix: `ui_interact` refuses every action on a node behind an open modal (`fill`, `choose`, `press`, `hover`, `select`, `focus`, as `click` did) instead of reporting ok.

@@ -182,9 +182,9 @@ function diffArticulation(path: string, before: unknown, after: unknown, documen
 }
 
 /**
- * True when a write adds, replaces or changes the component of a node, or adds or removes a `<-` link. The runtime
- * mounts a node, its component defaults and its links only on a load; a plain store write would leave the node
- * half-mounted (a stat whose `<-value` never links, a panel remounted with the old component's properties)
+ * True when a write changes the component of a node or adds, changes or removes a `<-` link, or writes a value that
+ * holds nodes or links. The runtime mounts a node (component defaults, composed components, links) only when the node
+ * is written whole; such a write is lifted to a write of the node that owns it
  */
 function mountsNodes(write: PathWrite): boolean {
     const key = write.path.slice(write.path.lastIndexOf('.') + 1);
@@ -198,6 +198,51 @@ function holdsNodeOrLink(value: unknown): boolean {
     return Object.entries(value).some(([key, item]) => key === 'component' || key.startsWith('<-') || holdsNodeOrLink(item));
 }
 
+function isNode(value: unknown): value is JsonRecord {
+    return isRecord(value) && typeof value['component'] === 'string';
+}
+
+function isAtOrBelow(path: string, base: string): boolean {
+    return path === base || path.startsWith(`${base}.`);
+}
+
+/**
+ * The path and value of the node in `app` (at `$.app`) that a write below `$.app` belongs to: the written value when
+ * it is a whole node, else the nearest node above the path. Undefined when the owner is the root node, which only a
+ * load mounts
+ */
+function owningNode(app: unknown, write: PathWrite): { path: string; value: JsonRecord } | undefined {
+    if (write.remove !== true && isNode(write.value)) return { path: write.path, value: write.value };
+    const segments = write.path.split('.').slice(2);
+    let owner: { path: string; value: JsonRecord } | undefined;
+    let value: unknown = app;
+    for (let index = 0; index < segments.length - 1; index += 1) {
+        value = isRecord(value) || Array.isArray(value) ? (value as Record<string, unknown>)[segments[index]!] : undefined;
+        if (value === undefined) break;
+        if (isNode(value)) owner = { path: `$.app.${segments.slice(0, index + 1).join('.')}`, value };
+    }
+    return owner;
+}
+
+/**
+ * The writes with each one that mounts nodes replaced by a write of its owning node whole, which the runtime mounts as
+ * a load would; the other writes inside a lifted node are dropped. 'load' when a change belongs to the root node
+ */
+function liftNodeWrites(app: unknown, writes: readonly PathWrite[]): PathWrite[] | 'load' {
+    const owners: { path: string; value: JsonRecord }[] = [];
+    for (const write of writes) {
+        if (!mountsNodes(write)) continue;
+        const owner = owningNode(app, write);
+        if (!owner) return 'load';
+        if (owners.some((known) => isAtOrBelow(owner.path, known.path))) continue;
+        for (let index = owners.length - 1; index >= 0; index -= 1) if (isAtOrBelow(owners[index]!.path, owner.path)) owners.splice(index, 1);
+        owners.push(owner);
+    }
+    if (owners.length === 0) return [...writes];
+    const rest = writes.filter((write) => !owners.some((owner) => isAtOrBelow(write.path, owner.path)));
+    return [...rest, ...owners.map((owner) => ({ path: owner.path, value: copy(owner.value) }))];
+}
+
 /** A document change as writes: the `app` tree changes through writes, anything else (theme, locales, composed) is a full load. `data` is the synced state's */
 function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
     const { data: _previousData, app: previousApp, ...previousRest } = previous;
@@ -205,8 +250,9 @@ function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[]
     if (!deepEqual(previousRest, nextRest)) return 'load';
     const writes: PathWrite[] = [];
     if (!diffComplete('$.app', previousApp, nextApp, writes) || writes.length > MAX_WRITES) return 'load';
-    if (writes.some(mountsNodes)) return 'load';
-    return writes.length === 0 ? 'none' : writes;
+    const lifted = liftNodeWrites(nextApp, writes);
+    if (lifted === 'load') return 'load';
+    return lifted.length === 0 ? 'none' : lifted;
 }
 
 /** Content and the structure keys of a node cut out of a value below `$.app`; undefined when nothing is left */
