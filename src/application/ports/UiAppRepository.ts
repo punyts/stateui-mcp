@@ -43,6 +43,11 @@ export type UiAppDeleteResult =
  * counts document writes. The state (`stateSnapshot` of a found app) is the app's synced state, which the open views
  * change too, so a state write does not raise the revision. Documents and states keep their key order
  */
+export interface UiStateWriteOptions {
+    /** False writes the value as it is: the app's guard rules do not ask and its rules do not fire. Default true */
+    readonly logic?: boolean;
+}
+
 export interface UiAppRepository {
     create(input: CreateUiAppInput): Promise<CreateUiAppResult>;
     findById(appId: string): Promise<UiApp | undefined>;
@@ -53,7 +58,12 @@ export interface UiAppRepository {
      * removes the entry there when `value` is undefined. Every open view gets the change at once. The revision stays as
      * it is; `written` carries it
      */
-    writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppStateWriteResult>;
+    writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number, options?: UiStateWriteOptions): Promise<UiAppStateWriteResult>;
+    /**
+     * Puts the state back to the document's: `$.data` is the document's data, `$.app` has no articulation. The app's
+     * logic does not run for it and starts again after it. The revision stays as it is
+     */
+    resetState(appId: string, expectedRevision: number): Promise<UiAppStateWriteResult>;
     /** Removes the app folder: document, state, error log and files */
     delete(appId: string, expectedRevision: number): Promise<UiAppDeleteResult>;
 }

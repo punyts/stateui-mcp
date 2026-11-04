@@ -6,6 +6,7 @@ import type { PreviewBrowser } from '../preview/BrowserPreview.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
 import type { AppCalls } from '../sync/AppCalls.js';
+import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
 import { createDeleteTools } from './deleteTools.js';
@@ -27,6 +28,8 @@ export interface StateUiToolDependencies {
     readonly browser: PreviewBrowser;
     /** The calls of Full-mode logic that wait for the agent's answer */
     readonly calls: Pick<AppCalls, 'answer'>;
+    /** The apps' server-side logic, for ui_logic_trace */
+    readonly authorities?: Pick<AppAuthorities, 'trace' | 'clearTrace'>;
     /** The address a person opens for an app */
     readonly viewUrl: (appId: string) => string;
     readonly report: UseCaseReport;
@@ -36,12 +39,12 @@ const START_HERE_TOOLS = new Set(['ui_components_list', 'ui_app_create']);
 
 /** Every tool of the server: catalog, lifecycle and reads, writes, the live tools, `ui_file_read` and `ui_app_delete` */
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {
-    const { useCases, hub, liveViews, browser, viewUrl, calls } = dependencies;
+    const { useCases, hub, liveViews, browser, viewUrl, calls, authorities } = dependencies;
     const tools = [
         ...createCatalogTools(useCases),
-        ...createAppTools(useCases),
+        ...createAppTools(useCases, browser),
         ...createWriteTools(useCases, liveViews),
-        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls }),
+        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...(authorities !== undefined && { logic: authorities }) }),
         ...createFileTools(useCases),
         ...createDeleteTools(useCases, liveViews)
     ];

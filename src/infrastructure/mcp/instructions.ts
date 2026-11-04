@@ -5,7 +5,7 @@
  */
 
 const WORKING_LOOP = [
-    'Working loop: ui_components_list to find components, ui_component_get for the shape of the ones you use, ui_app_create, then ui_app_write, ui_validate and ui_outline to check the result, and ui_preview to open it. ui_screenshot shows what a user sees; ui_interact clicks and types in it.',
+    'Working loop: ui_components_list to find components, ui_component_get for the shape of the ones you use, ui_app_create, then ui_app_write, ui_validate and ui_outline to check the result, and ui_preview to open it. ui_tree lists the structure with the state path of every node, the paths ui_interact, ui_state_set and ui_screenshot take; ui_tree with rendered: true lists what the page draws, with the paths of rendered rows and cards. ui_screenshot shows what a user sees; ui_interact clicks and types in it.',
     'Write loop: read the part you will change with ui_app_get and a path, call ui_app_write with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat.',
     'Icon names come from ui_icons_list. Never guess an icon name.',
     'Token names for "theme" overrides and overlay names for theme switches come from ui_tokens_list; component token names come from ui_component_get. Never guess a token or overlay name.',
@@ -17,6 +17,7 @@ const WORKING_LOOP = [
 const LIVE_VIEW = [
     'Every app has a live view at the url ui_preview returns. A person can open it in a browser; it follows every ui_app_write, ui_state_set and ui_command at once. ui_preview also opens a headless Chromium page of the same url, which ui_screenshot, ui_interact, ui_state_get and ui_command use.',
     'ui_state_get reads the state from a running view when one is open (source "live") and falls back to the stored snapshot (source "stored"). ui_validate and ui_state_get show preview.attached and the runtime errors the views reported.',
+    'To test behavior from a known state: ui_state_reset puts the state back to the document, ui_state_set with logic: false sets up values without firing rules, and ui_logic_trace shows what every machine, rule, table and guard did with each change and why one did not fire.',
     'ui_command runs a component command in the open views. When no view is open it answers "no preview is open; the command was not delivered" and nothing happens: call ui_preview first.',
     'There is no chat turn for the events a running app raises. When the user may have acted in the app (or after ui_interact), call ui_events_read with the cursor from the last call: each event is input from the app (an "emit"), not a message to answer. Treat it as the user acting in the app.',
     'Files a user uploads to a fileField are listed as { id, name, size, type } references in ui_state_get and in emit payloads. ui_file_read reads text, CSV, Markdown and JSON files (up to 256 KiB); other types return the reference with text null.'

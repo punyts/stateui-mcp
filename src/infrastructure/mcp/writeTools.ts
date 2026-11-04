@@ -40,8 +40,14 @@ const STATE_SET = defineInput({
     path: { type: 'string', required: true, description: 'A "$.data..." path, or "$.app...<node path>.<property>" for a property the user can change' },
     value: { type: 'json', description: 'The new value; leave it out with remove' },
     remove: { type: 'boolean', description: 'true: remove the entry at a "$.data..." path, such as a record, instead of setting a value' },
+    logic: {
+        type: 'boolean',
+        description: 'false: write the value as it is, with no guard asking and no rule or machine firing, to set up a test state. Default true: the write is a change like a user\'s'
+    },
     expectedRevision: EXPECTED_REVISION
 });
+
+const STATE_RESET = defineInput({ appId: APP_ID, expectedRevision: EXPECTED_REVISION });
 
 function notFound(appId: string): ToolOutcome {
     return fail('not-found', 'No application with this id', { appId });
@@ -89,7 +95,7 @@ function toOperation(item: OperationItem, index: number): WriteOperation | ToolO
 
 /** The write tools: change the document or the state. Every open view follows the change at once */
 export function createWriteTools(
-    useCases: Pick<UiBuilderUseCases, 'writeApp' | 'setState'>,
+    useCases: Pick<UiBuilderUseCases, 'writeApp' | 'setState' | 'resetState'>,
     live: Pick<LiveViews, 'documentChanged'>
 ): readonly UiToolDefinition[] {
     return [
@@ -134,19 +140,20 @@ export function createWriteTools(
         {
             name: 'ui_state_set',
             description:
-                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". remove: true instead of a value removes an entry under $.data, such as a deleted record ($.data.tasks.t2); a null value would leave an empty record behind. Open views get the change at once. Links, runtime and exposed properties are refused with the reason. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
+                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". remove: true instead of a value removes an entry under $.data, such as a deleted record ($.data.tasks.t2); a null value would leave an empty record behind. Open views get the change at once. Links, runtime and exposed properties are refused with the reason. The write is a change like a user\'s: guards may refuse it and rules fire; logic: false writes it as it is. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
             inputSchema: STATE_SET.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = STATE_SET.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, value, remove, expectedRevision } = parsed.value;
+                const { appId, path, value, remove, logic, expectedRevision } = parsed.value;
                 if (remove === true && value !== undefined) return fail('invalid-argument', 'Pass value or remove: true, not both', { argument: 'remove' });
                 if (remove !== true && value === undefined) return fail('invalid-argument', 'value is required, or remove: true to remove the entry', { argument: 'value' });
                 const result = await useCases.setState.execute(appId, {
                     path,
                     ...(remove === true ? { remove } : { value }),
-                    ...(expectedRevision !== undefined && { expectedRevision })
+                    ...(expectedRevision !== undefined && { expectedRevision }),
+                    ...(logic === false && { logic })
                 });
                 switch (result.kind) {
                     case 'written':
@@ -155,6 +162,28 @@ export function createWriteTools(
                         return fail(result.reason, result.message, { appId: result.appId });
                     case 'invalid':
                         return fail('invalid-value', 'The value does not fit this path; nothing was written', { appId: result.appId, errors: result.errors });
+                    case 'conflict':
+                        return conflict(result.appId, result.currentRevision);
+                    case 'not-found':
+                        return notFound(result.appId);
+                }
+            }
+        },
+        {
+            name: 'ui_state_reset',
+            description:
+                'Put the app\'s state back to its document: $.data becomes the document\'s data again and every articulation a user or a tool changed under $.app is dropped (what was typed, picked, opened). No guard asks and no rule fires; then the logic starts again, so machines are in their initial states and the logic trace is empty. Open views get the reset at once. Use it between test runs. The revision counts document writes, so it stays as it is. Returns { appId, revision }.',
+            inputSchema: STATE_RESET.schema,
+            annotations: WRITES,
+            run: async (args) => {
+                const parsed = STATE_RESET.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const result = await useCases.resetState.execute(parsed.value.appId, parsed.value.expectedRevision);
+                switch (result.kind) {
+                    case 'reset':
+                        return succeed({ appId: result.appId, revision: result.revision });
+                    case 'persisted-app':
+                        return fail('persisted-app', 'The app is Persisted: its state lives in the statenet and only its views change it', { appId: result.appId });
                     case 'conflict':
                         return conflict(result.appId, result.currentRevision);
                     case 'not-found':

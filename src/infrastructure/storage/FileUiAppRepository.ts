@@ -7,7 +7,8 @@ import type {
     UiAppRepository,
     UiAppSummary,
     UiAppStateWriteResult,
-    UiAppWriteResult
+    UiAppWriteResult,
+    UiStateWriteOptions
 } from '../../application/ports/UiAppRepository.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
@@ -121,16 +122,24 @@ export class FileUiAppRepository implements UiAppRepository {
         });
     }
 
-    async writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number): Promise<UiAppStateWriteResult> {
+    async writeState(appId: string, statePath: readonly string[], value: JsonValue | undefined, expectedRevision: number, options: UiStateWriteOptions = {}): Promise<UiAppStateWriteResult> {
         let refusal: string | undefined;
         const written = await this.withApp(appId, expectedRevision, async (file) => {
             if (file.sync === 'persisted') throw new Error(`App ${appId} is Persisted: the server does not change its state`);
             const path = `$.${statePath.join('.')}`;
-            const refused = await this.states.write(appId, file.document, path, value);
+            const refused = await this.states.write(appId, file.document, path, value, options);
             refusal = refused;
             return { kind: 'written', revision: file.revision };
         });
         return refusal === undefined ? written : { kind: 'refused', reason: refusal };
+    }
+
+    async resetState(appId: string, expectedRevision: number): Promise<UiAppStateWriteResult> {
+        return this.withApp(appId, expectedRevision, async (file) => {
+            if (file.sync === 'persisted') throw new Error(`App ${appId} is Persisted: the server does not change its state`);
+            await this.states.reset(appId, file.document);
+            return { kind: 'written', revision: file.revision };
+        });
     }
 
     async delete(appId: string, expectedRevision: number): Promise<UiAppDeleteResult> {

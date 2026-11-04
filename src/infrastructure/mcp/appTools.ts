@@ -1,4 +1,7 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
+import { formatRenderedTree } from '../../application/outline/formatRenderedTree.js';
+import { BrowserUnavailableError } from '../preview/BrowserPreview.js';
+import type { PreviewBrowser } from '../preview/BrowserPreview.js';
 import { CREATES, READ_ONLY, defineInput, fail, succeed } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
@@ -33,6 +36,18 @@ const OUTLINE = defineInput({
     locale: { type: 'string', description: 'Show content in this language when the app has an overlay for it' }
 });
 
+const TREE = defineInput({
+    appId: APP_ID,
+    path: { type: 'string', description: 'The node to start at, as a state path ("$.app.children.main") or a dotted document path ("app.children.main"); without it the application root' },
+    depth: { type: 'integer', minimum: 0, description: 'How many children levels to show; deeper nodes end their line with a child count' },
+    paths: { type: 'boolean', description: 'false: leave the state path off each line, for a shorter tree. Default true' },
+    rendered: {
+        type: 'boolean',
+        description:
+            'true: list what the headless page draws instead of the document: the rows of lists and the cards of boards with the state paths they have while the app runs (such as "…board.cols.k_open.body.main.slots.0"), and (hidden) on nodes with no box. Opens the headless page when none is open'
+    }
+});
+
 function notFound(appId: string): ToolOutcome {
     return fail('not-found', 'No application with this id', { appId });
 }
@@ -43,7 +58,9 @@ function invalidArgument(parsed: { argument: string; message: string }): ToolOut
 
 /** The lifecycle and read tools: create, list, get, validate, outline and read the state */
 export function createAppTools(
-    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'outlineApp' | 'getState'>
+    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'outlineApp' | 'getState'>,
+    /** The headless page, for ui_tree with rendered: true; absent, that answers browser-unavailable */
+    browser?: Pick<PreviewBrowser, 'rendered'>
 ): readonly UiToolDefinition[] {
     return [
         {
@@ -141,6 +158,62 @@ export function createAppTools(
                     warnings: result.warnings,
                     preview: result.preview
                 });
+            }
+        },
+        {
+            name: 'ui_tree',
+            description:
+                'Get the structure of the app as a nested list: one line per node with its key, its component and its state path, indented two spaces per level, bullets alternating - and * by level. Nodes held by a slot property (a footer, a row template) are marked [slot]; a row template draws once per record. The paths are the ones ui_interact, ui_state_set and ui_screenshot take. path starts the tree at a node, depth limits the children levels and paths: false leaves the paths off. rendered: true lists what the running page draws instead, with the paths of rendered rows and cards (a document path such as ...card has no element of its own; the drawn cards have paths like ...cols.k_open.body.main.slots.0), and marks nodes with no box (hidden) with their subtree counted. Use ui_outline for content, links and hidden marks. Capped at 400 lines. Returns { appId, revision, text, lineCount, cutLines, nodeCount }.',
+            inputSchema: TREE.schema,
+            annotations: READ_ONLY,
+            run: async (args) => {
+                const parsed = TREE.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const { appId, path, depth, paths, rendered } = parsed.value;
+                if (rendered === true) {
+                    const app = await useCases.getApp.execute(appId, { depth: 0 });
+                    if (app.kind !== 'found') return notFound(appId);
+                    if (browser === undefined) return fail('browser-unavailable', 'This server has no headless browser, so it cannot list what the page draws');
+                    const under = path === undefined ? '$.app' : path.startsWith('$.') ? path : `$.${path}`;
+                    try {
+                        const nodes = await browser.rendered(appId, app.revision, under);
+                        if (nodes.length === 0) {
+                            return fail('not-rendered', `The page draws nothing at ${under}; check the path with ui_tree, and open what holds it (a tab, a drawer)`, { appId, path: under });
+                        }
+                        const tree = formatRenderedTree({ nodes, depth, paths: paths !== false });
+                        return succeed({ appId, revision: app.revision, text: tree.text, lineCount: tree.lineCount, cutLines: tree.cutLines, nodeCount: tree.nodeCount });
+                    } catch (error) {
+                        if (error instanceof BrowserUnavailableError) return fail('browser-unavailable', error.message);
+                        throw error;
+                    }
+                }
+                const result = await useCases.outlineApp.execute(appId, {
+                    format: 'tree',
+                    ...(path !== undefined && { path: path.replace(/^\$\./, '') }),
+                    ...(depth !== undefined && { depth }),
+                    ...(paths !== undefined && { paths })
+                });
+                switch (result.kind) {
+                    case 'outline':
+                        return succeed({
+                            appId: result.appId,
+                            revision: result.revision,
+                            text: result.text,
+                            lineCount: result.lineCount,
+                            cutLines: result.cutLines,
+                            nodeCount: result.nodeCount ?? 0
+                        });
+                    case 'not-found':
+                        return notFound(result.appId);
+                    case 'invalid-path':
+                        return fail('invalid-path', result.reason, { appId: result.appId });
+                    case 'missing-path':
+                        return fail('missing-path', `Nothing exists at ${result.missingAt}`, { appId: result.appId, path: result.path, missingAt: result.missingAt });
+                    case 'not-a-node':
+                        return fail('not-a-node', `${result.path} is not a node, so it has no tree`, { appId: result.appId, path: result.path });
+                    case 'invalid-input':
+                        return fail('invalid-argument', result.message, { appId: result.appId });
+                }
             }
         },
         {

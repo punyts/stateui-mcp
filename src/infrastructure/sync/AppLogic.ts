@@ -1,5 +1,5 @@
 import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, cloneJson, createLogicEngine, createLogicIndex, readLogic, resolveNode } from '@punyts/stateui-app/core';
-import type { ComponentLibrary, JsonValue as AppValue, LogicAnswer, LogicChange, LogicEngine, LogicFailure, LogicHost, LogicWrite, Node } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, JsonValue as AppValue, LogicAnswer, LogicChange, LogicEngine, LogicFailure, LogicHost, LogicTraceRun, LogicWrite, Node } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import type { Authority, ChangeContext, ChangeVerdict, ServerWrite } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -117,9 +117,13 @@ export class AppLogic {
 
     /**
      * A tool's write: refused with the guard's reason, or written and looked up like a client change. Returns the
-     * reason when a guard refused it
+     * reason when a guard refused it. With `logic` false it is written as it is: no guard asks, no rule fires
      */
-    write(path: string, value: JsonValue | undefined): string | undefined {
+    write(path: string, value: JsonValue | undefined, logic = true): string | undefined {
+        if (!logic) {
+            this.authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
+            return undefined;
+        }
         const change: LogicChange = value === undefined ? { path } : { path, value: value as AppValue };
         const reason = this.engine?.guard(change);
         if (reason !== undefined) return reason;
@@ -128,6 +132,15 @@ export class AppLogic {
         this.authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
         this.engine?.changes([change]);
         return undefined;
+    }
+
+    /** The engine's last runs: what started each and what every unit whose trigger matched did; empty without logic */
+    trace(): LogicTraceRun[] {
+        return this.engine?.trace() ?? [];
+    }
+
+    clearTrace(): void {
+        this.engine?.clearTrace();
     }
 
     dispose(): void {

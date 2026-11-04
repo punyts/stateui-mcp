@@ -1,11 +1,12 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { NO_PREVIEW_MESSAGE } from '../../application/use-cases/RunCommand.js';
-import { BrowserUnavailableError, INTERACT_ACTIONS } from '../preview/BrowserPreview.js';
+import { BrowserUnavailableError, INTERACT_ACTIONS, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
 import type { InteractStep, PreviewBrowser } from '../preview/BrowserPreview.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
 import type { LogicAnswer } from '@punyts/stateui-app/core';
 import type { AppCalls } from '../sync/AppCalls.js';
+import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import { READ_ONLY, SHOWS, WRITES, defineInput, fail, succeed } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
@@ -13,7 +14,56 @@ const APP_ID = { type: 'string', uuid: true, required: true, description: 'The a
 
 export const MAX_INTERACT_ACTIONS = 20;
 
-const STATE_GET = defineInput({ appId: APP_ID });
+const STATE_GET = defineInput({
+    appId: APP_ID,
+    path: {
+        type: 'string',
+        description: 'A state path to read just that part, such as "$.data.cart" or "$.app.children.main.children.form"; without it the whole state'
+    },
+    full: { type: 'boolean', description: 'true: return data: URIs and other long strings whole. By default they are shortened, so an image does not fill the result' }
+});
+
+const LOGIC_TRACE = defineInput({
+    appId: APP_ID,
+    limit: { type: 'integer', minimum: 1, maximum: 25, description: 'How many of the latest runs to return (default 10, at most 25)' },
+    clear: { type: 'boolean', description: 'true: empty the trace after reading it, so the next read shows only what happens after' }
+});
+
+/** Strings longer than this are shortened in ui_state_get unless full is set */
+const LONG_STRING = 300;
+const KEPT_CHARS = 80;
+
+/** A copy of a value with data: URIs and other long strings shortened to a note of their length */
+function elideLong(value: unknown): unknown {
+    if (typeof value === 'string') {
+        if (value.length <= LONG_STRING) return value;
+        if (value.startsWith('data:')) {
+            const header = value.slice(0, Math.max(0, value.indexOf(',')) || 40);
+            return `${header},… (${value.length} chars; full: true returns it)`;
+        }
+        return `${value.slice(0, KEPT_CHARS)}… (${value.length} chars; full: true returns it)`;
+    }
+    if (Array.isArray(value)) return value.map(elideLong);
+    if (value !== null && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, elideLong(item)]));
+    }
+    return value;
+}
+
+/** The value at a state path such as `$.data.cart`; the leading `$.` is optional. found is false when a segment is missing */
+function valueAt(state: unknown, path: string): { found: boolean; value: unknown; closest: string } {
+    const segments = path.replace(/^\$\.?/, '').split('.').filter((segment) => segment !== '');
+    let current: unknown = state;
+    const walked: string[] = [];
+    for (const segment of segments) {
+        if (current === null || typeof current !== 'object' || !Object.hasOwn(current, segment)) {
+            return { found: false, value: undefined, closest: walked.length === 0 ? '$' : `$.${walked.join('.')}` };
+        }
+        current = (current as Record<string, unknown>)[segment];
+        walked.push(segment);
+    }
+    return { found: true, value: current, closest: path };
+}
 
 const PREVIEW = defineInput({ appId: APP_ID });
 
@@ -41,16 +91,26 @@ const INTERACT = defineInput({
         maxItems: MAX_INTERACT_ACTIONS,
         description: `What to do in the app, in order (at most ${MAX_INTERACT_ACTIONS}). The run stops at the first action that fails`,
         items: {
-            action: { type: 'string', required: true, enum: INTERACT_ACTIONS, description: 'click and hover act on the control of the component; fill types text into a field; press sends a key to the control; select picks an option of a select field' },
-            path: { type: 'string', required: true, description: 'The state path of the node, such as "$.app.children.form.children.email". ui_outline shows the keys' },
-            value: { type: 'string', description: 'The text for fill, the key for press (Enter, Tab, ArrowDown), the option value or label for select' }
+            action: {
+                type: 'string',
+                required: true,
+                enum: INTERACT_ACTIONS,
+                description:
+                    'click and hover act on the control of the component; fill types text into a field; press sends a key to the control; select picks an option of a select field; choose picks a radio option (radioGroup, segmented); focus puts focus on the node or its nearest focusable ancestor (a board card, a list row); key presses a key on whatever has focus, with no path, for keyboard flows such as Space then ArrowRight on a board; drag drags the node with the mouse onto the node whose path is value'
+            },
+            path: { type: 'string', description: 'The state path of the node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths' },
+            value: {
+                type: 'string',
+                description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, the state path of the drop target for drag'
+            }
         }
     }
 });
 
 const EVENTS_READ = defineInput({
     appId: APP_ID,
-    since: { type: 'integer', minimum: 0, description: 'The cursor a previous call returned: only newer events come back. Without it every queued event comes back' }
+    since: { type: 'integer', minimum: 0, description: 'The cursor a previous call returned: only newer events come back. Without it every queued event comes back' },
+    cursor: { type: 'integer', minimum: 0, description: 'The same as since' }
 });
 
 const CALL_ANSWER = defineInput({
@@ -79,13 +139,15 @@ export interface LiveToolDependencies {
     readonly liveViews: Pick<LiveViews, 'command'>;
     readonly browser: Pick<PreviewBrowser, 'open' | 'screenshot' | 'interact'>;
     readonly calls: Pick<AppCalls, 'answer'>;
+    /** The trace of the logic that runs on the server; absent: ui_logic_trace answers that the logic does not run here */
+    readonly logic?: Pick<AppAuthorities, 'trace' | 'clearTrace'>;
     /** The URL a person opens for an app, such as `http://127.0.0.1:4100/apps/<id>` */
     readonly viewUrl: (appId: string) => string;
 }
 
 /** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and `emit` events */
 export function createLiveTools(dependencies: LiveToolDependencies): readonly UiToolDefinition[] {
-    const { useCases, hub, liveViews, browser, viewUrl, calls } = dependencies;
+    const { useCases, hub, liveViews, browser, viewUrl, calls, logic } = dependencies;
 
     async function revisionOf(appId: string): Promise<number | undefined> {
         const result = await useCases.getApp.execute(appId, { depth: 0 });
@@ -96,15 +158,20 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_state_get',
             description:
-                'Read the state of an application: the data and articulation (what the user typed or picked) as { data, app }. The state is synced with every open view, so it holds what the user typed a moment ago, and a view that was offline sends its changes when it reconnects. Also returns the preview block: whether a view is open and its runtime errors. Returns { appId, revision, state, preview }.',
+                'Read the state of an application: the data and articulation (what the user typed or picked) as { data, app }. The state is synced with every open view, so it holds what the user typed a moment ago, and a view that was offline sends its changes when it reconnects. path reads one part, such as "$.data.cart". data: URIs and other long strings are shortened unless full is true. Also returns the preview block: whether a view is open and its runtime errors. Returns { appId, revision, state, preview }, with path: { appId, revision, path, value, preview }.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = STATE_GET.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.getState.execute(parsed.value.appId);
+                const { appId, path, full } = parsed.value;
+                const result = await useCases.getState.execute(appId);
                 if (result.kind === 'not-found') return notFound(result.appId);
-                return succeed({ appId: result.appId, revision: result.revision, state: result.state, preview: result.preview });
+                const shown = (value: unknown): unknown => (full === true ? value : elideLong(value));
+                if (path === undefined) return succeed({ appId: result.appId, revision: result.revision, state: shown(result.state), preview: result.preview });
+                const at = valueAt(result.state, path);
+                if (!at.found) return fail('unknown-path', `Nothing is at ${path}; the closest part that exists is ${at.closest}`, { appId, path, closest: at.closest });
+                return succeed({ appId: result.appId, revision: result.revision, path, value: shown(at.value), preview: result.preview });
             }
         },
         {
@@ -171,18 +238,20 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Act on the running application in the headless browser like a user: click, hover, fill, press and select on nodes named by state path (such as "$.app.children.form.children.email"). Actions run in order and stop at the first failure. Returns { appId, revision, results, errors, emits, cursor }: results has one entry per action, errors are the runtime errors raised meanwhile and emits are the "emit" events the app raised (they stay readable with ui_events_read). The call is an error when an action failed.',
+                'Act on the running application in the headless browser like a user: click, hover, fill, press, select, choose, focus and drag on nodes named by state path (such as "$.app.children.form.children.email"), and key on whatever has focus. Actions run in order and stop at the first failure; an action whose element was re-rendered while it ran is tried again. Returns { appId, revision, results, errors, emits, cursor }: results has one entry per action, errors are the runtime errors raised meanwhile and emits are the "emit" events the app raised (they stay readable with ui_events_read). The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = INTERACT.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
                 const { appId } = parsed.value;
+                const pathless = parsed.value.actions.findIndex((item) => item.path === undefined && !PATHLESS_ACTIONS.includes(item.action));
+                if (pathless >= 0) return fail('invalid-argument', `Action ${pathless} (${parsed.value.actions[pathless]?.action}) needs a path`, { argument: `actions.${pathless}.path` });
                 const revision = await revisionOf(appId);
                 if (revision === undefined) return notFound(appId);
                 const steps: InteractStep[] = parsed.value.actions.map((item) => ({
                     action: item.action,
-                    path: item.path,
+                    ...(item.path !== undefined && { path: item.path }),
                     ...(item.value !== undefined && { value: item.value })
                 }));
                 try {
@@ -199,16 +268,36 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Read the "emit" events the running application raised (a button with an emit action, a form submit), the logic.failed events and the logic.call events of its logic, oldest first. Answer a logic.call (payload { id, name, payload }) with ui_call_answer. There is no chat turn to carry them, so poll this tool after the user has had a chance to act, and pass the returned cursor as since next time. At most 500 events are kept per application and a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Read the "emit" events the running application raised (a button with an emit action, a form submit), the logic.failed events and the logic.call events of its logic, oldest first. Answer a logic.call (payload { id, name, payload }) with ui_call_answer. There is no chat turn to carry them, so poll this tool after the user has had a chance to act, and pass the returned cursor as since (or cursor) next time. At most 500 events are kept per application and a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = EVENTS_READ.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, since } = parsed.value;
+                const { appId } = parsed.value;
+                const since = parsed.value.since ?? parsed.value.cursor;
                 if ((await revisionOf(appId)) === undefined) return notFound(appId);
                 const { events, cursor } = hub.readEvents(appId, since);
                 return succeed({ appId, events, cursor });
+            }
+        },
+        {
+            name: 'ui_logic_trace',
+            description:
+                'Read what the app\'s logic did, newest run last: each run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its outcome: fired (with the transition, the table row and the writes), failed (with the reason), debounced, already-fired (a unit fires at most once per chain), unchanged (the value did not change), parent-removed (a record was removed with its fields), other-state (the machine was in another state), condition (is or if was false) or refused (a guard). depth is the step of the chain: writes of depth 0 start depth 1. Use it when a rule did not fire or fired twice. Only Full-mode apps run their logic on the server. Returns { appId, runs }.',
+            inputSchema: LOGIC_TRACE.schema,
+            annotations: READ_ONLY,
+            run: async (args) => {
+                const parsed = LOGIC_TRACE.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const { appId, limit, clear } = parsed.value;
+                if ((await revisionOf(appId)) === undefined) return notFound(appId);
+                const runs = logic?.trace(appId);
+                if (runs === undefined) {
+                    return fail('no-logic', 'The logic of this app does not run on the server: it has no logic, its logic did not start (see ui_validate), or the app is Persisted', { appId });
+                }
+                if (clear === true) logic?.clearTrace(appId);
+                return succeed({ appId, runs: runs.slice(-(limit ?? 10)) });
             }
         },
         {

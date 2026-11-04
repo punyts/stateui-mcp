@@ -4,6 +4,7 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import { isNodeValue } from '../../domain/nodeDepth.js';
 import { formatLogic } from '../outline/formatLogic.js';
 import { formatOutline } from '../outline/formatOutline.js';
+import { formatTree } from '../outline/formatTree.js';
 import type { UiAppRepository } from '../ports/UiAppRepository.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
@@ -15,6 +16,10 @@ export interface OutlineAppInput {
     readonly depth?: number;
     /** Content is shown in this language when the app has an overlay for it */
     readonly locale?: string;
+    /** tree: only the structure, as a nested list of key, component and state path (formatTree) */
+    readonly format?: 'outline' | 'tree';
+    /** For the tree: false leaves the state paths off the lines. Default true */
+    readonly paths?: boolean;
 }
 
 export type OutlineAppResult =
@@ -28,6 +33,8 @@ export type OutlineAppResult =
           readonly cutLines: number;
           /** False when `locale` was asked for and the app has no overlay for it: the base content is shown */
           readonly localeApplied: boolean;
+          /** For the tree: how many nodes it shows */
+          readonly nodeCount?: number;
       }
     | { readonly kind: 'not-found'; readonly appId: string }
     | { readonly kind: 'invalid-path'; readonly appId: string; readonly reason: string }
@@ -81,6 +88,25 @@ export class OutlineApp {
         const data: JsonValue | undefined = isJsonObject(snapshotData) ? snapshotData : app.document['data'];
 
         const isRoot = segments.length === 1 && segments[0] === 'app';
+        if (input.format === 'tree') {
+            const tree = formatTree({
+                root,
+                rootKey: segments[segments.length - 1] as string,
+                rootPath: segments[0] === 'app' ? `$.${segments.join('.')}` : segments.join('.'),
+                depth,
+                paths: input.paths !== false
+            });
+            return this.finish(appId, {
+                kind: 'outline',
+                appId,
+                revision: app.revision,
+                text: tree.text,
+                lineCount: tree.lineCount,
+                cutLines: tree.cutLines,
+                localeApplied: true,
+                nodeCount: tree.nodeCount
+            });
+        }
         const snapshot = { app: snapshotApp ?? {}, data: data ?? {} } as JsonObject;
         const trailer = isRoot ? formatLogic(app.document['logic'], (path) => this.stateAt(snapshot, path)) : [];
         const outline = formatOutline({

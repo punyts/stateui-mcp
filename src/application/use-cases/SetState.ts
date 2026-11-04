@@ -7,7 +7,7 @@ import { isRevisionCurrent } from '../../domain/revision.js';
 import { parseStatePath } from '../../domain/statePath.js';
 import type { UiApp, UiStateSnapshot } from '../../domain/UiApp.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import type { UiAppRepository } from '../ports/UiAppRepository.js';
+import type { UiAppRepository, UiStateWriteOptions } from '../ports/UiAppRepository.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 
@@ -20,6 +20,8 @@ export interface SetStateInput {
     readonly remove?: boolean;
     /** Absent: the write is checked against the revision that was read */
     readonly expectedRevision?: number;
+    /** False writes the value as it is: the app's guard rules do not ask and its rules do not fire. Default true */
+    readonly logic?: boolean;
 }
 
 /** Why a path was refused. Each one names what the minion should do instead in `message` */
@@ -94,7 +96,8 @@ export class SetState {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: app.revision });
         }
 
-        if (input.remove === true) return this.finish(appId, await this.remove(app, parsed));
+        const options = input.logic === false ? { logic: false } : {};
+        if (input.remove === true) return this.finish(appId, await this.remove(app, parsed, options));
 
         const value = input.value ?? null;
         let resolved: Resolved;
@@ -126,7 +129,7 @@ export class SetState {
         );
         if (orderErrors.length > 0) return this.finish(appId, { kind: 'invalid', appId, errors: orderErrors });
 
-        const written = await this.repository.writeState(appId, snapshotPath, value, app.revision);
+        const written = await this.repository.writeState(appId, snapshotPath, value, app.revision, options);
         if (written.kind === 'conflict') {
             return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
         }
@@ -136,7 +139,7 @@ export class SetState {
     }
 
     /** Removes an existing entry under `$.data`; `$.data` itself and node properties are refused */
-    private async remove(app: UiApp, parsed: ReturnType<typeof parseStatePath>): Promise<SetStateResult> {
+    private async remove(app: UiApp, parsed: ReturnType<typeof parseStatePath>, options: UiStateWriteOptions): Promise<SetStateResult> {
         const appId = app.id;
         if (parsed.kind !== 'data' || parsed.path.length === 0) {
             return refuse(appId, 'unknown-path', 'remove takes a path under $.data, such as $.data.tasks.t2; set node properties with a value').result;
@@ -148,7 +151,7 @@ export class SetState {
         const statePath = `$.data.${parsed.path.join('.')}`;
         if (current === undefined) return refuse(appId, 'unknown-path', `Nothing is at ${statePath} to remove`).result;
 
-        const written = await this.repository.writeState(appId, ['data', ...parsed.path], undefined, app.revision);
+        const written = await this.repository.writeState(appId, ['data', ...parsed.path], undefined, app.revision, options);
         if (written.kind === 'conflict') return { kind: 'conflict', appId, currentRevision: written.currentRevision };
         if (written.kind === 'not-found') return { kind: 'not-found', appId };
         if (written.kind === 'refused') return guardRefusal(appId, written.reason);

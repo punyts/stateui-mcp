@@ -21,21 +21,27 @@ export class InteractionError extends Error {
     }
 }
 
-export const INTERACT_ACTIONS = ['click', 'fill', 'press', 'hover', 'select'] as const;
+export const INTERACT_ACTIONS = ['click', 'fill', 'press', 'hover', 'select', 'choose', 'focus', 'key', 'drag'] as const;
+
+/** The actions that need no path: `key` presses on whatever has focus */
+export const PATHLESS_ACTIONS: readonly InteractAction[] = ['key'];
 export type InteractAction = (typeof INTERACT_ACTIONS)[number];
 
 export interface InteractStep {
     readonly action: InteractAction;
-    /** The state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional) */
-    readonly path: string;
-    /** The text for `fill`, the key for `press` (`Enter`), the option value or label for `select` */
+    /** The state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional); `key` takes none */
+    readonly path?: string;
+    /**
+     * The text for `fill`, the key for `press` and `key` (`Enter`, `Space`), the option value or label for `select`
+     * and `choose`, the state path of the drop target for `drag`
+     */
     readonly value?: string;
 }
 
 export interface InteractStepResult {
     readonly index: number;
     readonly action: InteractAction;
-    readonly path: string;
+    readonly path?: string;
     readonly ok: boolean;
     readonly error?: string;
 }
@@ -78,8 +84,17 @@ const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
     hover: 'button, [role="menuitem"], [role="button"], a',
     fill: 'input, textarea',
     press: 'input, textarea, select, button, [role="button"], [role="menuitem"], [tabindex]',
-    select: 'select'
+    select: 'select',
+    choose: 'input[type="radio"], [role="radio"]',
+    focus: '',
+    key: '',
+    drag: ''
 };
+
+/** How often an action is tried again when its element was replaced while it ran (a tab switch re-rendering) */
+const DETACHED_RETRIES = 3;
+const DETACHED_WAIT_MS = 150;
+const DETACHED = /not attached to the DOM|Element is detached|Execution context was destroyed|JSHandle is disposed/;
 
 /** The element a root component renders: its `scope` knows the state path of its node. Declared for the type checker; the code runs in the page */
 interface ScopedElement extends HTMLElement {
@@ -87,7 +102,17 @@ interface ScopedElement extends HTMLElement {
 }
 
 /** What the tools and the live views need of the headless browser. `BrowserPreview` is the Playwright implementation */
-export type PreviewBrowser = Pick<BrowserPreview, 'open' | 'screenshot' | 'interact' | 'closePage' | 'close'>;
+export type PreviewBrowser = Pick<BrowserPreview, 'open' | 'screenshot' | 'interact' | 'rendered' | 'closePage' | 'close'>;
+
+/** A node the headless page draws: one per state path, in page order */
+export interface RenderedNode {
+    /** The state path of the node, such as `$.app.children.board.cols.k_open.body.main.slots.0` */
+    readonly path: string;
+    /** The component, from the element name: `ui-record-list` is `recordList` */
+    readonly component: string;
+    /** False when the node is drawn but has no box on screen (an inactive tab, a closed drawer) */
+    readonly visible: boolean;
+}
 
 /**
  * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
@@ -168,6 +193,43 @@ export class BrowserPreview {
         });
     }
 
+    /**
+     * The nodes the headless page draws at or below `under` (a state path), in page order: the nodes of the document
+     * and the ones a component renders from a template (the rows of a list, the cards of a board), whose state paths
+     * exist only while the app runs
+     */
+    async rendered(appId: string, revision: number, under: string): Promise<RenderedNode[]> {
+        return this.lock.run(appId, async () => {
+            const page = await this.pageFor(appId);
+            await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            await this.settle(page);
+            const frame = this.runtimeFrame(page);
+            return frame.evaluate((root: string) => {
+                const found: { path: string; component: string; visible: boolean }[] = [];
+                const seen = new Set<string>();
+                const hasBox = (element: Element): boolean => {
+                    if (element.getClientRects().length > 0 && (element as HTMLElement).offsetParent !== null) return true;
+                    // A host drawn with display: contents (a modal, a drawer) has its box in its shadow root
+                    const shadow = (element as HTMLElement).shadowRoot;
+                    return shadow !== null && Array.from(shadow.children).some((child) => child.getClientRects().length > 0 && (child as HTMLElement).offsetParent !== null);
+                };
+                const walk = (scope: ParentNode): void => {
+                    for (const element of Array.from(scope.querySelectorAll('*')) as (HTMLElement & { scope?: { basePath?: string } })[]) {
+                        const path = element.scope?.basePath;
+                        if (element.localName.startsWith('ui-') && typeof path === 'string' && !seen.has(path) && (path === root || path.startsWith(`${root}.`))) {
+                            seen.add(path);
+                            const component = element.localName.slice(3).replace(/-([a-z])/g, (_match: string, letter: string) => letter.toUpperCase());
+                            found.push({ path, component, visible: hasBox(element) });
+                        }
+                        if (element.shadowRoot) walk(element.shadowRoot);
+                    }
+                };
+                walk(document);
+                return found;
+            }, under);
+        });
+    }
+
     async interact(appId: string, revision: number, steps: readonly InteractStep[]): Promise<InteractResult> {
         return this.lock.run(appId, async () => {
             const page = await this.pageFor(appId);
@@ -176,12 +238,13 @@ export class BrowserPreview {
             const eventCursor = this.hub.readEvents(appId, undefined).cursor;
             const results: InteractStepResult[] = [];
             for (const [index, step] of steps.entries()) {
+                const where = step.path === undefined ? {} : { path: step.path };
                 try {
-                    await this.perform(page, step);
-                    results.push({ index, action: step.action, path: step.path, ok: true });
+                    await this.performSettled(page, step);
+                    results.push({ index, action: step.action, ...where, ok: true });
                 } catch (error) {
                     const message = error instanceof Error ? error.message.split('\n')[0] ?? error.message : String(error);
-                    results.push({ index, action: step.action, path: step.path, ok: false, error: message });
+                    results.push({ index, action: step.action, ...where, ok: false, error: message });
                     break;
                 }
             }
@@ -331,9 +394,94 @@ export class BrowserPreview {
         return control;
     }
 
+    /** Runs an action, and runs it again when the element it found was replaced meanwhile (a re-render after a tab switch) */
+    private async performSettled(page: Page, step: InteractStep): Promise<void> {
+        for (let attempt = 0; ; attempt += 1) {
+            try {
+                await this.perform(page, step);
+                return;
+            } catch (error) {
+                if (attempt >= DETACHED_RETRIES || !(error instanceof Error) || !DETACHED.test(error.message)) throw error;
+                await page.waitForTimeout(DETACHED_WAIT_MS);
+            }
+        }
+    }
+
+    /** The middle of the element that draws a node, in page coordinates */
+    private async centerOf(page: Page, statePath: string, scroll = true): Promise<{ x: number; y: number }> {
+        const handle = await this.boxOf(await this.elementAt(page, statePath));
+        try {
+            if (scroll) await handle.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+            const box = await handle.boundingBox();
+            if (box === null || box.width === 0 || box.height === 0) throw new InteractionError(`${statePath} is rendered but not visible, so it cannot be dragged or dropped on`);
+            return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        } finally {
+            await handle.dispose();
+        }
+    }
+
+    /**
+     * Drags with the mouse from the middle of one node to the middle of another, in steps, as a user does. Both ends are
+     * scrolled into view and measured before the button goes down: a board reads its column boxes when the drag starts, so
+     * scrolling during the drag would drop on the wrong column
+     */
+    private async drag(page: Page, from: string, to: string): Promise<void> {
+        await this.centerOf(page, to);
+        await this.centerOf(page, from);
+        const start = await this.centerOf(page, from, false);
+        const end = await this.centerOf(page, to, false);
+        const viewport = page.viewportSize();
+        if (viewport !== null && (end.x < 0 || end.y < 0 || end.x > viewport.width || end.y > viewport.height)) {
+            throw new InteractionError(`${from} and ${to} do not fit on the screen together, so one cannot be dragged onto the other; try a wider viewport or a nearer target`);
+        }
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(start.x + 6, start.y + 6, { steps: 3 });
+        await page.mouse.move(end.x, end.y, { steps: 12 });
+        await page.waitForTimeout(100);
+        await page.mouse.up();
+    }
+
     private async perform(page: Page, step: InteractStep): Promise<void> {
+        if (step.action === 'key') {
+            if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
+            // The key goes to whatever has focus: a focus action, or the control an earlier action left focused
+            await page.keyboard.press(step.value);
+            return;
+        }
+        if (step.path === undefined) throw new InteractionError(`${step.action} needs a path`);
         const statePath = toStatePath(step.path);
+        if (step.action === 'drag') {
+            if (step.value === undefined) throw new InteractionError('drag needs the state path of the drop target as value');
+            await this.drag(page, statePath, toStatePath(step.value));
+            return;
+        }
         const element = await this.elementAt(page, statePath);
+        if (step.action === 'focus') {
+            try {
+                // The control the node draws (the input of a searchBox), else the node's element or its nearest
+                // focusable ancestor: a board card's slot, a list row
+                const focused = await element.evaluate((host: HTMLElement) => {
+                    const FOCUSABLE = 'input:not([type="hidden"]), textarea, select, button, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+                    const own = host.tabIndex >= 0 ? null : (host.shadowRoot ?? host).querySelector<HTMLElement>(FOCUSABLE);
+                    if (own !== null) {
+                        own.focus();
+                        return true;
+                    }
+                    let current: HTMLElement | null = host;
+                    while (current !== null && current.tabIndex < 0) {
+                        current = current.parentElement ?? ((current.getRootNode() as ShadowRoot).host as HTMLElement | undefined) ?? null;
+                    }
+                    const target = current ?? host;
+                    target.focus();
+                    return target.matches(':focus') || target.getRootNode() !== document;
+                });
+                if (!focused) throw new InteractionError(`${statePath} and its ancestors take no focus`);
+            } finally {
+                await element.dispose();
+            }
+            return;
+        }
         const control = await this.controlOf(element, step.action);
         const timeout = 5000;
         try {
@@ -358,6 +506,32 @@ export class BrowserPreview {
                     if (step.value === undefined) throw new InteractionError('select needs an option value or label');
                     await control.selectOption(step.value, { timeout });
                     break;
+                case 'choose': {
+                    if (step.value === undefined) throw new InteractionError('choose needs an option value or label');
+                    // The radio of the option whose value or label is the value, in the component's shadow root
+                    const option = await element.evaluateHandle((host: HTMLElement, wanted: string) => {
+                        const root: ParentNode = host.shadowRoot ?? host;
+                        const radios = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"]'));
+                        const labelOf = (radio: HTMLElement): string =>
+                            (radio.closest('label')?.textContent ?? radio.getAttribute('aria-label') ?? radio.textContent ?? '').trim();
+                        return (
+                            radios.find((radio) => (radio as HTMLInputElement).value === wanted || radio.dataset['value'] === wanted) ??
+                            radios.find((radio) => labelOf(radio) === wanted) ??
+                            null
+                        );
+                    }, step.value);
+                    const radio = option.asElement() as ElementHandle<HTMLElement> | null;
+                    if (radio === null) {
+                        await option.dispose();
+                        throw new InteractionError(`${statePath} has no option with the value or label "${step.value}"`);
+                    }
+                    try {
+                        await radio.click({ timeout });
+                    } finally {
+                        await radio.dispose();
+                    }
+                    break;
+                }
             }
         } catch (error) {
             if (error instanceof Error && error.name === 'TimeoutError' && (await this.behindModal(page, control))) {

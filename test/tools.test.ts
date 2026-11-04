@@ -16,6 +16,19 @@ function createBrowser(): typeof browser {
         open: vi.fn(async () => ({ rendered: true })),
         screenshot: vi.fn(async () => ({ png: PNG, width: 1280, height: 800, target: 'page' })),
         interact: vi.fn(async () => ({ results: [{ index: 0, action: 'click', path: '$.app', ok: true }], errors: [], events: [], cursor: 0 })),
+        rendered: vi.fn(async () => [
+            { path: '$.app', component: 'page', visible: true },
+            { path: '$.app.children.board', component: 'board', visible: true },
+            { path: '$.app.children.board.cols.k_open.body.main', component: 'recordList', visible: true },
+            { path: '$.app.children.board.cols.k_open.body.main.slots.0', component: 'card', visible: true },
+            { path: '$.app.children.board.cols.k_open.body.main.slots.0.children.total', component: 'text', visible: true },
+            { path: '$.app.children.board.cols.k_open.body.main.slots.1', component: 'card', visible: false },
+            { path: '$.app.children.board.cols.k_open.body.main.slots.1.children.total', component: 'text', visible: false },
+            { path: '$.app.children.board.cols.k_open.body.main.slots.2', component: 'card', visible: false },
+            { path: '$.app.children.drawer', component: 'drawer', visible: false },
+            { path: '$.app.children.drawer.body', component: 'panel', visible: false },
+            { path: '$.app.children.drawer.body.children.name', component: 'text', visible: false }
+        ]),
         closePage: vi.fn(async () => undefined),
         close: vi.fn(async () => undefined)
     };
@@ -62,7 +75,7 @@ afterEach(async () => {
 });
 
 describe('tool list', () => {
-    it('should list the sixteen ui-builder tools and the four new ones', async () => {
+    it('should list the ui-builder tools', async () => {
         const { tools } = await harness.client.listTools();
 
         expect(tools.map((tool) => tool.name).sort()).toEqual(
@@ -86,7 +99,10 @@ describe('tool list', () => {
                 'ui_screenshot',
                 'ui_interact',
                 'ui_events_read',
-                'ui_call_answer'
+                'ui_call_answer',
+                'ui_tree',
+                'ui_state_reset',
+                'ui_logic_trace'
             ].sort()
         );
     });
@@ -99,7 +115,7 @@ describe('tool list', () => {
         const destructive = tools.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
 
         expect(readOnly.sort()).toEqual(
-            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_state_get', 'ui_file_read', 'ui_events_read'].sort()
+            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace'].sort()
         );
         expect(destructive).toEqual(['ui_app_delete']);
         expect(byName.get('ui_app_create')?.annotations?.readOnlyHint).toBe(false);
@@ -314,6 +330,144 @@ describe('write tools', () => {
         expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t1: { title: 'first' } }, stats: { tasks: 1 } });
     });
 
+    it('should write past the guards and rules with logic false, and trace what the logic did', async () => {
+        // Arrange
+        const document = {
+            data: { tasks: {}, stats: { tasks: 0 } },
+            app: { component: 'page' },
+            logic: {
+                rules: {
+                    count: { when: { path: '$.data.tasks' }, do: [{ command: 'set', target: '$.data.stats.tasks', value: '{{ size($.data.tasks) }}' }] },
+                    titled: { when: { path: '$.data.tasks.{id}', if: "$trigger.title == ''" }, do: [{ command: 'reject', reason: 'A task needs a title' }] }
+                }
+            }
+        };
+        const created = await call(harness.client, 'ui_app_create', { name: 'Traced tasks', document });
+        const appId = created.body['appId'] as string;
+
+        // Act
+        const raw = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', value: { title: '' }, logic: false });
+        const afterRaw = await call(harness.client, 'ui_state_get', { appId, path: '$.data' });
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', value: { title: 'second' } });
+        const trace = await call(harness.client, 'ui_logic_trace', { appId, clear: true });
+        const cleared = await call(harness.client, 'ui_logic_trace', { appId });
+
+        // Assert
+        expect(raw.isError).toBe(false);
+        expect(afterRaw.body['value']).toEqual({ tasks: { t1: { title: '' } }, stats: { tasks: 0 } });
+        const runs = trace.body['runs'] as { cause: string; changes: string[]; events: { name: string; outcome: string }[] }[];
+        const last = runs[runs.length - 1];
+        expect(last?.cause).toBe('change');
+        expect(last?.events).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'count', outcome: 'fired' })]));
+        expect(cleared.body['runs']).toEqual([]);
+    });
+
+    it('should put the state back to the document with ui_state_reset', async () => {
+        // Arrange
+        const appId = await createForm();
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'Ada' });
+
+        // Act
+        const reset = await call(harness.client, 'ui_state_reset', { appId });
+        const state = await call(harness.client, 'ui_state_get', { appId });
+
+        // Assert
+        expect(reset.body).toMatchObject({ appId, revision: 1 });
+        expect((state.body['state'] as { data: unknown; app: unknown }).data).toEqual({});
+        expect((state.body['state'] as { app: unknown }).app).toEqual({});
+    });
+
+    it('should read one part of the state and shorten data URIs unless full is set', async () => {
+        // Arrange
+        const appId = await createForm();
+        const image = `data:image/png;base64,${'A'.repeat(2000)}`;
+        await call(harness.client, 'ui_state_set', { appId, path: '$.data.avatar', value: image });
+
+        // Act
+        const short = await call(harness.client, 'ui_state_get', { appId, path: '$.data.avatar' });
+        const full = await call(harness.client, 'ui_state_get', { appId, path: '$.data.avatar', full: true });
+        const missing = await call(harness.client, 'ui_state_get', { appId, path: '$.data.nothing.here' });
+
+        // Assert
+        expect(short.body['value']).toBe('data:image/png;base64,… (2022 chars; full: true returns it)');
+        expect(full.body['value']).toBe(image);
+        expect(missing.body).toMatchObject({ error: 'unknown-path', closest: '$.data' });
+    });
+
+    it('should accept cursor as the since of ui_events_read', async () => {
+        // Arrange
+        const appId = await createForm();
+        openView(appId);
+        harness.services.hub.recordEvent(appId, 'browser-view', 'one', undefined);
+        const first = await call(harness.client, 'ui_events_read', { appId });
+        harness.services.hub.recordEvent(appId, 'browser-view', 'two', undefined);
+
+        // Act
+        const second = await call(harness.client, 'ui_events_read', { appId, cursor: first.body['cursor'] });
+
+        // Assert
+        expect((second.body['events'] as { name: string }[]).map((event) => event.name)).toEqual(['two']);
+    });
+
+    it('should list the structure as a nested list with alternating bullets and state paths', async () => {
+        // Arrange
+        const document = {
+            app: {
+                component: 'page',
+                children: {
+                    main: { component: 'panel', children: { name: { component: 'textField' }, save: { component: 'button' } } },
+                    side: { component: 'toolbar' }
+                }
+            }
+        };
+        const created = await call(harness.client, 'ui_app_create', { name: 'Tree', document });
+        const appId = created.body['appId'] as string;
+
+        // Act
+        const tree = await call(harness.client, 'ui_tree', { appId });
+        const branch = await call(harness.client, 'ui_tree', { appId, path: '$.app.children.main', paths: false });
+        const shallow = await call(harness.client, 'ui_tree', { appId, depth: 0, paths: false });
+
+        // Assert
+        expect(tree.body['text']).toBe(
+            [
+                '- app (page) $.app',
+                '  * toasts (toastRegion) [slot] $.app.toasts',
+                '  * main (panel) $.app.children.main',
+                '    - name (textField) $.app.children.main.children.name',
+                '    - save (button) $.app.children.main.children.save',
+                '  * side (toolbar) $.app.children.side'
+            ].join('\n')
+        );
+        expect(branch.body['text']).toBe(['- main (panel)', '  * name (textField)', '  * save (button)'].join('\n'));
+        expect(shallow.body['text']).toBe(['- app (page)', '  * toasts (toastRegion) [slot]', '  * main (panel) (+2 children)', '  * side (toolbar)'].join('\n'));
+        expect(tree.body['nodeCount']).toBe(6);
+    });
+
+    it('should list what the page draws with rendered true, nesting rows by path and counting hidden subtrees', async () => {
+        // Arrange
+        const appId = await createForm();
+
+        // Act
+        const tree = await call(harness.client, 'ui_tree', { appId, rendered: true, paths: false });
+        const shallow = await call(harness.client, 'ui_tree', { appId, rendered: true, depth: 1, paths: false });
+
+        // Assert
+        expect(tree.body['text']).toBe(
+            [
+                '- app (page)',
+                '  * board (board)',
+                '    - cols.k_open.body.main (recordList)',
+                '      * slots.0 (card)',
+                '        - total (text)',
+                '      * slots.1 … slots.2 (card) (2 hidden, +1 below)',
+                '  * drawer (drawer) (hidden) (+2 below)'
+            ].join('\n')
+        );
+        expect(shallow.body['text']).toBe(['- app (page)', '  * board (board) (+6 below)', '  * drawer (drawer) (hidden) (+2 below)'].join('\n'));
+        expect(browser['rendered']).toHaveBeenCalledWith(appId, 1, '$.app');
+    });
+
     it('should queue a logic call for the agent and give the machine the answer from ui_call_answer', async () => {
         // Arrange
         const document = {
@@ -503,10 +657,19 @@ describe('live tools', () => {
         expect((result.body['results'] as { ok: boolean }[])[0]?.ok).toBe(false);
     });
 
-    it('should refuse an action that is not click, fill, press, hover or select', async () => {
+    it('should refuse an action it does not know', async () => {
         const appId = await createForm();
 
-        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'drag', path: '$.app' }] });
+        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'swipe', path: '$.app' }] });
+
+        expect(result.body['error']).toBe('invalid-argument');
+        expect(browser['interact']).not.toHaveBeenCalled();
+    });
+
+    it('should refuse an action other than key that has no path', async () => {
+        const appId = await createForm();
+
+        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'key', value: 'Space' }, { action: 'click' }] });
 
         expect(result.body['error']).toBe('invalid-argument');
         expect(browser['interact']).not.toHaveBeenCalled();

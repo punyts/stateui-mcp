@@ -93,7 +93,7 @@ export class StateUiAppValidator implements UiAppValidator {
         const known = [...Object.keys(this.library), ...Object.keys(composedOf(document))];
         const reported = errors.map((error) => withNearestNames(error, known));
         if (reported.some(isBlockingError)) return reported;
-        return [...reported, ...this.untranslated(document)];
+        return [...reported, ...this.untranslated(document), ...viewportWarnings(document)];
     }
 
     resolveNode(document: UiDocument, path: readonly string[]): JsonObject | undefined {
@@ -206,6 +206,32 @@ export class StateUiAppValidator implements UiAppValidator {
             findUntranslated(code, base, this.overlayOf(document, code, assembled) as unknown as LibraryJsonObject)
         );
     }
+}
+
+/** The warning code of a layout that does not fit a phone */
+export const VIEWPORT_WARNING = 'SUI-VIEWPORT-NARROW';
+
+/**
+ * Layouts that do not fit a phone: a page whose side nav never collapses (`navBreakpoint` 0 with the nav at the
+ * start) keeps the nav beside the content at every width and squeezes the content
+ */
+function viewportWarnings(document: UiDocument): UiBuildError[] {
+    const warnings: UiBuildError[] = [];
+    const visit = (value: unknown, path: string): void => {
+        if (!isJsonObject(value)) return;
+        if (value['component'] === 'page' && isJsonObject(value['nav']) && value['navBreakpoint'] === 0 && (value['navPosition'] ?? 'start') === 'start') {
+            warnings.push({
+                code: VIEWPORT_WARNING,
+                severity: 'warning',
+                statePath: path,
+                component: 'page',
+                message: `The page at ${path} has navBreakpoint 0, so its side nav stays beside the content on a phone; leave navBreakpoint out (768) so the nav moves behind a menu button on narrow screens`
+            });
+        }
+        for (const [key, item] of Object.entries(value)) if (isJsonObject(item)) visit(item, `${path}.${key}`);
+    };
+    visit(document['app'], '$.app');
+    return warnings;
 }
 
 /** An unknown component name gets the nearest known names appended, so a typo is a one-step fix */

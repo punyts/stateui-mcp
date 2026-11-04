@@ -56,6 +56,9 @@ export const noBrowser: PreviewBrowser = {
     interact: async () => {
         throw new Error('no browser in this test');
     },
+    rendered: async () => {
+        throw new Error('no browser in this test');
+    },
     closePage: async () => undefined,
     close: async () => undefined
 };

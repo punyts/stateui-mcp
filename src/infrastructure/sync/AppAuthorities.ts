@@ -1,5 +1,5 @@
 import type { Report } from '@punyts/core';
-import type { ComponentLibrary } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage } from '@punyts/state-sync/authority';
@@ -79,7 +79,7 @@ export class AppAuthorities {
             authority,
             library,
             (name, payload) => this.onEmit(appId, name, payload, LOGIC_VIEW_ID),
-            (message, failure) => report.info(message, { app: appId, machine: failure.machine, from: failure.from, command: failure.command, reason: failure.reason }),
+            (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             (name, payload) => this.calls.ask(appId, name, payload)
         );
         this.logics.set(appId, logic);
@@ -105,12 +105,42 @@ export class AppAuthorities {
      * A tool's write to an app's state: asked of the guards, written, and looked up by the logic. Returns the reason
      * when a guard refused it
      */
-    async write(appId: string, document: UiDocument, path: string, value: JsonValue | undefined): Promise<string | undefined> {
+    async write(appId: string, document: UiDocument, path: string, value: JsonValue | undefined, options: { logic?: boolean } = {}): Promise<string | undefined> {
         const authority = await this.authority(appId, document);
         const logic = this.logics.get(appId.toLowerCase());
-        if (logic !== undefined) return logic.write(path, value);
+        if (logic !== undefined) return logic.write(path, value, options.logic !== false);
         authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
         return undefined;
+    }
+
+    /**
+     * Puts the app's state back to the document: `$.data` becomes the document's data and `$.app` loses every
+     * articulation a user or a tool changed. No guard asks and no rule fires; then the logic starts again, so machines
+     * are in their initial states, timers re-arm and the trace is empty. `$.server` is kept
+     */
+    async reset(appId: string, document: UiDocument): Promise<void> {
+        const authority = await this.authority(appId, document);
+        const data = document['data'];
+        authority.writeAll([
+            { path: '$.data', op: 'set', value: (isJsonObject(data) ? data : {}) as SyncValue },
+            { path: '$.app', op: 'set', value: {} }
+        ]);
+        const logic = this.logics.get(appId.toLowerCase());
+        if (logic === undefined) return;
+        try {
+            logic.setDocument(document);
+        } catch (error) {
+            this.logic?.report.info('App logic did not start', { app: appId, reason: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** The app's logic trace, oldest run first; undefined when its logic does not run on the server */
+    trace(appId: string): LogicTraceRun[] | undefined {
+        return this.logics.get(appId.toLowerCase())?.trace();
+    }
+
+    clearTrace(appId: string): void {
+        this.logics.get(appId.toLowerCase())?.clearTrace();
     }
 
     /** A stored `$.server` without a key is the one failure the operator can fix; it gets a message that says how */

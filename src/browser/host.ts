@@ -156,6 +156,9 @@ function diffComplete(path: string, a: unknown, b: unknown, writes: PathWrite[])
  * object at the path (a node, or an object property) and writes a value whole below it, so the runtime store, which
  * creates no parents, finds the parent. A value the state no longer has cannot be put back by a write: false, a load
  */
+/** The properties a record view takes its records in */
+const RECORD_COLLECTIONS = ['records', 'items'];
+
 function diffArticulation(path: string, before: unknown, after: unknown, documentValue: unknown, writes: PathWrite[]): boolean {
     if (deepEqual(before, after)) return true;
     if (after === undefined || path === '$.app' ? !isRecord(after) : false) return false;
@@ -163,6 +166,11 @@ function diffArticulation(path: string, before: unknown, after: unknown, documen
         if (isRecord(before) && Object.keys(before).some((key) => !(key in after))) return false;
         for (const key of Object.keys(after)) {
             if (!SEGMENT.test(key)) return false;
+            if (RECORD_COLLECTIONS.includes(key) && typeof documentValue['component'] === 'string') {
+                // A record view's collection is written whole (a query), so it replaces the document's records
+                if (!deepEqual(isRecord(before) ? before[key] : undefined, after[key])) writes.push({ path: `${path}.${key}`, value: after[key] as Json });
+                continue;
+            }
             if (!diffArticulation(`${path}.${key}`, isRecord(before) ? before[key] : undefined, after[key], documentValue[key], writes)) return false;
         }
         return writes.length <= MAX_WRITES;

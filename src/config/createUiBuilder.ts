@@ -17,6 +17,7 @@ import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewError
 import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
 import { SetState } from '../application/use-cases/SetState.js';
+import { ResetState } from '../application/use-cases/ResetState.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidateApp } from '../application/use-cases/ValidateApp.js';
@@ -56,6 +57,7 @@ export interface UiBuilderUseCases {
     readonly validateApp: ValidateApp;
     readonly getState: GetState;
     readonly setState: SetState;
+    readonly resetState: ResetState;
     readonly runCommand: RunCommand;
     readonly recordPreviewErrors: RecordPreviewErrors;
     readonly recordPreviewLoad: RecordPreviewLoad;
@@ -84,6 +86,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         validateApp: new ValidateApp(repository, validator, previewLog, now, report),
         getState: new GetState(repository, previewLog, now, report),
         setState: new SetState(repository, validator, report),
+        resetState: new ResetState(repository, report),
         runCommand: new RunCommand(repository, catalog, previewLog, now, newId, report),
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
