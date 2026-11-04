@@ -33,7 +33,7 @@ export function createCatalogTools(
         {
             name: 'ui_components_list',
             description:
-                'List the components an application can use, one line each: name, tier, size and summary. Filter with query words or tier. Call ui_component_get for the full shape of one component.',
+                'List the components an app can use, one line each: name, tier, size and summary. Filter with query words or tier; ui_component_get gives the full shape of one.',
             inputSchema: COMPONENTS_LIST.schema,
             annotations: READ_ONLY,
             run: (args) => {

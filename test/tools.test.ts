@@ -193,6 +193,25 @@ describe('app tools', () => {
         expect(get.body['value']).toMatchObject({ component: 'button', _title: 'Save' });
     });
 
+    it('should take a path with or without the leading $. in every path argument', async () => {
+        // Arrange
+        const appId = await createForm();
+
+        // Act
+        const get = await call(harness.client, 'ui_app_get', { appId, path: '$.app.children.form.children.save' });
+        const outline = await call(harness.client, 'ui_outline', { appId, path: '$.app.children.form' });
+        const write = await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: '$.app.children.form.children.save._title', value: 'Send' }] });
+        const set = await call(harness.client, 'ui_state_set', { appId, path: 'data.name', value: 'Ada' });
+        const command = await call(harness.client, 'ui_command', { appId, target: '$.app.children.form', command: 'nope' });
+
+        // Assert
+        expect(get.body['value']).toMatchObject({ component: 'button', _title: 'Save' });
+        expect(outline.isError).toBe(false);
+        expect(write.body['revision']).toBe(2);
+        expect(set.body).toMatchObject({ path: '$.data.name' });
+        expect(command.body['error']).not.toBe('invalid-target');
+    });
+
     it('should refuse an invalid document with the state path, a blank name and a duplicate name', async () => {
         await createForm();
 

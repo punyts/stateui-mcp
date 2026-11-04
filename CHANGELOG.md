@@ -9,6 +9,7 @@
 - New: `ui_state_get` takes `path` to read one part of the state and shortens `data:` URIs and long strings unless `full: true`.
 - New: `ui_interact` has `choose` (a radio option by value or label), `focus`, `key` (a key on whatever has focus, no path) and `drag` (onto the node whose path is `value`; both ends are scrolled into view before the button goes down, since a board reads its column boxes when a drag starts). An action whose element was re-rendered while it ran is tried again instead of failing with "not attached to the DOM".
 - New: `ui_events_read` accepts `cursor` as well as `since`.
+- Change: every path argument takes a path with or without the leading `$.` (`ui_app_get`, `ui_outline`, `ui_app_write` and `ui_command` refused `$.app...`, `ui_state_set` refused `data...`). The tool descriptions and server instructions are shorter and correct: `ui_state_get` has no `source` field, `focus` tries the control inside the node first, `drag` needs both ends on screen, `ui_outline` ends with the logic.
 - New: `ui_validate` warns `SUI-VIEWPORT-NARROW` for a page whose side nav never collapses (`navBreakpoint` 0).
 - Fix: a stored record collection (`records`, `items` of a record view) replaces the document's records in the live view instead of merging into them, so records a query left out do not come back.
 - Change: `logic.failed` events and the server log name the unit with `kind` and `name` (was `machine`).

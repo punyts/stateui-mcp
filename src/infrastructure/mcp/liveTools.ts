@@ -7,7 +7,7 @@ import type { PreviewHub } from '../preview/PreviewHub.js';
 import type { LogicAnswer } from '@punyts/stateui-app/core';
 import type { AppCalls } from '../sync/AppCalls.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
-import { READ_ONLY, SHOWS, WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { defineInput, documentPath, fail, READ_ONLY, SHOWS, succeed, WRITES } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
@@ -18,9 +18,9 @@ const STATE_GET = defineInput({
     appId: APP_ID,
     path: {
         type: 'string',
-        description: 'A state path to read just that part, such as "$.data.cart" or "$.app.children.main.children.form"; without it the whole state'
+        description: 'A path to read just that part, such as "$.data.cart" or "$.app.children.main.children.form"; without it the whole state'
     },
-    full: { type: 'boolean', description: 'true: return data: URIs and other long strings whole. By default they are shortened, so an image does not fill the result' }
+    full: { type: 'boolean', description: 'true: return data: URIs and strings over 300 characters whole. By default they are shortened, so an image does not fill the result' }
 });
 
 const LOGIC_TRACE = defineInput({
@@ -69,14 +69,14 @@ const PREVIEW = defineInput({ appId: APP_ID });
 
 const COMMAND = defineInput({
     appId: APP_ID,
-    target: { type: 'string', required: true, description: 'A dotted document path to a node under "app", such as "app.children.main.children.toasts"' },
+    target: { type: 'string', required: true, description: 'A node under app, such as "app.children.main.children.toasts" (a leading "$." is allowed)' },
     command: { type: 'string', required: true, description: 'A command the target component declares; ui_component_get lists them' },
     value: { type: 'json', description: 'The payload, for the commands that take one' }
 });
 
 const SCREENSHOT = defineInput({
     appId: APP_ID,
-    path: { type: 'string', description: 'A state path of a node to capture just that element, such as "$.app.children.form"; without it the whole page' },
+    path: { type: 'string', description: 'A node to capture alone, such as "$.app.children.form"; rows and cards have runtime paths (ui_tree with rendered: true). Without it the whole page' },
     width: { type: 'integer', minimum: 200, maximum: 3840, description: 'Viewport width in pixels (default 1280)' },
     height: { type: 'integer', minimum: 200, maximum: 4000, description: 'Viewport height in pixels (default 800)' },
     mode: { type: 'string', description: 'A "mode" overlay name from ui_tokens_list, such as "dark", applied to the headless page before the capture' }
@@ -96,12 +96,12 @@ const INTERACT = defineInput({
                 required: true,
                 enum: INTERACT_ACTIONS,
                 description:
-                    'click and hover act on the control of the component; fill types text into a field; press sends a key to the control; select picks an option of a select field; choose picks a radio option (radioGroup, segmented); focus puts focus on the node or its nearest focusable ancestor (a board card, a list row); key presses a key on whatever has focus, with no path, for keyboard flows such as Space then ArrowRight on a board; drag drags the node with the mouse onto the node whose path is value'
+                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick a radio option (radioGroup, segmented). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together'
             },
-            path: { type: 'string', description: 'The state path of the node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths' },
+            path: { type: 'string', description: 'The node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths, and with rendered: true the paths of rows and cards' },
             value: {
                 type: 'string',
-                description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, the state path of the drop target for drag'
+                description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, the path of the drop target for drag'
             }
         }
     }
@@ -158,7 +158,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_state_get',
             description:
-                'Read the state of an application: the data and articulation (what the user typed or picked) as { data, app }. The state is synced with every open view, so it holds what the user typed a moment ago, and a view that was offline sends its changes when it reconnects. path reads one part, such as "$.data.cart". data: URIs and other long strings are shortened unless full is true. Also returns the preview block: whether a view is open and its runtime errors. Returns { appId, revision, state, preview }, with path: { appId, revision, path, value, preview }.',
+                'Read the app state as { data, app }: the data, and what users typed, picked or opened. Every open view syncs it, so it holds what a user typed a moment ago. path reads one part. Long strings are shortened unless full is true. Returns { appId, revision, state, preview }, or with path { appId, revision, path, value, preview }; preview says whether a view is open and lists its runtime errors.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -238,7 +238,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Act on the running application in the headless browser like a user: click, hover, fill, press, select, choose, focus and drag on nodes named by state path (such as "$.app.children.form.children.email"), and key on whatever has focus. Actions run in order and stop at the first failure; an action whose element was re-rendered while it ran is tried again. Returns { appId, revision, results, errors, emits, cursor }: results has one entry per action, errors are the runtime errors raised meanwhile and emits are the "emit" events the app raised (they stay readable with ui_events_read). The call is an error when an action failed.',
+                'Act on the running app in the headless page like a user: click, hover, fill, press, select, choose, focus and drag on nodes by path, and key on whatever has focus. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { appId, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -268,7 +268,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Read the "emit" events the running application raised (a button with an emit action, a form submit), the logic.failed events and the logic.call events of its logic, oldest first. Answer a logic.call (payload { id, name, payload }) with ui_call_answer. There is no chat turn to carry them, so poll this tool after the user has had a chance to act, and pass the returned cursor as since (or cursor) next time. At most 500 events are kept per application and a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Read the events the running app raised, oldest first: emit events (a button with an emit action, a form submit), logic.failed, and logic.call (payload { id, name, payload }; answer it with ui_call_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Returns { appId, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -284,7 +284,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_logic_trace',
             description:
-                'Read what the app\'s logic did, newest run last: each run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its outcome: fired (with the transition, the table row and the writes), failed (with the reason), debounced, already-fired (a unit fires at most once per chain), unchanged (the value did not change), parent-removed (a record was removed with its fields), other-state (the machine was in another state), condition (is or if was false) or refused (a guard). depth is the step of the chain: writes of depth 0 start depth 1. Use it when a rule did not fire or fired twice. Only Full-mode apps run their logic on the server. Returns { appId, runs }.',
+                'Read the latest runs of the app logic, newest last. A run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its chain step (depth) and outcome: fired (with the transition, table row and writes), failed (with the reason), refused (a guard), condition (is, was or if was false, or no table row matched), other-state (the machine was in another state), unchanged (the value did not change), parent-removed (removed with its record), already-fired (once per chain) or debounced. Use it when a rule did not fire or fired twice. Full-mode apps only. Returns { appId, runs }.',
             inputSchema: LOGIC_TRACE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -322,14 +322,14 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_command',
             description:
-                'Run a component command in the open views of the application, the headless page included: showing a toast, focusing a field, scrolling to a record. It changes runtime state only and is not stored. Returns { appId, revision, command, previewAttached, message }; when no view is open the message says "no preview is open; the command was not delivered" and nothing happened (open one with ui_preview).',
+                'Run a component command in the open views, the headless page included: show a toast, focus a field, scroll to a record. Runtime only; nothing is stored. Returns { appId, revision, command, previewAttached, message }; with no view open the message says the command was not delivered (open one with ui_preview).',
             inputSchema: COMMAND.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = COMMAND.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
                 const { appId, target, command, value } = parsed.value;
-                const result = await useCases.runCommand.execute(appId, { target, command, ...(value !== undefined && { value }) });
+                const result = await useCases.runCommand.execute(appId, { target: documentPath(target), command, ...(value !== undefined && { value }) });
                 switch (result.kind) {
                     case 'issued': {
                         const delivered = liveViews.command(result.appId, result.command);

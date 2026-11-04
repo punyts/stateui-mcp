@@ -233,6 +233,18 @@ export function succeed(body: object, images: readonly ToolImage[] = []): ToolOu
     return { isError: false, body, ...(images.length > 0 && { images }) };
 }
 
+/** A document path from a path given either way: "$.app.children.main" and "app.children.main" name the same node, "$" the root */
+export function documentPath(path: string): string {
+    if (path === '$') return '';
+    return path.startsWith('$.') ? path.slice(2) : path;
+}
+
+/** A state path from a path given either way: "app.children.main" becomes "$.app.children.main" */
+export function statePath(path: string): string {
+    if (path === '') return '$';
+    return path.startsWith('$') ? path : `$.${path}`;
+}
+
 /** An error result: `error` is a stable code, `message` says what to change, `details` carries the use case own fields */
 export function fail(code: string, message: string, details: object = {}): ToolOutcome {
     return { isError: true, body: { error: code, message, ...details } };

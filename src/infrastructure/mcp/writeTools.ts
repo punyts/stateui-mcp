@@ -2,7 +2,7 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { WriteOperation } from '../../domain/documentOperations.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { WRITES, defineInput, documentPath, fail, statePath, succeed } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
@@ -15,9 +15,9 @@ const EXPECTED_REVISION = {
 
 const APP_WRITE_ITEMS = {
             op: { type: 'string', required: true, enum: ['set', 'remove', 'merge', 'move'], description: 'set replaces or appends a key, remove deletes it, merge deep-merges an object and creates missing keys, move relocates a keyed entry with its subtree and key' },
-            path: { type: 'string', required: true, allowEmpty: true, description: 'A dotted path from the document root, such as "app.children.footer._title"; "" is the root. For move: the entry to move' },
+            path: { type: 'string', required: true, allowEmpty: true, description: 'A path from the document root, such as "app.children.footer._title" (a leading "$." is allowed); "" is the root. For move: the entry to move' },
             value: { type: 'json', description: 'The new value for set; an object for merge; not allowed for remove or move' },
-            to: { type: 'string', description: 'move only: the keyed map to move the entry into, such as "app.children.panel.children"; the entry goes at the end unless before or after is given' },
+            to: { type: 'string', description: 'move only: the keyed map to move the entry into, such as "app.children.panel.children"; it goes at the end unless before or after is given' },
             before: { type: 'string', description: 'move only: a sibling key to place the entry before (in the map named by to, or in its own map without to)' },
             after: { type: 'string', description: 'move only: a sibling key to place the entry after (in the map named by to, or in its own map without to)' }
 } as const;
@@ -37,12 +37,12 @@ const APP_WRITE = defineInput({
 
 const STATE_SET = defineInput({
     appId: APP_ID,
-    path: { type: 'string', required: true, description: 'A "$.data..." path, or "$.app...<node path>.<property>" for a property the user can change' },
+    path: { type: 'string', required: true, description: 'A data path such as "$.data.cart.c1.qty", or a node property a user can change such as "$.app.children.name.value"' },
     value: { type: 'json', description: 'The new value; leave it out with remove' },
     remove: { type: 'boolean', description: 'true: remove the entry at a "$.data..." path, such as a record, instead of setting a value' },
     logic: {
         type: 'boolean',
-        description: 'false: write the value as it is, with no guard asking and no rule or machine firing, to set up a test state. Default true: the write is a change like a user\'s'
+        description: 'false: write the value as it is, with no guard asking and no rule or machine firing, to set up a test. Default true: the write counts as a change by the user'
     },
     expectedRevision: EXPECTED_REVISION
 });
@@ -76,8 +76,8 @@ function toOperation(item: OperationItem, index: number): WriteOperation | ToolO
         if (item.value !== undefined) return misplaced(index, 'value', 'is not allowed for move');
         return {
             op: 'move',
-            path: item.path,
-            ...(item.to !== undefined && { to: item.to }),
+            path: documentPath(item.path),
+            ...(item.to !== undefined && { to: documentPath(item.to) }),
             ...(item.before !== undefined && { before: item.before }),
             ...(item.after !== undefined && { after: item.after })
         };
@@ -87,10 +87,10 @@ function toOperation(item: OperationItem, index: number): WriteOperation | ToolO
     }
     if (item.op === 'remove') {
         if (item.value !== undefined) return misplaced(index, 'value', 'is not allowed for remove');
-        return { op: 'remove', path: item.path };
+        return { op: 'remove', path: documentPath(item.path) };
     }
     if (item.value === undefined) return misplaced(index, 'value', `is required for ${item.op}`);
-    return { op: item.op, path: item.path, value: item.value };
+    return { op: item.op, path: documentPath(item.path), value: item.value };
 }
 
 /** The write tools: change the document or the state. Every open view follows the change at once */
@@ -101,7 +101,7 @@ export function createWriteTools(
     return [
         {
             name: 'ui_app_write',
-            description: `Change the application document with set, remove, merge and move operations by dotted path (at most ${MAX_OPERATIONS_PER_WRITE} per call). move relocates a keyed entry with its subtree: { op: "move", path, before | after } reorders it among its siblings, { op: "move", path, to, before? | after? } moves it into another map. Later operations use the new paths. The operations apply in order to a copy; the whole result is validated and committed as one write, or not at all. A set through a missing parent fails: write the parent first or use merge. Pass expectedRevision from your last read to detect a change made in between. Returns { appId, revision, warnings }; blocking errors are returned in full with their state paths and nothing is written.`,
+            description: `Change the app document with up to ${MAX_OPERATIONS_PER_WRITE} set, remove, merge and move operations. They apply in order to a copy, and later ones see the paths earlier ones made; the result is validated and committed as one write, or not at all. move keeps the key and subtree of an entry: { op: "move", path, before | after } reorders it among its siblings, and with to it moves into another map. A set through a missing parent fails: write the parent first or use merge. Pass expectedRevision from your last read. Returns { appId, revision, warnings }; on blocking errors nothing is written and they come back with their state paths.`,
             inputSchema: APP_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -140,7 +140,7 @@ export function createWriteTools(
         {
             name: 'ui_state_set',
             description:
-                'Set one value in the app\'s state: a "$.data..." path, or a property of a node such as "$.app.children.name.value". remove: true instead of a value removes an entry under $.data, such as a deleted record ($.data.tasks.t2); a null value would leave an empty record behind. Open views get the change at once. Links, runtime and exposed properties are refused with the reason. The write is a change like a user\'s: guards may refuse it and rules fire; logic: false writes it as it is. Content text of an app with an active language is changed with ui_app_write instead. The revision counts document writes, so it stays as it is. Returns { appId, revision, path }.',
+                'Set one value in the app state: a data path or a node property a user can change. remove: true removes an entry under $.data, such as a record ($.data.tasks.t2); null would leave an empty record. The write counts as a change by the user: guards may refuse it and rules fire. logic: false skips both, to set up a test. Links, runtime and exposed properties are refused with the reason; with an active language, change content text with ui_app_write. Open views follow at once. The revision counts document writes only, so it does not change. Returns { appId, revision, path }.',
             inputSchema: STATE_SET.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -150,7 +150,7 @@ export function createWriteTools(
                 if (remove === true && value !== undefined) return fail('invalid-argument', 'Pass value or remove: true, not both', { argument: 'remove' });
                 if (remove !== true && value === undefined) return fail('invalid-argument', 'value is required, or remove: true to remove the entry', { argument: 'value' });
                 const result = await useCases.setState.execute(appId, {
-                    path,
+                    path: statePath(path),
                     ...(remove === true ? { remove } : { value }),
                     ...(expectedRevision !== undefined && { expectedRevision }),
                     ...(logic === false && { logic })
@@ -172,7 +172,7 @@ export function createWriteTools(
         {
             name: 'ui_state_reset',
             description:
-                'Put the app\'s state back to its document: $.data becomes the document\'s data again and every articulation a user or a tool changed under $.app is dropped (what was typed, picked, opened). No guard asks and no rule fires; then the logic starts again, so machines are in their initial states and the logic trace is empty. Open views get the reset at once. Use it between test runs. The revision counts document writes, so it stays as it is. Returns { appId, revision }.',
+                'Put the app state back to its document: $.data becomes the data of the document again, and what users or tools changed under $.app (typed, picked, opened) is dropped. No guard or rule runs; then the logic restarts, so machines are in their initial states and the trace is empty. Open views follow at once. Use it between test runs. Full-mode apps only. The revision does not change. Returns { appId, revision }.',
             inputSchema: STATE_RESET.schema,
             annotations: WRITES,
             run: async (args) => {
