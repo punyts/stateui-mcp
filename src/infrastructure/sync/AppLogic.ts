@@ -1,5 +1,18 @@
-import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, cloneJson, createLogicEngine, createLogicIndex, readLogic, resolveNode } from '@punyts/stateui-app/core';
-import type { ComponentLibrary, JsonValue as AppValue, LogicAnswer, LogicChange, LogicEngine, LogicFailure, LogicHost, LogicTraceRun, LogicWrite, Node } from '@punyts/stateui-app/core';
+import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, ROUTE_PATH, cloneJson, createLogicEngine, createLogicIndex, readLogic, resolveNode } from '@punyts/stateui-app/core';
+import type {
+    ComponentLibrary,
+    JsonValue as AppValue,
+    LogicAnswer,
+    LogicChange,
+    LogicEngine,
+    LogicFailure,
+    LogicHost,
+    LogicTraceRun,
+    LogicWrite,
+    Node,
+    ResolvedTree,
+    RouteScreens
+} from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import type { Authority, ChangeContext, ChangeVerdict, ServerWrite } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -7,7 +20,7 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 
 /** The roots logic watches; guards are registered on each */
-const ROOTS = ['$.app', '$.data', '$.server'];
+const ROOTS = ['$.app', '$.data', '$.server', '$.screens', ROUTE_PATH];
 const APP_ROOT = '$.app';
 
 /** What the app server learns from an app's logic: an `emit` or a failure, for `ui_events_read` */
@@ -80,7 +93,19 @@ export class AppLogic {
         const app = document['app'];
         const composed = isJsonObject(document['composed']) ? (document['composed'] as unknown as Record<string, Node>) : {};
         const resolved = resolveNode(cloneJson(app as AppValue) as unknown as Node, this.library, composed);
-        const index = createLogicIndex(resolved, this.library, document['data'] as AppValue | undefined);
+        const screens = isJsonObject(document['screens']) ? (document['screens'] as unknown as Record<string, { root: Node }>) : {};
+        const trees: Record<string, ResolvedTree> = {};
+        for (const [name, screen] of Object.entries(screens)) {
+            const result = resolveNode(cloneJson(screen.root as unknown as AppValue) as unknown as Node, this.library, composed, { path: `$.screens.${name}` });
+            trees[name] = { node: result.node, instances: result.instances };
+        }
+        const index = createLogicIndex(resolved, this.library, document['data'] as AppValue | undefined, {
+            trees,
+            current: () => {
+                const screen = this.authority.get(`${ROUTE_PATH}.screen`);
+                return typeof screen === 'string' ? screen : undefined;
+            }
+        });
         const { logic: valid } = readLogic(logic, { resolve: index.resolve });
         const read = (path: string): AppValue | undefined => {
             const stored = this.authority.get(path) as AppValue | undefined;
@@ -93,6 +118,7 @@ export class AppLogic {
                 this.authority.writeAll(writes.map(toServerWrite));
             },
             resolve: index.resolve,
+            screens: () => (isJsonObject(document['screens']) ? (document['screens'] as unknown as RouteScreens) : undefined),
             fields: index.fields,
             initial: index.initial,
             records: index.records,

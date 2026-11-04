@@ -269,3 +269,41 @@ describe('AppLogic', () => {
         expect(authority.get('$.data.contacts.c1')).toEqual({ name: 'draft' });
     });
 });
+
+/** A shell and two screens; a rule opens `product` with the picked id, and one names a screen that does not exist */
+const SCREENS_DOCUMENT = Object.freeze({
+    data: { pick: '', lost: '' },
+    app: { component: 'page', children: { title: { component: 'text' } } },
+    screens: {
+        home: { root: { component: 'page', children: { title: { component: 'text' } } } },
+        product: { params: { id: { type: 'string', required: true } }, root: { component: 'page' } }
+    },
+    start: 'home',
+    logic: {
+        rules: {
+            open: { when: { path: '$.data.pick' }, do: [{ command: 'navigate', target: 'product', value: { id: '{{ $trigger }}' } }] },
+            lost: { when: { path: '$.data.lost' }, do: [{ command: 'navigate', target: 'cart' }] }
+        }
+    }
+}) as unknown as UiDocument;
+
+describe('AppLogic navigate', () => {
+    it('should run navigate on the server and write $.route', async () => {
+        const { authority, logic, failures } = await setup(SCREENS_DOCUMENT);
+
+        logic.write('$.data.pick', 'p2');
+
+        expect(authority.get('$.route')).toEqual({ screen: 'product', params: { id: 'p2' } });
+        expect(failures).toEqual([]);
+    });
+
+    it('should fail a navigate to a screen that does not exist, and write nothing', async () => {
+        const { authority, logic, events, failures } = await setup(SCREENS_DOCUMENT);
+
+        logic.write('$.data.lost', 'x');
+
+        expect(authority.get('$.route')).toBeUndefined();
+        expect(failures).toEqual(['no screen is named "cart"']);
+        expect(events.map(([name]) => name)).toEqual(['logic.failed']);
+    });
+});
