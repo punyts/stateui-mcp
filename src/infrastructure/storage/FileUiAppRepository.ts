@@ -117,7 +117,7 @@ export class FileUiAppRepository implements UiAppRepository {
         return this.withApp(appId, expectedRevision, async (file) => {
             const revision = nextRevision(file.revision);
             await writeJsonAtomic(this.folders.appFile(appId), { ...file, revision, updatedAt: this.now().toISOString(), document });
-            if (file.sync !== 'persisted') this.states.documentChanged(appId, document);
+            if (file.sync !== 'persisted') await this.states.documentChanged(appId, document, file.document);
             return { kind: 'written', revision };
         });
     }

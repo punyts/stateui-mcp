@@ -59,6 +59,8 @@ export interface ScreenshotOptions {
     readonly height?: number;
     /** A `mode` overlay name from `ui_tokens_list`, such as `dark` */
     readonly mode?: string;
+    /** Grow the viewport to the height of the content, up to `MAX_FULL_PAGE_HEIGHT`; page captures only */
+    readonly fullPage?: boolean;
 }
 
 export interface ScreenshotResult {
@@ -77,6 +79,9 @@ const RENDER_TIMEOUT_MS = 10_000;
 const SETTLE_MS = 300;
 /** A visible element is captured at once; this bounds the wait for one that never becomes stable */
 const ELEMENT_SHOT_TIMEOUT_MS = 5_000;
+/** The tallest viewport a full-page capture grows to, and how often it measures again while the content grows (a virtual list drawing more rows) */
+export const MAX_FULL_PAGE_HEIGHT = 16_000;
+const FULL_PAGE_PASSES = 3;
 
 /** Where the controls of a component are: the first native control in its shadow root, else the element */
 const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
@@ -172,6 +177,7 @@ export class BrowserPreview {
                 }
                 await this.settle(page);
                 if (options.path === undefined) {
+                    if (options.fullPage === true) await this.growToContent(page, viewport);
                     const png = await page.screenshot({ type: 'png' });
                     return { png, ...viewport, target: 'page' };
                 }
@@ -574,6 +580,34 @@ export class BrowserPreview {
         if (listed.length === 0) return `${statePath} has no options to choose from`;
         const quote = (items: readonly string[]): string => items.map((item) => `"${item}"`).join(', ');
         return `${statePath} has no option "${wanted}". Values: ${quote(listed.map((item) => item.value))}. Labels: ${quote(listed.map((item) => item.label))}`;
+    }
+
+    /**
+     * Grows the viewport (in place) to the height the app's content needs: the app may scroll its document or a
+     * scrolling element of a component (the main area of a page), so the height is the viewport plus the most any of
+     * them can still scroll. Measures again after each growth, since a taller view can draw more (virtual rows)
+     */
+    private async growToContent(page: Page, viewport: { width: number; height: number }): Promise<void> {
+        for (let pass = 0; pass < FULL_PAGE_PASSES && viewport.height < MAX_FULL_PAGE_HEIGHT; pass += 1) {
+            const extra = await this.runtimeFrame(page).evaluate(() => {
+                let most = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                const walk = (root: ParentNode): void => {
+                    for (const element of Array.from(root.querySelectorAll('*'))) {
+                        const overflow = getComputedStyle(element).overflowY;
+                        if ((overflow === 'auto' || overflow === 'scroll') && element.clientHeight > 0) {
+                            most = Math.max(most, element.scrollHeight - element.clientHeight);
+                        }
+                        if (element.shadowRoot) walk(element.shadowRoot);
+                    }
+                };
+                walk(document);
+                return Math.ceil(most);
+            });
+            if (extra <= 1) return;
+            viewport.height = Math.min(MAX_FULL_PAGE_HEIGHT, viewport.height + extra);
+            await page.setViewportSize(viewport);
+            await this.settle(page);
+        }
     }
 
     private async settle(page: Page): Promise<void> {

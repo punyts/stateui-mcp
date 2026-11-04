@@ -20,7 +20,8 @@ function toSummary(component: CatalogFileComponent): ComponentSummary {
 }
 
 function toEntry(component: CatalogFileComponent): ComponentEntry {
-    const base = { ...toSummary(component), example: component.example, locales: component.locales };
+    const tokens = (component.tokens ?? []).map((token) => ({ path: token.path, type: token.type, default: token.default }));
+    const base = { ...toSummary(component), example: component.example, locales: component.locales, tokens };
     if (component.tier === 'composed') {
         return { ...base, tier: 'composed', tree: component.tree ?? {}, exposes: component.exposes ?? [] };
     }

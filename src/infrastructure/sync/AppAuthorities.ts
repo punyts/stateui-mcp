@@ -14,6 +14,30 @@ import { appNamespace } from './FileNamespaceStorage.js';
 /** A client emit, with the app and the id of the view that raised it */
 export type AppEmitHandler = (appId: string, name: string, value: JsonValue | undefined, viewId: string) => void;
 
+/** More data changes than this in one document write set `$.data` whole */
+const MAX_DATA_WRITES = 200;
+
+type DataWrite = { path: string; op: 'set'; value: SyncValue } | { path: string; op: 'delete' };
+
+function sameJson(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The writes that turn `previous` into `next` at `path`: into objects key by key, anything else whole */
+function dataWrites(path: string, previous: JsonValue | undefined, next: JsonValue | undefined, writes: DataWrite[]): void {
+    if (sameJson(previous, next)) return;
+    if (next === undefined) {
+        writes.push({ path, op: 'delete' });
+        return;
+    }
+    if (!isJsonObject(previous) || !isJsonObject(next)) {
+        writes.push({ path, op: 'set', value: next as SyncValue });
+        return;
+    }
+    for (const key of Object.keys(previous)) if (!Object.hasOwn(next, key)) writes.push({ path: `${path}.${key}`, op: 'delete' });
+    for (const [key, value] of Object.entries(next)) dataWrites(`${path}.${key}`, previous[key], value, writes);
+}
+
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
@@ -90,9 +114,25 @@ export class AppAuthorities {
         }
     }
 
-    /** The app's document changed: its logic is rebuilt when its authority runs */
-    documentChanged(appId: string, document: UiDocument): void {
-        const logic = this.logics.get(appId.toLowerCase());
+    /**
+     * The app's document changed. When its authority runs, what changed in the document's `data` is written into the
+     * state at the paths that changed (no guard asks, no rule fires, as for a reset), so the open views show it; the
+     * rest of `$.data` keeps what users and tools changed. Then its logic is rebuilt
+     */
+    async documentChanged(appId: string, document: UiDocument, previous?: UiDocument): Promise<void> {
+        const key = appId.toLowerCase();
+        const authority = this.authorities.get(key);
+        if (authority !== undefined && previous !== undefined) {
+            const writes: DataWrite[] = [];
+            const before = isJsonObject(previous['data']) ? previous['data'] : {};
+            const after = isJsonObject(document['data']) ? document['data'] : {};
+            dataWrites('$.data', before, after, writes);
+            const created = await authority.catch(() => undefined);
+            if (created !== undefined && writes.length > 0) {
+                created.writeAll(writes.length > MAX_DATA_WRITES ? [{ path: '$.data', op: 'set', value: after as SyncValue }] : writes);
+            }
+        }
+        const logic = this.logics.get(key);
         if (logic === undefined) return;
         try {
             logic.setDocument(document);

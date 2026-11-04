@@ -10,8 +10,17 @@ export interface ComponentSummary {
     readonly summary: string;
 }
 
+/** A token a component's CSS reads, which a node's `theme` may override for its subtree: `image.fill`, type `color`, default `{color.surface.sunken}` */
+export interface ComponentToken {
+    readonly path: string;
+    readonly type: string;
+    readonly default: string;
+}
+
 interface ComponentEntryBase extends ComponentSummary {
     readonly example: JsonObject;
+    /** The component tokens, empty when the component declares none */
+    readonly tokens: readonly ComponentToken[];
     /** The language codes the component ships translations for */
     readonly locales: readonly string[];
 }

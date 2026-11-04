@@ -152,6 +152,21 @@ describe('FileUiAppRepository', () => {
         expect(found?.stateSnapshot).toEqual({ data: ORDERED['data'], app: { children: { a: { open: true } } } });
     });
 
+    it('should carry a change of the document data into the running state and keep the rest of the state', async () => {
+        // Arrange
+        const id = await createApp();
+        await apps.writeState(id, ['data', 'typed'], 'kept', 1);
+        await apps.writeState(id, ['data', 'rows', 'aa', 'n'], 7, 1);
+        const next: UiDocument = { ...ORDERED, data: { rows: { zz: { n: 5 } }, prices: { p1: 10 } } };
+
+        // Act
+        await apps.writeDocument(id, next, 1);
+        const found = await apps.findById(id);
+
+        // Assert
+        expect(found?.stateSnapshot['data']).toEqual({ rows: { zz: { n: 5 } }, typed: 'kept', prices: { p1: 10 } });
+    });
+
     it('should refuse a duplicate name', async () => {
         await createApp('same');
 

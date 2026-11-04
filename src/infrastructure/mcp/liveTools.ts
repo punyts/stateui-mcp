@@ -1,6 +1,6 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { NO_PREVIEW_MESSAGE } from '../../application/use-cases/RunCommand.js';
-import { BrowserUnavailableError, INTERACT_ACTIONS, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
+import { BrowserUnavailableError, INTERACT_ACTIONS, MAX_FULL_PAGE_HEIGHT, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
 import type { InteractStep, PreviewBrowser } from '../preview/BrowserPreview.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
@@ -79,7 +79,8 @@ const SCREENSHOT = defineInput({
     path: { type: 'string', description: 'A node to capture alone, such as "$.app.children.form"; rows and cards have runtime paths (ui_tree with rendered: true). Without it the whole page' },
     width: { type: 'integer', minimum: 200, maximum: 3840, description: 'Viewport width in pixels (default 1280)' },
     height: { type: 'integer', minimum: 200, maximum: 4000, description: 'Viewport height in pixels (default 800)' },
-    mode: { type: 'string', description: 'A "mode" overlay name from ui_tokens_list, such as "dark", applied to the headless page before the capture' }
+    mode: { type: 'string', description: 'A "mode" overlay name from ui_tokens_list, such as "dark", applied to the headless page before the capture' },
+    fullPage: { type: 'boolean', description: `Grow the height to everything the page can scroll to (at most ${MAX_FULL_PAGE_HEIGHT} px) and capture it all; page captures only, height is the starting height` }
 });
 
 const INTERACT = defineInput({
@@ -208,13 +209,14 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_screenshot',
             description:
-                'Take a PNG screenshot of the application in the headless browser: the whole page, or one node when path is given. Optional width and height set the viewport, mode switches the theme overlay (such as "dark") first. Returns the image and a short summary { appId, revision, target, width, height, mode? }. Use it to check what the user will see after a write.',
+                'Take a PNG screenshot of the application in the headless browser: the whole page, or one node when path is given. Optional width and height set the viewport, fullPage: true captures the whole scrolling height, mode switches the theme overlay (such as "dark") first. Returns the image and a short summary { appId, revision, target, width, height, mode? }. Use it to check what the user will see after a write.',
             inputSchema: SCREENSHOT.schema,
             annotations: SHOWS,
             run: async (args) => {
                 const parsed = SCREENSHOT.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, width, height, mode } = parsed.value;
+                const { appId, path, width, height, mode, fullPage } = parsed.value;
+                if (fullPage === true && path !== undefined) return fail('invalid-argument', 'fullPage captures the page; leave path out, or capture the node without fullPage', { argument: 'fullPage' });
                 const revision = await revisionOf(appId);
                 if (revision === undefined) return notFound(appId);
                 try {
@@ -222,7 +224,8 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                         ...(path !== undefined && { path }),
                         ...(width !== undefined && { width }),
                         ...(height !== undefined && { height }),
-                        ...(mode !== undefined && { mode })
+                        ...(mode !== undefined && { mode }),
+                        ...(fullPage === true && { fullPage })
                     });
                     return succeed(
                         { appId, revision, target: shot.target, width: shot.width, height: shot.height, ...(mode !== undefined && { mode }) },

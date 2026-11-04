@@ -101,7 +101,7 @@ export function createWriteTools(
     return [
         {
             name: 'ui_app_write',
-            description: `Change the app document with up to ${MAX_OPERATIONS_PER_WRITE} set, remove, merge and move operations. They apply in order to a copy, and later ones see the paths earlier ones made; the result is validated and committed as one write, or not at all. move keeps the key and subtree of an entry: { op: "move", path, before | after } reorders it among its siblings, and with to it moves into another map. A set through a missing parent fails: write the parent first or use merge. Pass expectedRevision from your last read. Returns { appId, revision, warnings }; on blocking errors nothing is written and they come back with their state paths.`,
+            description: `Change the app document with up to ${MAX_OPERATIONS_PER_WRITE} set, remove, merge and move operations. They apply in order to a copy, and later ones see the paths earlier ones made; the result is validated and committed as one write, or not at all. move keeps the key and subtree of an entry: { op: "move", path, before | after } reorders it among its siblings, and with to it moves into another map. A set through a missing parent fails: write the parent first or use merge. A change under data also goes into the running state at the paths it changed (no guard or rule runs); the rest of the state keeps what users changed. Pass expectedRevision from your last read. Returns { appId, revision, warnings }; on blocking errors nothing is written and they come back with their state paths.`,
             inputSchema: APP_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {

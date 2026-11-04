@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix: a `ui_app_write` that changes the document's `data` writes those changes into the running state at the paths that changed (no guard asks, no rule fires), so open views show them without `ui_state_reset`; the rest of `$.data` keeps what users and tools changed.
+- New: `ui_screenshot` takes `fullPage: true`: the viewport grows to everything the app can scroll to, in its document or a scrolling element of a component, up to 16000 px, measured again as the view grows. Page captures only.
+- Fix: `ui_component_get` returns the component's `tokens` (path, type and default, such as `image.fill`); the catalog had them but the entry dropped them, though the instructions sent agents there for component token names.
+- Change: the server instructions say that rules and tables wait for the results of rules and tables, that a unit runs after the units that write under its trigger, and that `on` commands take `from`.
 - Fix: a document write that adds or replaces a node, changes a node's `component` or adds, changes or removes a `<-` link reaches an open view as a write of the whole node, which the runtime mounts live (component defaults, composed components and links), instead of a load or a plain store write. A plain write left the node half-mounted: a `stat` swapped for a `panel` reported "Binding or controller of runtime failed at $" and a new node's `<-value` stayed unlinked ("—"). A change that belongs to the root node, or to theme, locales or composed, is still a load.
 - New: `ui_state_get` reads the state live: with a view open (the headless page or a tab a person opened) it asks that view for the state it holds and returns `source: "live"`; with none open, or none answering within 2 seconds, it returns the stored copy with `source: "stored"`. The `preview` block is unchanged.
 - Fix: a repeat `ui_preview` loads the headless page again, so it shows the current document and state. It returns the same `url`.

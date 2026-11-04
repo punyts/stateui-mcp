@@ -18,6 +18,8 @@ export interface CatalogFileComponent {
     readonly commands?: readonly string[];
     readonly tree?: JsonObject;
     readonly exposes?: readonly JsonObject[];
+    /** The component tokens the shape declares, such as `image.fill` */
+    readonly tokens?: readonly { readonly path: string; readonly group: string; readonly type: string; readonly default: string }[];
 }
 
 /** The `theme` section of `catalog.json`: the semantic tokens and the shipped overlays by kind */

@@ -36,6 +36,17 @@ describe('StateUiComponentCatalog', () => {
             expect(entry.exposes.length).toBeGreaterThan(0);
         });
 
+        it('should list the component tokens with their type and default, and none for a component without', () => {
+            // Arrange / Act
+            const image = catalog.get('image');
+            const panel = catalog.get('panel');
+
+            // Assert
+            expect(image?.tokens).toEqual([{ path: 'image.fill', type: 'color', default: '{color.surface.sunken}' }]);
+            expect(panel?.tokens).toEqual(expect.arrayContaining([{ path: 'panel.padding', type: 'inset', default: '{space.inset.md} {space.inset.md}' }]));
+            expect(catalog.get('confirmDialog')?.tokens).toEqual([]);
+        });
+
         it('should return undefined for an unknown name', () => {
             expect(catalog.get('nothing')).toBeUndefined();
         });
