@@ -6,6 +6,9 @@ import { childCount, isNodeValue } from '../../domain/nodeDepth.js';
 /** Most lines an outline returns; the rest is counted, not shown */
 export const MAX_OUTLINE_LINES = 400;
 
+/** The shell component the screens of an app of parts are drawn in */
+export const OUTLET = 'outlet';
+
 /** Components whose children are listed on the line of the parent when every child is a leaf */
 const INLINE_CHILDREN: readonly string[] = ['toolbar'];
 
@@ -16,6 +19,19 @@ const CONTENT_KEYS: readonly string[] = ['_title', '_label', '_text'];
 const MAX_CONTENT_CHARS = 80;
 
 const LINK_PREFIX = '<-';
+
+/** A screen drawn at the shell's outlet: its resolved root and its part of the state snapshot (`$.screens.{name}`) */
+export interface OutlineScreen {
+    readonly name: string;
+    readonly root: JsonObject;
+    readonly snapshot: JsonObject | undefined;
+}
+
+/** Where the content and the marks of a node are read: the overlay and the snapshot of the tree it is in */
+interface Scope {
+    readonly overlay: JsonObject | undefined;
+    readonly snapshot: JsonObject | undefined;
+}
 
 export interface OutlineSource {
     /** The resolved node the outline starts at */
@@ -33,6 +49,11 @@ export interface OutlineSource {
     readonly depth: number | undefined;
     /** Lines shown after the tree, such as the document's logic */
     readonly trailer?: readonly string[];
+    /**
+     * The screens of an app of parts, drawn at the shell's `outlet`: one screen takes the outlet's place under the
+     * outlet's key, several are listed one level below the outlet under their names
+     */
+    readonly screens?: readonly OutlineScreen[];
 }
 
 export interface Outline {
@@ -92,8 +113,8 @@ class Formatter {
 
     constructor(private readonly source: OutlineSource) {}
 
-    private content(node: JsonObject, path: readonly string[] | undefined): string | undefined {
-        const overlay = walk(this.source.overlay, path);
+    private content(node: JsonObject, path: readonly string[] | undefined, scope: Scope): string | undefined {
+        const overlay = walk(scope.overlay, path);
         for (const key of CONTENT_KEYS) {
             if (Object.hasOwn(node, `${LINK_PREFIX}${key}`)) continue;
             const text = textOf(overlay?.[key]) ?? textOf(node[key]);
@@ -102,8 +123,8 @@ class Formatter {
         return undefined;
     }
 
-    private markers(node: JsonObject, path: readonly string[] | undefined): string {
-        const live = walk(this.source.snapshotApp, path);
+    private markers(node: JsonObject, path: readonly string[] | undefined, scope: Scope): string {
+        const live = walk(scope.snapshot, path);
         const hidden = typeof live?.['hidden'] === 'boolean' ? live['hidden'] : node['hidden'];
         const open = typeof live?.['open'] === 'boolean' ? live['open'] : node['open'];
         const marks = [hidden === true ? 'hidden' : undefined, open === false ? 'closed' : undefined].filter(
@@ -119,13 +140,13 @@ class Formatter {
     }
 
     /** The text of one node without indentation */
-    private describe(node: JsonObject & { component: string }, key: string | undefined, path: readonly string[] | undefined): string {
+    private describe(node: JsonObject & { component: string }, key: string | undefined, path: readonly string[] | undefined, scope: Scope): string {
         const parts: string[] = [node.component];
         if (key !== undefined && key !== node.component) parts.push(key);
-        const content = this.content(node, path);
+        const content = this.content(node, path, scope);
         if (content !== undefined) parts.push(`"${content}"`);
         parts.push(...this.links(node));
-        return `${parts.join(' ')}${this.markers(node, path)}`;
+        return `${parts.join(' ')}${this.markers(node, path, scope)}`;
     }
 
     private recordSuffix(parent: JsonObject): string {
@@ -146,12 +167,19 @@ class Formatter {
         path: readonly string[] | undefined,
         level: number,
         indent: number,
-        suffix = ''
+        suffix = '',
+        scope: Scope = { overlay: this.source.overlay, snapshot: this.source.snapshotApp }
     ): void {
+        const screens = this.source.screens ?? [];
+        const only = node.component === OUTLET && screens.length === 1 ? screens[0] : undefined;
+        if (only !== undefined && isNodeValue(only.root)) {
+            this.emit(only.root, key, [], level, indent, suffix, { overlay: undefined, snapshot: only.snapshot });
+            return;
+        }
         const pad = '  '.repeat(indent);
         const { children, slots, ordered } = childNodes(node);
         const { depth } = this.source;
-        const base = `${pad}${this.describe(node, key, path)}${suffix}`;
+        const base = `${pad}${this.describe(node, key, path, scope)}${suffix}`;
 
         if (depth !== undefined && level > depth) {
             const hidden = childCount(node);
@@ -161,17 +189,22 @@ class Formatter {
         const inline =
             INLINE_CHILDREN.includes(node.component) && slots.length === 0 && children.length > 0 && children.every((child) => this.isLeaf(child.node));
         if (inline) {
-            const items = children.map((child) => this.describe(child.node, child.key, path === undefined ? undefined : [...path, 'children', child.key]));
+            const items = children.map((child) => this.describe(child.node, child.key, path === undefined ? undefined : [...path, 'children', child.key], scope));
             this.lines.push(`${base} [${items.join(', ')}]`);
             return;
         }
         this.lines.push(base);
+        if (node.component === OUTLET && screens.length > 1) {
+            for (const screen of screens) {
+                if (isNodeValue(screen.root)) this.emit(screen.root, screen.name, [], level + 1, indent + 1, '', { overlay: undefined, snapshot: screen.snapshot });
+            }
+        }
         for (const child of ordered) {
             const isChild = children.includes(child);
             const childPath = path === undefined ? undefined : isChild ? [...path, 'children', child.key] : [...path, child.key];
             const childLevel = isChild ? level + 1 : level;
             const rowSuffix = !isChild && child.key === 'row' ? this.recordSuffix(node) : '';
-            this.emit(child.node, child.key, childPath, childLevel, indent + 1, rowSuffix);
+            this.emit(child.node, child.key, childPath, childLevel, indent + 1, rowSuffix, scope);
         }
     }
 }
@@ -181,7 +214,8 @@ class Formatter {
  * out when it repeats the component), the component, its main content (`_title`, `_label` or `_text`, in the chosen
  * language when an overlay is given), its links as `<-target`, and `(hidden)` or `(closed)` marks. Hidden and closed
  * nodes stay in. A toolbar of leaf nodes shares one line. A `row` template is shown once, with the record count of
- * the link that feeds it; data values are never shown. The `trailer` lines follow the tree. Output past
+ * the link that feeds it; data values are never shown. The `screens` of an app of parts are drawn at the outlet. The
+ * `trailer` lines follow the tree. Output past
  * `MAX_OUTLINE_LINES` is cut and counted
  */
 export function formatOutline(source: OutlineSource): Outline {

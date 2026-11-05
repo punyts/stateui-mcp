@@ -188,6 +188,24 @@ describe('formatOutline', () => {
         });
     });
 
+    it('should list several screens under the outlet by name, each with the marks of its own snapshot', () => {
+        // Arrange
+        const shell: JsonObject = Object.freeze({ component: 'page', children: Object.freeze({ main: Object.freeze({ component: 'outlet' }) }) });
+        const home: JsonObject = Object.freeze({ component: 'panel', _title: 'Home' });
+        const help: JsonObject = Object.freeze({ component: 'modal', _title: 'Help', open: true });
+
+        // Act
+        const text = lines(shell, {
+            screens: [
+                { name: 'home', root: home, snapshot: undefined },
+                { name: 'help', root: help, snapshot: Object.freeze({ open: false }) }
+            ]
+        });
+
+        // Assert
+        expect(text).toEqual(['page', '  outlet main', '    panel home "Home"', '    modal help "Help" (closed)']);
+    });
+
     it('should return an empty outline for a root that is not a node', () => {
         expect(formatOutline(source({}))).toEqual({ text: '', lineCount: 0, cutLines: 0 });
     });

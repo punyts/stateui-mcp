@@ -58,7 +58,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
     const views = instanceViews === undefined ? {} : { instanceViews };
     const tools = [
         ...createCatalogTools(useCases),
-        ...createAppTools(useCases, browser),
+        ...createAppTools(useCases, browser, instanceViews),
         ...createPartTools(useCases, liveViews),
         ...createPartAppTools(useCases),
         ...createNodeTools(useCases),

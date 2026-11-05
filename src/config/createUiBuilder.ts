@@ -12,6 +12,7 @@ import type {
     UiPreviewLog
 } from '../application/ports/index.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
+import { OutlinePartApp } from '../application/use-cases/OutlinePartApp.js';
 import { ConfigureApp } from '../application/use-cases/ConfigureApp.js';
 import { CreateApp, CreatePartApp } from '../application/use-cases/CreateApp.js';
 import { CreateScreen } from '../application/use-cases/CreateScreen.js';
@@ -155,6 +156,8 @@ export interface UiBuilderUseCases {
     readonly getPartState?: GetPartState;
     /** With `parts` and `instanceStates` only */
     readonly runPartCommand?: RunPartCommand;
+    /** With `parts` and `instanceStates` only */
+    readonly outlinePartApp?: OutlinePartApp;
 }
 
 /** The use cases over their ports. Plain factories, no container */
@@ -216,7 +219,8 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
             instanceStates !== undefined && {
                 setPartState: new SetPartState(parts, instanceStates, validator, report),
                 getPartState: new GetPartState(instanceStates, previewLog, now, report),
-                runPartCommand: new RunPartCommand(instanceStates, runCommand)
+                runPartCommand: new RunPartCommand(instanceStates, runCommand),
+                outlinePartApp: new OutlinePartApp(instanceStates, validator, report)
             })
     };
 }

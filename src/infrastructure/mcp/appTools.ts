@@ -5,6 +5,8 @@ import type { PreviewBrowser } from '../preview/BrowserPreview.js';
 import { PART_APP_FIELDS, USES_TEXT, runPartAppCreate } from './partAppTools.js';
 import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
+import { isRunTarget, RUN_APP_FIELDS, runName, runTargets } from './runTarget.js';
+import type { RunTargetDependencies } from './runTarget.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
 
@@ -49,8 +51,11 @@ const OUTLINE = defineInput({
 });
 
 const TREE = defineInput({
-    appId: APP_ID,
-    path: { type: 'string', description: 'The node to start at, such as "$.app.children.main" or "app.children.main"; without it the app root' },
+    ...RUN_APP_FIELDS,
+    screen: { type: 'string', description: 'With app: draw only this screen at the outlet (and, with rendered, open it first). Without it every screen' },
+    content: { type: 'boolean', description: 'true: what the user sees (text, links, marks, record counts) instead of the structure with paths' },
+    logic: { type: 'boolean', description: 'With app: true adds the machines with their current state, the rules, guards and tables, those of the logic modules too' },
+    path: { type: 'string', description: 'The node to start at, such as "$.app.children.main" or "$.screens.home.children.form"; without it the app root' },
     depth: { type: 'integer', minimum: 0, description: 'How many levels to show below path; deeper nodes are counted on the line of their ancestor' },
     paths: { type: 'boolean', description: 'false: leave the state path off each line, for a shorter tree. Default true' },
     rendered: {
@@ -64,16 +69,24 @@ function notFound(appId: string): ToolOutcome {
     return fail('not-found', 'No application with this id', { appId });
 }
 
+function unknownScreen(screen: string, screens: readonly string[]): ToolOutcome {
+    const known = screens.length > 0 ? `its screens: ${screens.join(', ')}` : 'it has no screens';
+    return fail('invalid-argument', `The app has no screen "${screen}"; ${known}`, { argument: 'screen', screens });
+}
+
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
 }
 
 /** The lifecycle and read tools: create, list, get, validate, outline and read the state */
 export function createAppTools(
-    useCases: Pick<UiBuilderUseCases, 'createApp' | 'createPartApp' | 'listApps' | 'getApp' | 'validateApp' | 'validatePartApp' | 'outlineApp' | 'getState'>,
+    useCases: Pick<UiBuilderUseCases, 'createApp' | 'createPartApp' | 'listApps' | 'getApp' | 'validateApp' | 'validatePartApp' | 'outlineApp' | 'outlinePartApp' | 'findPartApp' | 'getState'>,
     /** The headless page, for ui_tree with rendered: true; absent, that answers browser-unavailable */
-    browser?: Pick<PreviewBrowser, 'rendered'>
+    browser?: Pick<PreviewBrowser, 'rendered' | 'open'>,
+    /** The views of app parts; absent, ui_tree takes only appId */
+    instanceViews?: RunTargetDependencies['instanceViews']
 ): readonly UiToolDefinition[] {
+    const resolve = runTargets({ useCases, ...(instanceViews !== undefined && { instanceViews }) });
     return [
         {
             name: 'ui_app_create',
@@ -193,36 +206,76 @@ export function createAppTools(
         {
             name: 'ui_tree',
             description:
-                'List the structure of the app as a nested list, one line per node: key, component and path, two spaces per level, bullets alternating - and *. [slot] marks a node held by a slot property (a footer, a row template); a row template draws once per record and has no element of its own. rendered: true lists what the headless page draws instead: each row and card with its runtime path (such as ...board.cols.k_open.body.main.slots.0), the path ui_interact and ui_screenshot need for it; a node with no box is (hidden) and its subtree is counted, not listed. path starts at a node, depth limits the levels, paths: false leaves the paths off. ui_outline shows the content. Capped at 400 lines. Returns { appId, revision, text, lineCount, cutLines, nodeCount }.',
+                'Show the app as a nested list, one line per node, two spaces per level. With app it shows the instance of an app part: the shell, with the screens drawn at its outlet (one screen takes the outlet\'s place; several are listed under it by name), each screen node with its own path ($.screens.home.children.form); screen draws only that screen. Default: the structure, key (component) and path per node, bullets alternating - and *; [slot] marks a node held by a slot property (a footer, a row template), and a row template draws once per record. content: true shows what the user sees instead: component, key, text, links, hidden or closed marks and record counts (no data values). logic: true adds the logic after the tree: each machine with its current state in the instance, then the rules, guards and tables, the units of a logic module named with the module as prefix (cart:totals). rendered: true lists what the headless page draws: each row and card with its runtime path (such as ...board.cols.k_open.body.main.slots.0), the path ui_interact and ui_screenshot need; a node with no box is (hidden) and its subtree is counted. path starts at a node, depth limits the levels, paths: false leaves the paths off. With appId, an app of the old store, content: true shows the outline with its logic, as ui_outline does. Capped at 400 lines. Returns { app | appId, revision, text, lineCount, cutLines, nodeCount?, screens? }.',
             inputSchema: TREE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = TREE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, depth, paths, rendered } = parsed.value;
+                const { app, appId, persona, screen, content, logic, path, depth, paths, rendered } = parsed.value;
+                const target = await resolve({ ...(app !== undefined && { app }), ...(appId !== undefined && { appId }), ...(persona !== undefined && { persona }) });
+                if (!isRunTarget(target)) return target;
+                if (target.kind === 'stored') {
+                    if (screen !== undefined) return fail('invalid-argument', 'screen works with app, the name of an app part', { argument: 'screen' });
+                    if (logic !== undefined) return fail('invalid-argument', 'logic works with app; with appId, content: true shows the logic', { argument: 'logic' });
+                } else if (screen !== undefined && !target.screens.includes(screen)) {
+                    return unknownScreen(screen, target.screens);
+                }
                 if (rendered === true) {
-                    const app = await useCases.getApp.execute(appId, { depth: 0 });
-                    if (app.kind !== 'found') return notFound(appId);
+                    if (content === true || logic === true) return fail('invalid-argument', 'rendered lists what the page draws; leave content and logic out', { argument: 'rendered' });
                     if (browser === undefined) return fail('browser-unavailable', 'This server has no headless browser, so it cannot list what the page draws');
                     const under = path === undefined ? '$.app' : statePath(path);
                     try {
-                        const nodes = await browser.rendered(appId, app.revision, under);
+                        if (screen !== undefined) await browser.open(target.appId, target.viewRevision, { screen });
+                        const nodes = await browser.rendered(target.appId, target.viewRevision, under);
                         if (nodes.length === 0) {
-                            return fail('not-rendered', `The page draws nothing at ${under}; check the path with ui_tree, and open what holds it (a tab, a drawer)`, { appId, path: under });
+                            return fail('not-rendered', `The page draws nothing at ${under}; check the path with ui_tree, and open what holds it (a tab, a drawer, a screen)`, { ...runName(target), path: under });
                         }
                         const tree = formatRenderedTree({ nodes, depth, paths: paths !== false });
-                        return succeed({ appId, revision: app.revision, text: tree.text, lineCount: tree.lineCount, cutLines: tree.cutLines, nodeCount: tree.nodeCount });
+                        return succeed({ ...runName(target), revision: target.revision, text: tree.text, lineCount: tree.lineCount, cutLines: tree.cutLines, nodeCount: tree.nodeCount });
                     } catch (error) {
                         if (error instanceof BrowserUnavailableError) return fail('browser-unavailable', error.message);
                         throw error;
                     }
                 }
-                const result = await useCases.outlineApp.execute(appId, {
-                    format: 'tree',
+                const at = {
                     ...(path !== undefined && { path: documentPath(path) }),
                     ...(depth !== undefined && { depth }),
                     ...(paths !== undefined && { paths })
-                });
+                };
+                if (target.kind === 'instance') {
+                    if (useCases.outlinePartApp === undefined) return fail('invalid-argument', 'This server keeps no app parts; give appId', { argument: 'app' });
+                    const result = await useCases.outlinePartApp.execute(target.part, {
+                        ...at,
+                        ...(screen !== undefined && { screen }),
+                        ...(content !== undefined && { content }),
+                        ...(logic !== undefined && { logic })
+                    });
+                    const name = { app: target.app };
+                    switch (result.kind) {
+                        case 'outline':
+                            return succeed({
+                                ...name,
+                                revision: target.revision,
+                                text: result.text,
+                                lineCount: result.lineCount,
+                                cutLines: result.cutLines,
+                                ...(result.nodeCount !== undefined && { nodeCount: result.nodeCount }),
+                                screens: result.screens
+                            });
+                        case 'unknown-screen':
+                            return unknownScreen(screen ?? '', result.screens);
+                        case 'invalid-path':
+                            return fail('invalid-path', result.reason, name);
+                        case 'missing-path':
+                            return fail('missing-path', `Nothing exists at ${result.missingAt}`, { ...name, path: result.path, missingAt: result.missingAt });
+                        case 'not-a-node':
+                            return fail('not-a-node', `${result.path} is not a node, so it has no tree`, { ...name, path: result.path });
+                        case 'invalid-input':
+                            return fail('invalid-argument', result.message, name);
+                    }
+                }
+                const result = await useCases.outlineApp.execute(target.appId, { ...at, ...(content !== true && { format: 'tree' as const }) });
                 switch (result.kind) {
                     case 'outline':
                         return succeed({
@@ -231,7 +284,7 @@ export function createAppTools(
                             text: result.text,
                             lineCount: result.lineCount,
                             cutLines: result.cutLines,
-                            nodeCount: result.nodeCount ?? 0
+                            ...(content !== true && { nodeCount: result.nodeCount ?? 0 })
                         });
                     case 'not-found':
                         return notFound(result.appId);

@@ -1,7 +1,14 @@
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { childCount, isNodeValue } from '../../domain/nodeDepth.js';
-import { MAX_OUTLINE_LINES } from './formatOutline.js';
+import { MAX_OUTLINE_LINES, OUTLET } from './formatOutline.js';
+
+/** A screen drawn at the shell's outlet: its resolved root and the state path of the root (`$.screens.{name}`) */
+export interface TreeScreen {
+    readonly name: string;
+    readonly root: JsonObject;
+    readonly path: string;
+}
 
 export interface TreeSource {
     /** The resolved node the tree starts at */
@@ -14,6 +21,13 @@ export interface TreeSource {
     readonly depth: number | undefined;
     /** False leaves the state path off each line */
     readonly paths: boolean;
+    /**
+     * The screens of an app of parts, drawn at the shell's `outlet`: one screen takes the outlet's place under the
+     * outlet's key, several are listed one level below the outlet under their names
+     */
+    readonly screens?: readonly TreeScreen[];
+    /** Lines shown after the tree, such as the logic */
+    readonly trailer?: readonly string[];
 }
 
 export interface Tree {
@@ -35,13 +49,20 @@ function bullet(level: number): string {
  * state path, indented two spaces per level with bullets that alternate between `-` and `*`. A node held by a slot
  * property (a `footer`, a `row` template) is marked `[slot]` and sits one level below its parent like a child; a
  * `row` template draws once per record. The state paths are the ones ui_interact, ui_state_set and ui_screenshot
- * take. Output past `MAX_OUTLINE_LINES` is cut and counted
+ * take. The `screens` of an app of parts are drawn at the outlet, with their own state paths. The `trailer` lines
+ * follow the tree. Output past `MAX_OUTLINE_LINES` is cut and counted
  */
 export function formatTree(source: TreeSource): Tree {
     const lines: string[] = [];
     let nodeCount = 0;
 
+    const screens = source.screens ?? [];
     const emit = (node: NodeValue, key: string, path: string, level: number, childLevel: number, slot: boolean): void => {
+        const only = node.component === OUTLET && screens.length === 1 ? screens[0] : undefined;
+        if (only !== undefined && isNodeValue(only.root)) {
+            emit(only.root, key, only.path, level, childLevel, slot);
+            return;
+        }
         nodeCount += 1;
         const marks = [slot ? '[slot]' : '', slot && key === 'row' ? '(one per record)' : ''].filter((mark) => mark !== '');
         const parts = [`${bullet(level)} ${key} (${node.component})`, ...marks];
@@ -52,6 +73,11 @@ export function formatTree(source: TreeSource): Tree {
             return;
         }
         lines.push(`${'  '.repeat(level)}${parts.join(' ')}`);
+        if (node.component === OUTLET && screens.length > 1) {
+            for (const screen of screens) {
+                if (isNodeValue(screen.root)) emit(screen.root, screen.name, screen.path, level + 1, childLevel + 1, false);
+            }
+        }
         for (const [property, value] of Object.entries(node)) {
             if (property === 'children' && isJsonObject(value)) {
                 for (const [childKey, child] of Object.entries(value)) {
@@ -64,6 +90,7 @@ export function formatTree(source: TreeSource): Tree {
     };
 
     if (isNodeValue(source.root)) emit(source.root, source.rootKey, source.rootPath, 0, 0, false);
+    if (source.trailer !== undefined) lines.push(...source.trailer);
     const lineCount = lines.length;
     if (lineCount <= MAX_OUTLINE_LINES) return { text: lines.join('\n'), lineCount, cutLines: 0, nodeCount };
     const cutLines = lineCount - MAX_OUTLINE_LINES;
