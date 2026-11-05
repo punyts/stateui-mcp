@@ -39,6 +39,9 @@ export function partNameProblem(name: unknown): string | undefined {
     return `"${String(name)}" is not a part name: lower-case letters, digits and dashes, starting with a letter, at most 63 characters`;
 }
 
+/** The error code of a part whose body does not have the shape of its kind, where the library has no reader of its own */
+export const PART_SHAPE_CODE = 'SUI-PART-SHAPE';
+
 /** The reason a repository gives for a body that is not a JSON object */
 export const PART_BODY_PROBLEM = 'a part body must be a JSON object';
 

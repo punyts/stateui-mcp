@@ -9,22 +9,27 @@ import {
     validateNode
 } from '@punyts/stateui-app/core';
 import type {
+    AppBlueprint,
     CatalogSource,
     ComponentLibrary,
     ComponentOverlays,
     DocumentComposed,
     JsonObject as LibraryJsonObject,
-    Node
+    Node,
+    PartSource
 } from '@punyts/stateui-app/core';
-import type { PropertyCheck, UiAppValidator } from '../application/ports/UiAppValidator.js';
+import type { PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
 import { checkDocumentLimits } from '../domain/limits.js';
+import type { PartKind } from '../domain/partName.js';
 import type { UiDocument } from '../domain/UiApp.js';
+import type { UiPartBodies } from '../domain/UiPart.js';
 import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
 import { nearestNames } from '../domain/nearestNames.js';
+import { assembledErrors, partErrors } from './partChecks.js';
 import { loadComponentOverlay } from './stateUiLibrary.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 
@@ -106,6 +111,14 @@ export class StateUiAppValidator implements UiAppValidator {
         });
         const unknown = result.errors.some((error) => error.code === UNKNOWN_COMPONENT && error.statePath === statePath);
         return unknown ? undefined : (this.withoutRuntime(result.node as unknown as JsonValue) as JsonObject);
+    }
+
+    validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
+        return assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName });
+    }
+
+    validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
+        return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName });
     }
 
     /** Controllers own runtime properties (`current`, `status`, `slots`); a read of the resolved node leaves them out */

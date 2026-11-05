@@ -29,15 +29,20 @@ import { SetState } from '../application/use-cases/SetState.js';
 import { ResetState } from '../application/use-cases/ResetState.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
-import { ValidateApp } from '../application/use-cases/ValidateApp.js';
+import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
 import { WriteApp } from '../application/use-cases/WriteApp.js';
+import { WritePart } from '../application/use-cases/WritePart.js';
+import type { UsageSource } from '../application/UsageIndex.js';
 
 /** The adapters the use cases run on */
 export interface UiBuilderPorts {
     /** The old one-document-per-app store, which the current tools use until epic 3 removes them */
     readonly repository: UiAppRepository;
-    /** The owner's parts, beside the app store (`FilePartRepository` behind `IndexedUiPartRepository` in the server); no use case reads them yet */
-    readonly parts?: UiPartRepository;
+    /**
+     * The owner's parts with their usage index, beside the app store (`IndexedUiPartRepository` over
+     * `FilePartRepository` in the server). With it, `writePart` and `validatePartApp` exist; no tool calls them yet
+     */
+    readonly parts?: UiPartRepository & UsageSource;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;
@@ -77,11 +82,15 @@ export interface UiBuilderUseCases {
     readonly uploadFile: UploadFile;
     readonly readFile: ReadFile;
     readonly readFileText: ReadFileText;
+    /** With `parts` only */
+    readonly writePart?: WritePart;
+    /** With `parts` only */
+    readonly validatePartApp?: ValidatePartApp;
 }
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
+    const { repository, parts, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     return {
@@ -105,6 +114,10 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
         uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, repository, now, report), newId, report),
         readFile,
-        readFileText: new ReadFileText(readFile)
+        readFileText: new ReadFileText(readFile),
+        ...(parts !== undefined && {
+            writePart: new WritePart(parts, parts, validator, report),
+            validatePartApp: new ValidatePartApp(parts, parts, validator, report)
+        })
     };
 }

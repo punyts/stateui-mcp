@@ -15,6 +15,11 @@ function byKindThenName(a: PartRef, b: PartRef): number {
     return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
 
+/** Where a use case gets the usage index: `IndexedUiPartRepository` */
+export interface UsageSource {
+    usage(): Promise<UsageIndex>;
+}
+
 /**
  * Who uses what among the owner's parts, in memory. Each part's direct references come from its body
  * (`partReferences`: an app's `uses` and the components in its nodes, a module's `needs`, a dataset's `model`, the
