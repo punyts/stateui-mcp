@@ -139,7 +139,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  *
  * | Route | What |
  * |---|---|
- * | `GET /` | the apps, with a link to each |
+ * | `GET /` | the apps (documents and app parts), with a link to each |
  * | `GET /apps/:appId` | the live view of an app: an app document, or an owner app (a part) assembled, with the default persona's instance |
  * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
@@ -200,7 +200,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             return;
         }
         if (method === 'GET' && path === '/') {
-            send(response, 200, 'text/html; charset=utf-8', indexPage(await repository.list()), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
+            // The app documents and the owner's app parts, the most recently changed first
+            const apps = [...(await repository.list()), ...((await options.instances?.list()) ?? [])].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+            send(response, 200, 'text/html; charset=utf-8', indexPage(apps), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
             return;
         }
         if (method === 'GET' && path === '/assets/host.js') {

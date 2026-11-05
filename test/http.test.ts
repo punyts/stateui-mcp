@@ -56,6 +56,20 @@ describe('GET /', () => {
         expect(html).not.toContain('<b>bold</b>');
     });
 
+    it('should list the app parts next to the app documents', async () => {
+        // Arrange
+        const created = await call(harness.client, 'ui_app_create', { name: 'corner-shop', title: 'Corner shop', shell: { component: 'page', children: { body: { component: 'outlet' } } } });
+        const partId = created.body['id'] as string;
+
+        // Act
+        const html = await (await fetch(`${origin}/`)).text();
+
+        // Assert
+        expect(created.isError).toBeFalsy();
+        expect(html).toContain(`<a href="/apps/${partId}">corner-shop</a>`);
+        expect(html).toContain(`href="/apps/${appId}"`);
+    });
+
     it('should send a policy that allows no script', async () => {
         const response = await fetch(`${origin}/`);
 

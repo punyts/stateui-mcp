@@ -1,6 +1,6 @@
 import type { Authority } from '@punyts/state-sync/authority';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
-import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
+import type { UiPartRepository, UiPartSummary } from '../../application/ports/UiPartRepository.js';
 import type { UsageSource } from '../../application/UsageIndex.js';
 import { collectIconNames } from '../../application/use-cases/GetUiApp.js';
 import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
@@ -26,13 +26,18 @@ export class InstanceViews {
     private readonly revisions = new Map<string, { readonly text: string; readonly revision: number }>();
 
     constructor(
-        private readonly parts: Pick<UiPartRepository, 'findById' | 'findByName'>,
+        private readonly parts: Pick<UiPartRepository, 'findById' | 'findByName' | 'list'>,
         private readonly usage: UsageSource,
         private readonly states: Pick<AuthorityInstanceStates, 'shape' | 'authority'>,
         private readonly catalog: ComponentCatalog,
         private readonly coreIconNames: readonly string[],
         private readonly ownerId: string
     ) {}
+
+    /** The owner's app parts, for the list of apps */
+    list(): Promise<readonly UiPartSummary[]> {
+        return this.parts.list('apps');
+    }
 
     /** The app part with this id, or undefined */
     find(appId: string): Promise<UiPart<'apps'> | undefined> {
