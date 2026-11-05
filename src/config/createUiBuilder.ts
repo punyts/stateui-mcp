@@ -1,4 +1,13 @@
-import type { ComponentCatalog, LiveStateReader, UiAppRepository, UiAppValidator, UiFileRepository, UiFileStore, UiPreviewLog } from '../application/ports/index.js';
+import type {
+    ComponentCatalog,
+    LiveStateReader,
+    UiAppRepository,
+    UiAppValidator,
+    UiFileRepository,
+    UiFileStore,
+    UiPartRepository,
+    UiPreviewLog
+} from '../application/ports/index.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { CreateApp } from '../application/use-cases/CreateApp.js';
 import { DeleteApp } from '../application/use-cases/DeleteApp.js';
@@ -25,7 +34,10 @@ import { WriteApp } from '../application/use-cases/WriteApp.js';
 
 /** The adapters the use cases run on */
 export interface UiBuilderPorts {
+    /** The old one-document-per-app store, which the current tools use until epic 3 removes them */
     readonly repository: UiAppRepository;
+    /** The owner's parts, beside the app store; the file adapter comes with O2.2 and the use cases that read it after */
+    readonly parts?: UiPartRepository;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;

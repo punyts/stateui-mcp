@@ -1,5 +1,6 @@
 export type * from './ComponentCatalog.js';
 export type * from './UiAppRepository.js';
+export type * from './UiPartRepository.js';
 export type * from './UiAppValidator.js';
 export type * from './UiFileRepository.js';
 export type * from './UiFileStore.js';

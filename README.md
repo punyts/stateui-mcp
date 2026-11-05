@@ -155,6 +155,8 @@ data/<appId>/files/<id>    the bytes of one uploaded file
 
 Every file is written to a temporary file in the same folder and renamed into place, and the writes of one app run one at a time, so a reader never sees half a file and a write is checked against the revision it read. `children` and keyed data maps are ordered by key: the files are written with `JSON.stringify` and read with `JSON.parse` and nothing re-sorts them (integer-like keys are refused, because JavaScript would move them). `app.json` (the document and its revision) and `state.json` (the synced state, written by the authority) are separate, so a state write never touches the document revision. Limits: 1 MiB per document, 2000 nodes, 10 MiB per file, 50 files and 100 MiB per app. Uploaded files that nothing references (not in the document or the synced state, read live in every mode: the server's authority, the statenet, or the statenet alone for a Persisted app; `$.server` is not included) are removed after 24 hours, when the next upload to the app happens.
 
+**Owner parts (in progress, not stored yet).** The owner-tree design moves apps to reusable parts (apps, themes, logic modules, models, datasets, components, patterns). `UiPart` (`src/domain/UiPart.ts`) is one stored part: an immutable UUID `id`, the `kind`, a slug `name` (`isPartName` of `@punyts/stateui-app/core`), the `revision` and the `body` of its kind. `UiPartRepository` (`src/application/ports/`) is the storage contract for every kind: `create`, `findByName`, `findById`, `list`, `write` and `delete` with `expectedRevision`, and `rename`; results are `created`, `written`, `deleted`, `renamed`, `conflict`, `not-found`, `duplicate-name` or `invalid` (a name that is not a slug, a body that is not an object). Only the in-memory fake (`src/testing/InMemoryUiPartRepository.ts`) implements it so far; the tools still use the app folders above.
+
 ## Security notes
 
 - **Local only by default.** The server binds `127.0.0.1`. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused.
@@ -171,7 +173,7 @@ npm run build       # dist/ (server) and dist/browser/host.js (host script)
 npm test            # Vitest; the Playwright test skips itself when Chromium is missing
 ```
 
-Layout: `src/domain` (pure rules), `src/application` (ports and use cases), `src/infrastructure/storage` (the JSON file adapters), `src/infrastructure/mcp` (tools and server), `src/infrastructure/http` (routes, pages, policy), `src/infrastructure/preview` (the hub of live views and the Playwright adapter), `src/browser/host.ts` (the script that runs in the page), `src/config` (options and composition).
+Layout: `src/domain` (pure rules), `src/application` (ports and use cases), `src/infrastructure/storage` (the JSON file adapters), `src/infrastructure/mcp` (tools and server), `src/infrastructure/http` (routes, pages, policy), `src/infrastructure/preview` (the hub of live views and the Playwright adapter), `src/browser/host.ts` (the script that runs in the page), `src/config` (options and composition), `src/testing` (fixtures and in-memory fakes for tests; not built).
 
 ## License
 
