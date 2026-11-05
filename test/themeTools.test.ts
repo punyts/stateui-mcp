@@ -70,6 +70,20 @@ describe('ui_theme_create', () => {
 });
 
 describe('ui_theme_write', () => {
+    it('should create a theme from no tokens when expectedRevision is left out, and not twice', async () => {
+        // Act
+        const created = await call(harness.client, 'ui_theme_write', { theme: 'harbor', operations: [{ op: 'set', path: 'color.accent.base', value: '#204080' }] });
+        const again = await call(harness.client, 'ui_theme_write', { theme: 'harbor', operations: [{ op: 'set', path: 'color.accent.base', value: '#802040' }] });
+        const badName = await call(harness.client, 'ui_theme_write', { theme: 'Harbor Blue', operations: [{ op: 'set', path: 'color.accent.base', value: '#204080' }] });
+        const stored = await call(harness.client, 'ui_get', { kind: 'themes', name: 'harbor' });
+
+        // Assert
+        expect(created.body).toMatchObject({ theme: 'harbor', revision: 1, created: true });
+        expect(again.body).toMatchObject({ error: 'conflict', currentRevision: 1 });
+        expect(badName.body).toMatchObject({ error: 'invalid-name', argument: 'theme' });
+        expect(stored.body['value']).toEqual({ tokens: { color: { accent: { base: '#204080' } } } });
+    });
+
     it('should set tokens at the base and in an overlay and report contrast and reach', async () => {
         // Act
         const result = await call(harness.client, 'ui_theme_write', {

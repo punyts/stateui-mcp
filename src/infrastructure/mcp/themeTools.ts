@@ -25,7 +25,7 @@ const THEME_ITEMS = {
 
 const THEME_WRITE = defineInput({
     theme: { type: 'string', required: true, description: 'The theme name from ui_list (kind "themes")' },
-    expectedRevision: { type: 'integer', minimum: 1, required: true, description: 'The theme revision you last read. When it has changed since, nothing is written' },
+    expectedRevision: { type: 'integer', minimum: 1, description: 'The theme revision you last read; when it has changed since, nothing is written. Leave it out to create the theme, starting with no tokens' },
     operations: {
         type: 'list',
         required: true,
@@ -117,7 +117,7 @@ export function createThemeTools(useCases: Pick<UiBuilderUseCases, 'createTheme'
         },
         {
             name: 'ui_theme_write',
-            description: `Build time: change a theme token by token, with up to ${MAX_OPERATIONS_PER_WRITE} operations applied in order: set or remove a token at the base or in one overlay (overlay), add an overlay with its kind or remove one. Token names come from ui_tokens_list and component token names from ui_component_get; never guess one. Each overlay kind may touch only its groups (mode: color, elevation; brand: palette, font.family, radius, icon; motion: motion). The theme is checked on its own and written as one change, or not at all; then every app that uses it is checked. Pass expectedRevision. Returns { theme, revision, warnings, contrast, reaches }. ${REPORT_TEXT}.`,
+            description: `Build time: change a theme token by token, with up to ${MAX_OPERATIONS_PER_WRITE} operations applied in order: set or remove a token at the base or in one overlay (overlay), add an overlay with its kind or remove one. Token names come from ui_tokens_list and component token names from ui_component_get; never guess one. Each overlay kind may touch only its groups (mode: color, elevation; brand: palette, font.family, radius, icon; motion: motion). The theme is checked on its own and written as one change, or not at all; then every app that uses it is checked. Pass expectedRevision; leave it out to create a theme from no tokens (ui_theme_create copies one instead). Returns { theme, revision, created, warnings, contrast, reaches }. ${REPORT_TEXT}.`,
             inputSchema: THEME_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -130,12 +130,14 @@ export function createThemeTools(useCases: Pick<UiBuilderUseCases, 'createTheme'
                     if (!('op' in converted)) return converted;
                     operations.push(converted);
                 }
-                const result = await writeTheme.execute({ theme, expectedRevision, operations });
+                const result = await writeTheme.execute({ theme, ...(expectedRevision !== undefined && { expectedRevision }), operations });
                 switch (result.kind) {
                     case 'written':
-                        return succeed(reportBody(theme, result));
+                        return succeed({ ...reportBody(theme, result), created: result.created });
+                    case 'invalid-name':
+                        return fail('invalid-name', result.reason, { argument: 'theme' });
                     case 'not-found':
-                        return fail('not-found', `No theme named "${theme}"${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : '; ui_list lists the themes'}`, {
+                        return fail('not-found', `No theme named "${theme}"${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : '; leave expectedRevision out to create it'}`, {
                             argument: 'theme',
                             nearest: result.nearest
                         });
