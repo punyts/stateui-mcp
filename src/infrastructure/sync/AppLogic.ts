@@ -47,6 +47,16 @@ function toServerWrite(write: LogicWrite): ServerWrite {
 }
 
 /**
+ * Checks and follows the server writes of one instance (its logic's commits and the tools' writes) for the shared
+ * datasets it binds (`DatasetHub`): `check` is asked before the writes are applied and refuses them with a reason;
+ * `applied` is told after
+ */
+export interface DataGate {
+    check(writes: readonly ServerWrite[]): string | undefined;
+    applied(writes: readonly ServerWrite[]): void;
+}
+
+/**
  * Runs one Full-mode app's `logic` on its authority. Client changes reach the engine after they are applied and
  * acknowledged (`onApplied`); guard rules answer before (`onChange`), so a refused change is an authority reject and
  * the view gets `sync.rejected`. Tool writes go through `write`, which asks the guards and runs the logic the same way.
@@ -70,7 +80,8 @@ export class AppLogic {
         private readonly library: ComponentLibrary,
         private readonly onEvent: AppLogicEvent,
         private readonly report: (message: string, failure: LogicFailure) => void,
-        private readonly onCall?: AppLogicCall
+        private readonly onCall?: AppLogicCall,
+        private readonly gate?: DataGate
     ) {
         this.removers.push(
             authority.onApplied((change) => {
@@ -115,8 +126,13 @@ export class AppLogic {
         const host: LogicHost = {
             get: read,
             commit: (writes) => {
-                this.authority.writeAll(writes.map(toServerWrite));
+                const server = writes.map(toServerWrite);
+                const refused = this.gate?.check(server);
+                if (refused !== undefined) throw new Error(refused);
+                this.authority.writeAll(server);
+                this.gate?.applied(server);
             },
+            ...(this.gate !== undefined && { guard: (change: LogicChange) => (this.gate as DataGate).check([toServerWrite(change)]) }),
             resolve: index.resolve,
             screens: () => (isJsonObject(document['screens']) ? (document['screens'] as unknown as RouteScreens) : undefined),
             fields: index.fields,
@@ -146,8 +162,12 @@ export class AppLogic {
      * reason when a guard refused it. With `logic` false it is written as it is: no guard asks, no rule fires
      */
     write(path: string, value: JsonValue | undefined, logic = true): string | undefined {
+        const write: ServerWrite = value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue };
+        const refused = this.gate?.check([write]);
+        if (refused !== undefined) return refused;
         if (!logic) {
-            this.authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
+            this.authority.write(write);
+            this.gate?.applied([write]);
             return undefined;
         }
         const change: LogicChange = value === undefined ? { path } : { path, value: value as AppValue };
@@ -155,9 +175,25 @@ export class AppLogic {
         if (reason !== undefined) return reason;
         const previous = this.read(path);
         if (previous !== undefined) change.previous = previous;
-        this.authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
+        this.authority.write(write);
+        this.gate?.applied([write]);
         this.engine?.changes([change]);
         return undefined;
+    }
+
+    /**
+     * Writes that come from outside the instance (a shared dataset changed): applied as one push without a guard, then
+     * looked up by the logic like client changes
+     */
+    receive(writes: readonly ServerWrite[]): void {
+        const changes = writes.map((write): LogicChange => {
+            const change: LogicChange = write.op === 'delete' ? { path: write.path } : { path: write.path, value: write.value as AppValue };
+            const previous = this.read(write.path);
+            if (previous !== undefined) change.previous = previous;
+            return change;
+        });
+        this.authority.writeAll(writes);
+        this.engine?.changes(changes);
     }
 
     /** The engine's last runs: what started each and what every unit whose trigger matched did; empty without logic */

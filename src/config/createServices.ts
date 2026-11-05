@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
+import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
 import type { UiBuilderUseCases } from './createUiBuilder.js';
@@ -22,6 +23,7 @@ import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
+import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
 import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import { PersistedStates } from '../infrastructure/sync/PersistedStates.js';
@@ -84,6 +86,11 @@ export function createServices(options: ServicesOptions): Services {
     const relay = options.statenet === undefined ? undefined : new StatenetRelayStorage(options.statenet, options.serverKey);
     const persisted = options.statenet === undefined ? undefined : new PersistedStates(options.statenet);
     const { validator, catalog, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
+    const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
+    const parts = new IndexedUiPartRepository(partFiles);
+    // Instances bound to one shared dataset see each other's changes (Full mode)
+    const writeData = new WriteData(parts, validator, randomUUID, options.report);
+    const datasets = new DatasetHub(parts, (name, operations) => writeData.execute({ name, operations }), options.report);
     const authorities = new AppAuthorities(
         relay ?? new FileNamespaceStorage(folders),
         (appId, name, value, viewId) => {
@@ -91,14 +98,13 @@ export function createServices(options: ServicesOptions): Services {
             hub.touch(appId, viewId);
         },
         options.serverKey,
-        { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) }
+        { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) },
+        datasets
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
-    const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
-    const parts = new IndexedUiPartRepository(partFiles);
     const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
     const instances = new FileUiInstanceRepository(folders, lock, ownerId);
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields));
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);

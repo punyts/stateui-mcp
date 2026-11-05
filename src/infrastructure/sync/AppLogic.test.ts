@@ -307,3 +307,52 @@ describe('AppLogic navigate', () => {
         expect(events.map(([name]) => name)).toEqual(['logic.failed']);
     });
 });
+
+describe('AppLogic data gate', () => {
+    async function gated(refuse: (path: string) => string | undefined) {
+        const authority: Authority = await createAuthority({
+            namespace: NAMESPACE,
+            storage: createMemoryNamespaceStorage(),
+            initial: { data: JSON.parse(JSON.stringify(DOCUMENT['data'])), app: {} },
+            createParents: true
+        });
+        const applied: string[][] = [];
+        const gate = Object.freeze({
+            check: (writes: readonly { path: string }[]) => writes.map((write) => refuse(write.path)).find((reason) => reason !== undefined),
+            applied: (writes: readonly { path: string }[]) => {
+                applied.push(writes.map((write) => write.path));
+            }
+        });
+        const logic = new AppLogic(authority, library, () => undefined, () => undefined, undefined, gate);
+        logic.setDocument(DOCUMENT);
+        return { authority, logic, applied };
+    }
+
+    it('should refuse a tool write the gate refuses, with or without logic, and tell the gate what was written', async () => {
+        // Arrange
+        const { authority, logic, applied } = await gated((path) => (path.startsWith('$.data.contacts.bad') ? 'not a contact' : undefined));
+
+        // Act
+        const refused = [logic.write('$.data.contacts.bad', { name: 'X' }), logic.write('$.data.contacts.bad', { name: 'X' }, false)];
+        const written = logic.write('$.data.contacts.c1', { name: 'Ana' });
+
+        // Assert
+        expect(refused).toEqual(['not a contact', 'not a contact']);
+        expect(written).toBeUndefined();
+        expect(authority.get('$.data.contacts')).toEqual({ c1: { name: 'Ana' } });
+        expect(applied).toEqual([['$.app.children.addContact.phase'], ['$.data.contacts.c1'], ['$.data.stats.contacts']]);
+    });
+
+    it('should run the rules for writes it receives, without asking the gate', async () => {
+        // Arrange
+        const { authority, logic } = await gated(() => 'refused');
+
+        // Act
+        logic.receive([{ path: '$.data.contacts.c1', op: 'set', value: { name: 'Ana' } }]);
+
+        // Assert
+        expect(authority.get('$.data.contacts.c1')).toEqual({ name: 'Ana' });
+        // the rule's own commit asks the gate, which refuses it here
+        expect(authority.get('$.data.stats.contacts')).toBe(0);
+    });
+});

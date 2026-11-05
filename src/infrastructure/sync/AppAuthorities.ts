@@ -2,14 +2,17 @@ import type { Report } from '@punyts/core';
 import type { ComponentLibrary, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
-import type { Authority, NamespaceStorage } from '@punyts/state-sync/authority';
+import type { Authority, NamespaceStorage, ServerWrite } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import { AppCalls } from './AppCalls.js';
 import type { AppProcedure } from './AppCalls.js';
+import type { DataGate } from './AppLogic.js';
 import { AppLogic } from './AppLogic.js';
+import { dataWrites } from './dataWrites.js';
+import type { DataWrite } from './dataWrites.js';
 import { appNamespace } from './FileNamespaceStorage.js';
 import type { InstanceStart } from './InstanceStart.js';
 
@@ -19,25 +22,10 @@ export type AppEmitHandler = (appId: string, name: string, value: JsonValue | un
 /** More data changes than this in one document write set `$.data` whole */
 const MAX_DATA_WRITES = 200;
 
-type DataWrite = { path: string; op: 'set'; value: SyncValue } | { path: string; op: 'delete' };
-
-function sameJson(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
-    return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/** The writes that turn `previous` into `next` at `path`: into objects key by key, anything else whole */
-function dataWrites(path: string, previous: JsonValue | undefined, next: JsonValue | undefined, writes: DataWrite[]): void {
-    if (sameJson(previous, next)) return;
-    if (next === undefined) {
-        writes.push({ path, op: 'delete' });
-        return;
-    }
-    if (!isJsonObject(previous) || !isJsonObject(next)) {
-        writes.push({ path, op: 'set', value: next as SyncValue });
-        return;
-    }
-    for (const key of Object.keys(previous)) if (!Object.hasOwn(next, key)) writes.push({ path: `${path}.${key}`, op: 'delete' });
-    for (const [key, value] of Object.entries(next)) dataWrites(`${path}.${key}`, previous[key], value, writes);
+/** The `DataGate` of every namespace: checks and follows the server writes to the shared datasets an instance binds */
+export interface InstanceDataGate {
+    check(namespace: string, writes: readonly ServerWrite[]): string | undefined;
+    applied(namespace: string, writes: readonly ServerWrite[]): void;
 }
 
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
@@ -78,7 +66,9 @@ export class AppAuthorities {
         private readonly onEmit: AppEmitHandler,
         /** The key that encrypts `$.server` at rest; without it an app whose state has `$.server` is refused */
         private readonly serverKey?: Uint8Array,
-        private readonly logic?: AppLogicOptions
+        private readonly logic?: AppLogicOptions,
+        /** Shared datasets (`DatasetHub`): asked before each server write of an instance and told after */
+        private readonly dataGate?: InstanceDataGate
     ) {
         this.calls = new AppCalls((appId, name, payload) => this.onEmit(appId.toLowerCase(), name, payload, LOGIC_VIEW_ID), logic?.procedures);
     }
@@ -103,6 +93,16 @@ export class AppAuthorities {
     async instanceState(start: InstanceStart, storage: NamespaceStorage): Promise<JsonObject> {
         const { server: _server, ...state } = (await this.instance(start, storage)).state() as JsonObject;
         return state;
+    }
+
+    /**
+     * Writes from outside a running instance (a shared dataset changed) applied to its authority as one push, then
+     * looked up by its logic
+     */
+    receiveInstance(key: InstanceKey, authority: Authority, writes: readonly ServerWrite[]): void {
+        const logic = this.logics.get(appNamespace(key));
+        if (logic !== undefined) logic.receive(writes);
+        else authority.writeAll(writes);
     }
 
     /** Closes a running instance's connections, waits for its saves and forgets it */
@@ -142,7 +142,8 @@ export class AppAuthorities {
             library,
             (name, payload) => this.onEmit(appId, name, payload, LOGIC_VIEW_ID),
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
-            (name, payload) => this.calls.ask(appId, name, payload)
+            (name, payload) => this.calls.ask(appId, name, payload),
+            this.gateOf(namespace)
         );
         this.logics.set(namespace, logic);
         try {
@@ -190,8 +191,18 @@ export class AppAuthorities {
     private writeTo(namespace: string, authority: Authority, path: string, value: JsonValue | undefined, options: { logic?: boolean }): string | undefined {
         const logic = this.logics.get(namespace);
         if (logic !== undefined) return logic.write(path, value, options.logic !== false);
-        authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
+        const write: ServerWrite = value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue };
+        const refused = this.dataGate?.check(namespace, [write]);
+        if (refused !== undefined) return refused;
+        authority.write(write);
+        this.dataGate?.applied(namespace, [write]);
         return undefined;
+    }
+
+    private gateOf(namespace: string): DataGate | undefined {
+        const gate = this.dataGate;
+        if (gate === undefined) return undefined;
+        return { check: (writes) => gate.check(namespace, writes), applied: (writes) => gate.applied(namespace, writes) };
     }
 
     /**
