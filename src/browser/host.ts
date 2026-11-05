@@ -669,7 +669,8 @@ class LiveView {
     }
 
     private sendCommand(command: Extract<ServerMessage, { type: 'command' }>): void {
-        const target = command.target.startsWith('$.') ? command.target : `$.${command.target}`;
+        // A navigate target is a screen name, not a path
+        const target = command.command === 'navigate' || command.target.startsWith('$.') ? command.target : `$.${command.target}`;
         this.post({ type: 'command', target, command: command.command, ...(command.value !== undefined && { value: command.value }) });
     }
 

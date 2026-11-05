@@ -749,6 +749,40 @@ describe('live tools', () => {
         }
     });
 
+    it('should issue navigate with a screen name and refuse a screen the app does not have', async () => {
+        // Arrange
+        const appId = await call(harness.client, 'ui_app_create', {
+            name: 'shop',
+            document: {
+                app: { component: 'page', children: { header: { component: 'text', _text: 'Shop' } } },
+                screens: {
+                    home: { title: 'Home', root: { component: 'page', children: { toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } } } },
+                    product: { title: 'Product', params: { id: { type: 'string', required: true } }, root: { component: 'page' } }
+                },
+                start: 'home'
+            }
+        }).then((created) => created.body['appId'] as string);
+        const view = openView(appId, 'browser');
+
+        // Act
+        const moved = await call(harness.client, 'ui_command', { appId, target: 'product', command: 'navigate', value: { id: 'p1' } });
+        const unknown = await call(harness.client, 'ui_command', { appId, target: 'cart', command: 'navigate' });
+        const notObject = await call(harness.client, 'ui_command', { appId, target: 'product', command: 'navigate', value: 'p1' });
+        const inScreen = await call(harness.client, 'ui_command', { appId, target: 'screens.home.children.toasts', command: 'show', value: 'saved' });
+        const missing = await call(harness.client, 'ui_command', { appId, target: 'screens.home.children.nope', command: 'show' });
+
+        // Assert
+        expect(moved.isError).toBe(false);
+        expect(view.filter((message) => message.type === 'command')).toMatchObject([
+            { target: 'product', command: 'navigate', value: { id: 'p1' } },
+            { target: 'screens.home.children.toasts', command: 'show', value: 'saved' }
+        ]);
+        expect(unknown.body).toMatchObject({ error: 'unknown-screen', screens: ['home', 'product'] });
+        expect(notObject.body['error']).toBe('invalid-value');
+        expect(inScreen.isError).toBe(false);
+        expect(missing.body).toMatchObject({ error: 'missing-path', missingAt: 'screens.home.children.nope' });
+    });
+
     it('should refuse an undeclared command with the declared ones', async () => {
         const appId = await createForm();
 

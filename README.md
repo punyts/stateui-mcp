@@ -95,7 +95,7 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 | `ui_state_set` | `appId`, `path`, `value` or `remove: true`, `logic?`, `expectedRevision?` | `{ appId, revision, path }`; the value syncs to every open view, missing parents are created, `remove: true` removes an entry under `$.data` (a record), and the document revision does not change; `conflict`, `invalid-value` or the refusal reason; `logic: false` writes past the guards and fires no rule |
 | `ui_state_reset` | `appId`, `expectedRevision?` | `{ appId, revision }`; `$.data` is the document's data again and `$.app` loses every articulation, no guard or rule runs, then the logic starts again with an empty trace; `persisted-app` |
 | `ui_preview` | `appId` | `{ appId, revision, url, rendered, errors, note? }`; opens the headless page, or reloads it when it is already open, and waits for the revision |
-| `ui_command` | `appId`, `target`, `command`, `value?` | `{ appId, revision, command, previewAttached, message }`; delivered to every open view, the headless page included |
+| `ui_command` | `appId`, `target`, `command`, `value?` | `{ appId, revision, command, previewAttached, message }`; delivered to every open view, the headless page included. `navigate` takes a screen name as `target` and the params as `value` |
 | `ui_file_read` | `appId`, `fileId` | `{ file, text, truncated, note? }` |
 | `ui_app_delete` | `appId`, `expectedRevision` | `{ appId, revision }`; `conflict`, `not-found` |
 | `ui_screenshot` | `appId`, `path?`, `width?`, `height?`, `mode?` | an MCP image (PNG) and `{ appId, revision, target, width, height, mode? }` |

@@ -69,9 +69,9 @@ const PREVIEW = defineInput({ appId: APP_ID });
 
 const COMMAND = defineInput({
     appId: APP_ID,
-    target: { type: 'string', required: true, description: 'A node under app, such as "app.children.main.children.toasts" (a leading "$." is allowed)' },
-    command: { type: 'string', required: true, description: 'A command the target component declares; ui_component_get lists them' },
-    value: { type: 'json', description: 'The payload, for the commands that take one' }
+    target: { type: 'string', required: true, description: 'A node under app or a screen, such as "app.children.main.children.toasts" or "screens.home.children.list" (a leading "$." is allowed); for navigate, a screen name' },
+    command: { type: 'string', required: true, description: 'A command the target component declares (ui_component_get lists them), or "navigate"' },
+    value: { type: 'json', description: 'The payload, for the commands that take one; for navigate, the params of the screen as an object' }
 });
 
 const SCREENSHOT = defineInput({
@@ -325,7 +325,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_command',
             description:
-                'Run a component command in the open views, the headless page included: show a toast, focus a field, scroll to a record. Runtime only; nothing is stored. Returns { appId, revision, command, previewAttached, message }; with no view open the message says the command was not delivered (open one with ui_preview).',
+                'Run a component command in the open views, the headless page included: show a toast, focus a field, scroll to a record. In an app with screens, command "navigate" with a screen name as target and the params as value shows that screen. Runtime only; nothing is stored. Returns { appId, revision, command, previewAttached, message }; with no view open the message says the command was not delivered (open one with ui_preview).',
             inputSchema: COMMAND.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -368,6 +368,12 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                         });
                     case 'invalid-value':
                         return fail('invalid-value', result.message, { appId: result.appId, command: result.command });
+                    case 'unknown-screen':
+                        return fail(
+                            'unknown-screen',
+                            result.screens.length === 0 ? `The app has no screens, so it cannot navigate to "${result.target}"` : `No screen is named "${result.target}"`,
+                            { appId: result.appId, target: result.target, screens: result.screens }
+                        );
                 }
             }
         }

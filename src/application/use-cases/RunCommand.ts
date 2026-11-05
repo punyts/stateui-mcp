@@ -20,10 +20,16 @@ export const NO_PREVIEW_MESSAGE = 'no preview is open; the command was not deliv
 /** The message when a preview reported within the heartbeat window */
 export const PREVIEW_OPEN_MESSAGE = 'a preview is open; the preview host forwards the command to it until it expires';
 
+/** The command that moves the app to another screen; its target is a screen name */
+export const NAVIGATE_COMMAND = 'navigate';
+
 export interface RunCommandInput {
-    /** A dotted document path to a node under `app`, such as `app.children.main.children.toasts` */
+    /**
+     * A dotted state path to a node under `app` (`app.children.main.children.toasts`) or under a screen
+     * (`screens.home.children.list`, the screen's root being `screens.home`); for `navigate`, a screen name
+     */
     readonly target: string;
-    /** A command the target's component declares in the catalog */
+    /** A command the target's component declares in the catalog, or `navigate` */
     readonly command: string;
     /** The payload, for the commands that take one */
     readonly value?: JsonValue;
@@ -65,7 +71,9 @@ export type RunCommandResult =
           readonly declared: readonly string[];
       }
     /** The value does not fit what the command takes; nothing was issued */
-    | { readonly kind: 'invalid-value'; readonly appId: string; readonly command: string; readonly message: string };
+    | { readonly kind: 'invalid-value'; readonly appId: string; readonly command: string; readonly message: string }
+    /** `navigate` names a screen the document does not have; `screens` lists the ones it has, empty without screens */
+    | { readonly kind: 'unknown-screen'; readonly appId: string; readonly target: string; readonly screens: readonly string[] };
 
 type ValueCheck = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
@@ -121,23 +129,29 @@ export class RunCommand {
         const app = await this.repository.findById(appId);
         if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
 
+        if (input.command === NAVIGATE_COMMAND) return this.finish(appId, await this.navigate(appId, app.document, app.revision, input));
+
         const parsed = parseDocumentPath(input.target);
         if (!parsed.ok) return this.finish(appId, { kind: 'invalid-target', appId, reason: parsed.reason });
-        if (parsed.path[0] !== 'app') {
+        const inScreen = parsed.path[0] === 'screens' && parsed.path.length >= 2;
+        if (parsed.path[0] !== 'app' && !inScreen) {
             return this.finish(appId, {
                 kind: 'invalid-target',
                 appId,
-                reason: 'A command target is a node path under "app", such as app.children.main'
+                reason: 'A command target is a node path under "app", such as app.children.main, or under a screen, such as screens.home.children.list'
             });
         }
 
-        const found = resolveDocumentPath(app.document, parsed.path);
+        // A screen's state root `screens.home` is the document's `screens.home.root`
+        const documentPath = inScreen ? [...parsed.path.slice(0, 2), 'root', ...parsed.path.slice(2)] : parsed.path;
+        const found = resolveDocumentPath(app.document, documentPath);
         if (!found.found) {
+            const missing = documentPath.slice(0, found.missingAt + 1);
             return this.finish(appId, {
                 kind: 'missing-path',
                 appId,
                 target: input.target,
-                missingAt: parsed.path.slice(0, found.missingAt + 1).join('.')
+                missingAt: (inScreen && missing.length > 2 ? [...missing.slice(0, 2), ...missing.slice(3)] : missing).join('.')
             });
         }
         const node = found.value;
@@ -164,12 +178,34 @@ export class RunCommand {
             return this.finish(appId, { kind: 'invalid-value', appId, command: input.command, message: check.message });
         }
 
+        return this.finish(appId, await this.issue(appId, app.revision, input));
+    }
+
+    /**
+     * Checks a `navigate`: the target names a screen of the document and the params are an object. The open views
+     * check the params against the screen's declarations when they run it
+     */
+    private async navigate(appId: string, document: JsonObject, revision: number, input: RunCommandInput): Promise<RunCommandResult> {
+        const screens = isJsonObject(document['screens']) ? document['screens'] : {};
+        if (!Object.hasOwn(screens, input.target)) {
+            return { kind: 'unknown-screen', appId, target: input.target, screens: Object.keys(screens) };
+        }
+        if (input.value !== undefined && !isJsonObject(input.value)) {
+            return { kind: 'invalid-value', appId, command: input.command, message: 'navigate takes the params of the screen as an object value' };
+        }
+        if (input.value !== undefined && documentBytes(input.value) > MAX_COMMAND_VALUE_BYTES) {
+            return { kind: 'invalid-value', appId, command: input.command, message: `value is over ${MAX_COMMAND_VALUE_BYTES} bytes: a command carries a key or a small payload` };
+        }
+        return this.issue(appId, revision, input);
+    }
+
+    private async issue(appId: string, revision: number, input: RunCommandInput): Promise<RunCommandResult> {
         const issuedAt = this.now();
         const previewAttached = (await this.previewLog.status(appId, issuedAt)).attached;
-        return this.finish(appId, {
+        return {
             kind: 'issued',
             appId,
-            revision: app.revision,
+            revision,
             command: {
                 id: this.newId(),
                 target: input.target,
@@ -179,7 +215,7 @@ export class RunCommand {
             },
             previewAttached,
             message: previewAttached ? PREVIEW_OPEN_MESSAGE : NO_PREVIEW_MESSAGE
-        });
+        };
     }
 
     private finish(appId: string, result: RunCommandResult): RunCommandResult {
