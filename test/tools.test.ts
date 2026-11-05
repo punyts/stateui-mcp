@@ -117,7 +117,8 @@ describe('tool list', () => {
                 'ui_theme_write',
                 'ui_model_write',
                 'ui_data_write',
-                'ui_data_query'
+                'ui_data_query',
+                'ui_logic_write'
             ].sort()
         );
     });
