@@ -63,6 +63,19 @@ export class AuthorityInstanceStates implements InstanceStates {
         return this.authorities.instanceState(start, storage);
     }
 
+    async stop(app: UiPart<'apps'>, whileStopped: () => Promise<void>): Promise<void> {
+        const key = this.key(app);
+        const text = instanceKeyText(key);
+        await this.lock.run(text, async () => {
+            if (this.running.has(text)) {
+                this.hub?.detach(appNamespace(key));
+                await this.authorities.forgetInstance(key);
+                this.running.delete(text);
+            }
+            await whileStopped();
+        });
+    }
+
     /** The authority of the app's running instance, for a view's socket; started (or restarted over a changed definition) first */
     async authority(app: UiPart<'apps'>): Promise<Authority> {
         return this.open(await this.started(app));

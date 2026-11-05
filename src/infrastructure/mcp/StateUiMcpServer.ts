@@ -8,6 +8,7 @@ import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
 import type { AppCalls } from '../sync/AppCalls.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
+import type { InstanceViews } from '../preview/InstanceViews.js';
 import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
 import { createDeleteTools } from './deleteTools.js';
@@ -18,6 +19,7 @@ import { createNodeTools } from './nodeTools.js';
 import { createThemeTools } from './themeTools.js';
 import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
+import { createStateTools } from './stateTools.js';
 import { fail } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 import { createWriteTools } from './writeTools.js';
@@ -34,7 +36,9 @@ export interface StateUiToolDependencies {
     /** The calls of Full-mode logic that wait for the agent's answer */
     readonly calls: Pick<AppCalls, 'answer'>;
     /** The apps' server-side logic, for ui_logic_trace */
-    readonly authorities?: Pick<AppAuthorities, 'trace' | 'clearTrace'>;
+    readonly authorities?: Pick<AppAuthorities, 'trace' | 'clearTrace' | 'traceOf' | 'clearTraceOf'>;
+    /** The views of app parts: the run-time tools take app with them */
+    readonly instanceViews?: Pick<InstanceViews, 'view' | 'namespace'>;
     /** The address a person opens for an app */
     readonly viewUrl: (appId: string) => string;
     readonly report: UseCaseReport;
@@ -46,7 +50,8 @@ const START_HERE_TOOLS = new Set(['ui_components_list', 'ui_app_create']);
 
 /** Every tool of the server: catalog, lifecycle and reads, the generic part tools, writes, the live tools, `ui_file_read` and `ui_app_delete` */
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {
-    const { useCases, hub, liveViews, browser, viewUrl, calls, authorities } = dependencies;
+    const { useCases, hub, liveViews, browser, viewUrl, calls, authorities, instanceViews } = dependencies;
+    const views = instanceViews === undefined ? {} : { instanceViews };
     const tools = [
         ...createCatalogTools(useCases),
         ...createAppTools(useCases, browser),
@@ -55,8 +60,9 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createNodeTools(useCases),
         ...createThemeTools(useCases),
         ...createWriteTools(useCases, liveViews),
-        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...(authorities !== undefined && { logic: authorities }) }),
-        ...createFileTools(useCases),
+        ...createStateTools({ useCases, ...views }),
+        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...views, ...(authorities !== undefined && { logic: authorities }) }),
+        ...createFileTools({ useCases, ...views }),
         ...createDeleteTools(useCases, liveViews)
     ];
     return tools.map((tool) => (START_HERE_TOOLS.has(tool.name) ? { ...tool, description: `${tool.description} ${START_HERE}` } : tool));

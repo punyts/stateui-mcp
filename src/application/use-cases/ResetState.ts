@@ -1,4 +1,5 @@
 import { isRevisionCurrent } from '../../domain/revision.js';
+import type { InstanceStates } from '../ports/InstanceStates.js';
 import type { UiAppRepository } from '../ports/UiAppRepository.js';
 import type { UiInstanceRepository } from '../ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
@@ -46,24 +47,34 @@ export class ResetState {
     }
 }
 
-export type ResetInstanceResult = { readonly kind: 'reset'; readonly app: string } | { readonly kind: 'not-found'; readonly app: string };
+export type ResetInstanceResult =
+    /** `revision` is the app part's: a reset does not raise it */
+    | { readonly kind: 'reset'; readonly app: string; readonly revision: number }
+    | { readonly kind: 'conflict'; readonly app: string; readonly currentRevision: number }
+    | { readonly kind: 'not-found'; readonly app: string };
 
 /**
  * Puts the default persona's use of an owner app back to the definition: its instance (the diff) and the records of its
- * persona bindings are removed, so the next read is the definition. The definition and every part stay as they are
+ * persona bindings are removed, so the next read is the definition. The definition and every part stay as they are.
+ * With `states`, the running instance is stopped first and the removal runs while it is stopped, so its views
+ * reconnect to an instance of the definition and its logic starts again
  */
 export class ResetInstance {
     constructor(
         private readonly parts: UiPartRepository,
         private readonly instances: UiInstanceRepository,
-        private readonly report: UseCaseReport
+        private readonly report: UseCaseReport,
+        private readonly states?: Pick<InstanceStates, 'stop'>
     ) {}
 
-    async execute(app: string): Promise<ResetInstanceResult> {
+    async execute(app: string, expectedRevision?: number): Promise<ResetInstanceResult> {
         const part = await this.parts.findByName('apps', app);
         if (part === undefined) return this.finish({ kind: 'not-found', app });
-        await this.instances.reset(part.id);
-        return this.finish({ kind: 'reset', app });
+        if (!isRevisionCurrent(part.revision, expectedRevision)) return this.finish({ kind: 'conflict', app, currentRevision: part.revision });
+        const reset = (): Promise<void> => this.instances.reset(part.id);
+        if (this.states === undefined) await reset();
+        else await this.states.stop(part, reset);
+        return this.finish({ kind: 'reset', app, revision: part.revision });
     }
 
     private finish(result: ResetInstanceResult): ResetInstanceResult {

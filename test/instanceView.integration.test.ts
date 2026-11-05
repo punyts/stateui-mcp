@@ -6,7 +6,7 @@ import { LOCAL_OWNER_ID } from '../src/config/createServices.js';
 import type { UiPart, UiPartBodies } from '../src/domain/UiPart.js';
 import { PartFolders } from '../src/infrastructure/storage/PartFolders.js';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
-import { httpHarness, tempData } from './helpers.js';
+import { call, httpHarness, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
 const installed = await BrowserPreview.isInstalled();
@@ -206,5 +206,28 @@ describe.skipIf(!installed)('the live view of an owner app (Chromium through Pla
         const instance = JSON.parse(stored) as { screens?: { about?: { children?: { note?: { value?: string } } } }; route?: unknown };
         expect(instance.screens?.about?.children?.note?.value).toBe('gift wrap');
         expect(instance.route).toEqual({ screen: 'about', params: {} });
+    });
+
+    it('should take a screenshot of another screen with ui_screenshot, which shows that screen\'s text', async () => {
+        // Arrange
+        const services = harness.server.services;
+
+        // Act
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'shop', screen: 'home' });
+        const revision = services.instanceViews.revision(app.id) ?? 1;
+        const rendered = await services.browser.rendered(app.id, revision, '$.screens');
+        const page = await browser.newPage();
+        await page.goto(`${harness.server.origin}/apps/${app.id}`);
+        await page.waitForFunction(() => document.body.dataset['status'] === 'ready');
+        const text = await eventually(() => textOf(page), (value) => value.includes('Welcome home'));
+        await page.close();
+
+        // Assert
+        expect(shot.isError).toBe(false);
+        expect(shot.body).toMatchObject({ app: 'shop', revision: 1, screen: 'home', target: 'page' });
+        expect(shot.images[0]?.mimeType).toBe('image/png');
+        expect(rendered?.filter((node) => node.visible).map((node) => node.path.split('.').slice(0, 3).join('.'))).toContain('$.screens.home');
+        expect(text).toContain('Welcome home');
+        expect(text).not.toContain('About the shop');
     });
 });

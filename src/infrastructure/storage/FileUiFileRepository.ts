@@ -3,6 +3,7 @@ import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_BYTES_PER_APP, MAX_FILES_PER_APP } from '../../domain/UiFile.js';
 import type { UiFile } from '../../domain/UiFile.js';
 import type { PartFolders } from './PartFolders.js';
+import { appStored } from './appStored.js';
 import { isAppId } from './PartFolders.js';
 import { readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
@@ -37,9 +38,9 @@ export class FileUiFileRepository implements UiFileRepository {
         private readonly now: () => Date = () => new Date()
     ) {}
 
-    async appExists(appId: string): Promise<boolean> {
-        if (!isAppId(appId)) return false;
-        return (await readJson(this.folders.appFile(appId))) !== undefined;
+    /** An app of the old store or an app part */
+    appExists(appId: string): Promise<boolean> {
+        return appStored(this.folders, appId);
     }
 
     async usage(appId: string): Promise<UiFileUsage> {

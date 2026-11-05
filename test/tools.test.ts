@@ -614,7 +614,7 @@ describe('live tools', () => {
 
         const preview = await call(harness.client, 'ui_preview', { appId });
 
-        expect(browser['open']).toHaveBeenCalledWith(appId, 1);
+        expect(browser['open']).toHaveBeenCalledWith(appId, 1, undefined);
         expect(preview.body).toMatchObject({ appId, revision: 1, url: `http://127.0.0.1:4100/apps/${appId}`, rendered: true, errors: [] });
     });
 

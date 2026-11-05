@@ -5,6 +5,7 @@ import type { UiBuildError } from '../../domain/UiBuildError.js';
 import type { PartFolders } from './PartFolders.js';
 import { isAppId } from './PartFolders.js';
 import { readJson, writeJsonAtomic } from './atomicFile.js';
+import { appStored } from './appStored.js';
 import type { KeyedLock } from './KeyedLock.js';
 
 /** One stored error with the view load it came from, when it is known */
@@ -69,8 +70,8 @@ export class FileUiErrorLog {
         await this.lock.run(`errors:${appId}`, () => writeJsonAtomic(this.folders.errorsFile(appId), []));
     }
 
-    private async exists(appId: string): Promise<boolean> {
-        return isAppId(appId) && (await readJson(this.folders.appFile(appId))) !== undefined;
+    private exists(appId: string): Promise<boolean> {
+        return appStored(this.folders, appId);
     }
 
     private async entries(appId: string): Promise<readonly LoggedError[]> {

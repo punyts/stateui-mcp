@@ -235,6 +235,15 @@ export class AppAuthorities {
         this.logics.get(appNamespace(appId))?.clearTrace();
     }
 
+    /** The logic trace of the authority of a namespace (an instance's: `InstanceViews.namespace`); undefined when no logic runs there */
+    traceOf(namespace: string): LogicTraceRun[] | undefined {
+        return this.logics.get(namespace)?.trace();
+    }
+
+    clearTraceOf(namespace: string): void {
+        this.logics.get(namespace)?.clearTrace();
+    }
+
     /** A stored `$.server` without a key is the one failure the operator can fix; it gets a message that says how */
     private explain(appId: string, error: unknown): Error {
         const message = error instanceof Error ? error.message : String(error);

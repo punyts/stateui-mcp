@@ -2,7 +2,7 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { WriteOperation } from '../../domain/documentOperations.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { WRITES, defineInput, documentPath, fail, statePath, succeed } from './toolKit.js';
+import { WRITES, defineInput, documentPath, fail, succeed } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
@@ -34,20 +34,6 @@ const APP_WRITE = defineInput({
     },
     expectedRevision: EXPECTED_REVISION
 });
-
-const STATE_SET = defineInput({
-    appId: APP_ID,
-    path: { type: 'string', required: true, description: 'A data path such as "$.data.cart.c1.qty", or a node property a user can change such as "$.app.children.name.value"' },
-    value: { type: 'json', description: 'The new value; leave it out with remove' },
-    remove: { type: 'boolean', description: 'true: remove the entry at a "$.data..." path, such as a record, instead of setting a value' },
-    logic: {
-        type: 'boolean',
-        description: 'false: write the value as it is, with no guard asking and no rule or machine firing, to set up a test. Default true: the write counts as a change by the user'
-    },
-    expectedRevision: EXPECTED_REVISION
-});
-
-const STATE_RESET = defineInput({ appId: APP_ID, expectedRevision: EXPECTED_REVISION });
 
 function notFound(appId: string): ToolOutcome {
     return fail('not-found', 'No application with this id', { appId });
@@ -93,9 +79,9 @@ function toOperation(item: OperationItem, index: number): WriteOperation | ToolO
     return { op: item.op, path: documentPath(item.path), value: item.value };
 }
 
-/** The write tools: change the document or the state. Every open view follows the change at once */
+/** The document write of an app of the old store; every open view follows it at once. The state tools are in `stateTools.ts` */
 export function createWriteTools(
-    useCases: Pick<UiBuilderUseCases, 'writeApp' | 'setState' | 'resetState'>,
+    useCases: Pick<UiBuilderUseCases, 'writeApp'>,
     live: Pick<LiveViews, 'documentChanged'>
 ): readonly UiToolDefinition[] {
     return [
@@ -130,60 +116,6 @@ export function createWriteTools(
                             index: result.index,
                             errors: [result.error]
                         });
-                    case 'conflict':
-                        return conflict(result.appId, result.currentRevision);
-                    case 'not-found':
-                        return notFound(result.appId);
-                }
-            }
-        },
-        {
-            name: 'ui_state_set',
-            description:
-                'Set one value in the app state: a data path or a node property a user can change. remove: true removes an entry under $.data, such as a record ($.data.tasks.t2); null would leave an empty record. The write counts as a change by the user: guards may refuse it and rules fire. logic: false skips both, to set up a test. Links, runtime and exposed properties are refused with the reason; with an active language, change content text with ui_app_write. Open views follow at once. The revision counts document writes only, so it does not change. Returns { appId, revision, path }.',
-            inputSchema: STATE_SET.schema,
-            annotations: WRITES,
-            run: async (args) => {
-                const parsed = STATE_SET.parse(args);
-                if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, value, remove, logic, expectedRevision } = parsed.value;
-                if (remove === true && value !== undefined) return fail('invalid-argument', 'Pass value or remove: true, not both', { argument: 'remove' });
-                if (remove !== true && value === undefined) return fail('invalid-argument', 'value is required, or remove: true to remove the entry', { argument: 'value' });
-                const result = await useCases.setState.execute(appId, {
-                    path: statePath(path),
-                    ...(remove === true ? { remove } : { value }),
-                    ...(expectedRevision !== undefined && { expectedRevision }),
-                    ...(logic === false && { logic })
-                });
-                switch (result.kind) {
-                    case 'written':
-                        return succeed({ appId: result.appId, revision: result.revision, path: result.path });
-                    case 'refused':
-                        return fail(result.reason, result.message, { appId: result.appId });
-                    case 'invalid':
-                        return fail('invalid-value', 'The value does not fit this path; nothing was written', { appId: result.appId, errors: result.errors });
-                    case 'conflict':
-                        return conflict(result.appId, result.currentRevision);
-                    case 'not-found':
-                        return notFound(result.appId);
-                }
-            }
-        },
-        {
-            name: 'ui_state_reset',
-            description:
-                'Put the app state back to its document: $.data becomes the data of the document again, and what users or tools changed under $.app (typed, picked, opened) is dropped. No guard or rule runs; then the logic restarts, so machines are in their initial states and the trace is empty. Open views follow at once. Use it between test runs. Full-mode apps only. The revision does not change. Returns { appId, revision }.',
-            inputSchema: STATE_RESET.schema,
-            annotations: WRITES,
-            run: async (args) => {
-                const parsed = STATE_RESET.parse(args);
-                if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.resetState.execute(parsed.value.appId, parsed.value.expectedRevision);
-                switch (result.kind) {
-                    case 'reset':
-                        return succeed({ appId: result.appId, revision: result.revision });
-                    case 'persisted-app':
-                        return fail('persisted-app', 'The app is Persisted: its state lives in the statenet and only its views change it', { appId: result.appId });
                     case 'conflict':
                         return conflict(result.appId, result.currentRevision);
                     case 'not-found':

@@ -128,8 +128,15 @@ export class RunCommand {
     async execute(appId: string, input: RunCommandInput): Promise<RunCommandResult> {
         const app = await this.repository.findById(appId);
         if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
+        return this.runOn(appId, app.document, app.revision, input);
+    }
 
-        if (input.command === NAVIGATE_COMMAND) return this.finish(appId, await this.navigate(appId, app.document, app.revision, input));
+    /**
+     * Checks a command against a document the caller read, and issues it for the views of `appId`: an app of the old
+     * store, or the instance of an app part (`RunPartCommand`) with the assembled document and the part's revision
+     */
+    async runOn(appId: string, document: JsonObject, revision: number, input: RunCommandInput): Promise<RunCommandResult> {
+        if (input.command === NAVIGATE_COMMAND) return this.finish(appId, await this.navigate(appId, document, revision, input));
 
         const parsed = parseDocumentPath(input.target);
         if (!parsed.ok) return this.finish(appId, { kind: 'invalid-target', appId, reason: parsed.reason });
@@ -144,7 +151,7 @@ export class RunCommand {
 
         // A screen's state root `screens.home` is the document's `screens.home.root`
         const documentPath = inScreen ? [...parsed.path.slice(0, 2), 'root', ...parsed.path.slice(2)] : parsed.path;
-        const found = resolveDocumentPath(app.document, documentPath);
+        const found = resolveDocumentPath(document, documentPath);
         if (!found.found) {
             const missing = documentPath.slice(0, found.missingAt + 1);
             return this.finish(appId, {
@@ -178,7 +185,7 @@ export class RunCommand {
             return this.finish(appId, { kind: 'invalid-value', appId, command: input.command, message: check.message });
         }
 
-        return this.finish(appId, await this.issue(appId, app.revision, input));
+        return this.finish(appId, await this.issue(appId, revision, input));
     }
 
     /**

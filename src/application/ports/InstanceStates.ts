@@ -31,4 +31,11 @@ export interface InstanceStates {
 
     /** A copy of the instance's state */
     state(app: UiPart<'apps'>): Promise<JsonObject>;
+
+    /**
+     * Stops the app's running instance, if one runs: its views' sockets close and its state is saved. `whileStopped`
+     * runs before anything can start it again (a reset removes the saved instance there), so the next use starts over
+     * what is stored then
+     */
+    stop(app: UiPart<'apps'>, whileStopped: () => Promise<void>): Promise<void>;
 }

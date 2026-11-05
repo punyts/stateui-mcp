@@ -35,6 +35,7 @@ import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js
 import { RunCommand } from '../application/use-cases/RunCommand.js';
 import { SetPartState, SetState } from '../application/use-cases/SetState.js';
 import { ResetInstance, ResetState } from '../application/use-cases/ResetState.js';
+import { FindPartApp, GetPartState, RunPartCommand } from '../application/use-cases/RunPartApp.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
@@ -139,6 +140,12 @@ export interface UiBuilderUseCases {
     readonly writePersonaData?: WritePersonaData;
     /** With `parts` and `instanceStates` only */
     readonly setPartState?: SetPartState;
+    /** With `parts` only: the app part a run-time tool names */
+    readonly findPartApp?: FindPartApp;
+    /** With `parts` and `instanceStates` only */
+    readonly getPartState?: GetPartState;
+    /** With `parts` and `instanceStates` only */
+    readonly runPartCommand?: RunPartCommand;
 }
 
 /** The use cases over their ports. Plain factories, no container */
@@ -146,6 +153,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const { repository, parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
+    const runCommand = new RunCommand(repository, catalog, previewLog, now, newId, report);
     const writePart = parts === undefined ? undefined : new WritePart(parts, parts, validator, report);
     return {
         createApp: new CreateApp(repository, validator, report),
@@ -163,7 +171,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         getState: new GetState(repository, previewLog, liveState, now, report),
         setState: new SetState(repository, validator, report),
         resetState: new ResetState(repository, report),
-        runCommand: new RunCommand(repository, catalog, previewLog, now, newId, report),
+        runCommand,
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
         uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, repository, now, report), newId, report),
@@ -184,13 +192,19 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
             renamePart: new RenamePart(parts, parts, report),
             writeData: new WriteData(parts, validator, newId, report),
             queryData: new QueryData(parts, report),
-            validatePartApp: new ValidatePartApp(parts, parts, validator, report)
+            validatePartApp: new ValidatePartApp(parts, parts, validator, report),
+            findPartApp: new FindPartApp(parts)
         }),
         ...(parts !== undefined &&
             instances !== undefined && {
-                resetInstance: new ResetInstance(parts, instances, report),
+                resetInstance: new ResetInstance(parts, instances, report, instanceStates),
                 writePersonaData: new WritePersonaData(parts, instances, validator, report)
             }),
-        ...(parts !== undefined && instanceStates !== undefined && { setPartState: new SetPartState(parts, instanceStates, validator, report) })
+        ...(parts !== undefined &&
+            instanceStates !== undefined && {
+                setPartState: new SetPartState(parts, instanceStates, validator, report),
+                getPartState: new GetPartState(instanceStates, previewLog, now, report),
+                runPartCommand: new RunPartCommand(instanceStates, runCommand)
+            })
     };
 }

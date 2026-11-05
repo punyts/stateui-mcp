@@ -151,7 +151,7 @@ describe('instances beside owner parts', () => {
         const result = await reset.execute('notebook');
 
         // Assert
-        expect(result).toEqual({ kind: 'reset', app: 'notebook' });
+        expect(result).toEqual({ kind: 'reset', app: 'notebook', revision: 1 });
         expect(await instances.get(appId)).toEqual({ value: {} });
         expect(await instances.getData(appId, 'notes')).toEqual({ value: undefined });
         expect((await view()).data).toEqual({});

@@ -52,6 +52,19 @@ export class InstanceViews {
         return { type: 'app', reason, revision: this.revisionOf(app.id, JSON.stringify(document)), document, icons: { ...this.catalog.iconPaths(wanted) } };
     }
 
+    /**
+     * What a run-time tool waits for and checks: the revision of the view message the app's assembled document
+     * makes now (the one the views are sent next, or were sent last), and its screens
+     */
+    async view(app: UiPart<'apps'>): Promise<{ readonly revision: number; readonly screens: readonly string[] }> {
+        const { document } = await this.states.shape(app);
+        const screens = document['screens'];
+        return {
+            revision: this.revisionOf(app.id, JSON.stringify(document)),
+            screens: screens !== null && typeof screens === 'object' && !Array.isArray(screens) ? Object.keys(screens) : []
+        };
+    }
+
     /** The revision of the last message made for the app; undefined before the first */
     revision(appId: string): number | undefined {
         return this.revisions.get(appId)?.revision;
