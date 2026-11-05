@@ -110,7 +110,9 @@ describe('tool list', () => {
                 'ui_delete',
                 'ui_rename',
                 'ui_app_configure',
-                'ui_screen_create'
+                'ui_screen_create',
+                'ui_nodes_write',
+                'ui_locale_write'
             ].sort()
         );
     });

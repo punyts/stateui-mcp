@@ -55,6 +55,12 @@ export interface UiAppValidator {
      */
     assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument;
     /**
+     * `validateAppLocale` for one language of one tree of an assembled app (from `assembleApp`): the shell with the
+     * app's `locales[code]`, or the screen `screen` with its own `locales[code]`. The overlay's errors, then a
+     * `SUI-LOCALE-MISSING` warning for each content path the language does not translate. Empty when the tree does not resolve
+     */
+    validateLocale(document: UiDocument, code: string, screen?: string): readonly UiBuildError[];
+    /**
      * The errors and warnings of one part on its own, by the reader of its kind: an app's blueprint and the errors of
      * the assembled app that the app itself holds, a theme's tokens and overlays, a module, a model, a dataset's shape and
      * records against its model, a component's tree, a pattern's shape. `parts` holds what the part names (an app's

@@ -1,3 +1,4 @@
+import type { PartSource } from '@punyts/stateui-app/core';
 import type { JsonObject } from '../domain/JsonValue.js';
 import { nearestNames } from '../domain/nearestNames.js';
 import type { PartKind } from '../domain/partName.js';
@@ -18,7 +19,8 @@ export interface MissingPart {
 }
 
 export type PartAppCheck =
-    | { readonly kind: 'checked'; readonly warnings: readonly UiBuildError[] }
+    /** `source`: the parts the app reaches, as loaded for the check */
+    | { readonly kind: 'checked'; readonly warnings: readonly UiBuildError[]; readonly source: PartSource }
     /** Themes, datasets, models or logic modules the app names that do not exist; nothing else was checked */
     | { readonly kind: 'missing-parts'; readonly missing: readonly MissingPart[] }
     /** The blocking errors (and the warnings) of the app on its own or assembled with the parts it uses, each assembled error naming its part */
@@ -43,7 +45,7 @@ export async function checkPartApp(parts: UiPartRepository, validator: UiAppVali
     if (!isValid(own)) return { kind: 'invalid', errors: own };
     const all = validator.validateAssembled(body, source, name);
     if (!isValid(all)) return { kind: 'invalid', errors: all };
-    return { kind: 'checked', warnings: all.filter((error) => !isBlockingError(error)) };
+    return { kind: 'checked', warnings: all.filter((error) => !isBlockingError(error)), source };
 }
 
 /** A shell or a screen root: a library pattern with its params, or a node tree */

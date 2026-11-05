@@ -32,6 +32,7 @@ function fakeValidator(): UiAppValidator {
         resolveNode: () => undefined,
         localeOverlay: () => undefined,
         assembleApp: () => ({}),
+        validateLocale: () => [],
         checkProperty: () => ({ kind: 'unknown-component' }),
         validatePart: (kind: PartKind, _name: string, body: unknown) => (kind === 'themes' && 'bad' in ((body as UiPartBodies['themes']).tokens ?? {}) ? [BROKEN] : []),
         validateAssembled: (_blueprint, parts, name): UiPartError[] => {

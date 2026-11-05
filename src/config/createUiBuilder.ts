@@ -42,6 +42,8 @@ import { WriteApp } from '../application/use-cases/WriteApp.js';
 import { QueryData } from '../application/use-cases/QueryData.js';
 import { RenamePart } from '../application/use-cases/RenamePart.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
+import { WriteLocale } from '../application/use-cases/WriteLocale.js';
+import { WriteNodes } from '../application/use-cases/WriteNodes.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
 import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
 import type { UsageSource } from '../application/UsageIndex.js';
@@ -107,6 +109,10 @@ export interface UiBuilderUseCases {
     /** With `parts` only */
     readonly createScreen?: CreateScreen;
     /** With `parts` only */
+    readonly writeNodes?: WriteNodes;
+    /** With `parts` only */
+    readonly writeLocale?: WriteLocale;
+    /** With `parts` only */
     readonly listParts?: ListParts;
     /** With `parts` only */
     readonly getPart?: GetPart;
@@ -161,6 +167,8 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
             createPartApp: new CreatePartApp(parts, validator, patterns, report),
             configureApp: new ConfigureApp(parts, validator, report),
             createScreen: new CreateScreen(parts, validator, patterns, report),
+            writeNodes: new WriteNodes(parts, validator, report),
+            writeLocale: new WriteLocale(parts, validator, report),
             listParts: new ListParts(parts, report),
             getPart: new GetPart(parts, validator, report),
             deletePart: new DeletePart(parts, parts, report, instances),

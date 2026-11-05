@@ -6,6 +6,8 @@ import {
     findUntranslated,
     libraryFromCatalog,
     resolveNode,
+    screenPath,
+    validateAppLocale,
     validateDocument,
     validateNode
 } from '@punyts/stateui-app/core';
@@ -56,11 +58,12 @@ function composedOf(document: UiDocument): Record<string, Node> {
     return entries;
 }
 
-/** Removes the properties at the linked paths: a linked property is data, not content */
-function withoutLinked(tree: JsonObject, linkedPaths: readonly string[]): JsonObject {
+/** Removes the properties at the linked paths: a linked property is data, not content. `root` is the tree's state path */
+function withoutLinked(tree: JsonObject, linkedPaths: readonly string[], root = '$.app'): JsonObject {
     const copy = structuredClone(tree) as Record<string, JsonValue>;
+    const depth = root.split('.').length;
     for (const path of linkedPaths) {
-        const segments = path.split('.').slice(2);
+        const segments = path.split('.').slice(depth);
         const last = segments.pop();
         let holder: unknown = copy;
         for (const segment of segments) {
@@ -139,6 +142,30 @@ export class StateUiAppValidator implements UiAppValidator {
             return declared?.runtime !== true;
         });
         return Object.fromEntries(kept.map(([key, item]): [string, JsonValue] => [key, this.withoutRuntime(item)]));
+    }
+
+    validateLocale(document: UiDocument, code: string, screen?: string): readonly UiBuildError[] {
+        const screens = document['screens'];
+        const entry = screen === undefined || !isJsonObject(screens) || !Object.hasOwn(screens, screen) ? undefined : screens[screen];
+        if (screen !== undefined && !isJsonObject(entry)) return [];
+        const owner = screen === undefined ? document : (entry as JsonObject);
+        const node = screen === undefined ? document['app'] : owner['root'];
+        if (!isJsonObject(node) || typeof node['component'] !== 'string') return [];
+        const path = screen === undefined ? '$.app' : screenPath(screen);
+        const composed = composedOf(document) as DocumentComposed;
+        const resolved = resolveNode(node as unknown as Node, this.library, composed, { path });
+        if (resolved.errors.length > 0) return [];
+        const extracted = extractLinks(resolved.node, { library: this.library, instances: resolved.instances, path });
+        const tree = withoutLinked(extracted.tree as unknown as JsonObject, extracted.linkedPaths, path);
+        const locales = owner['locales'];
+        const own = isJsonObject(locales) && Object.hasOwn(locales, code) && isJsonObject(locales[code]) ? locales[code] : {};
+        return validateAppLocale(code, tree as unknown as LibraryJsonObject, this.componentOverlays(code), own as unknown as LibraryJsonObject, {
+            library: this.library,
+            composed,
+            instances: resolved.instances,
+            linkedPaths: extracted.linkedPaths,
+            path
+        });
     }
 
     localeOverlay(document: UiDocument, code: string): JsonObject | undefined {
