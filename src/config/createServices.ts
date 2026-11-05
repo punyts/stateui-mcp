@@ -8,6 +8,7 @@ import type { UiBuilderUseCases } from './createUiBuilder.js';
 import { BrowserPreview } from '../infrastructure/preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
 import { HubLiveState } from '../infrastructure/preview/HubLiveState.js';
+import { InstanceViews } from '../infrastructure/preview/InstanceViews.js';
 import { LivePreviewLog } from '../infrastructure/preview/LivePreviewLog.js';
 import { LiveViews } from '../infrastructure/preview/LiveViews.js';
 import { PreviewHub } from '../infrastructure/preview/PreviewHub.js';
@@ -61,6 +62,8 @@ export interface Services {
     /** The calls of Full-mode logic that wait for the agent's answer */
     readonly calls: AppCalls;
     readonly liveViews: LiveViews;
+    /** The views of the owner's apps (parts): the assembled app and its instance's authority */
+    readonly instanceViews: InstanceViews;
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
     readonly viewUrl: (appId: string) => string;
@@ -101,13 +104,22 @@ export function createServices(options: ServicesOptions): Services {
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);
+    const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId);
+    const liveViews = new LiveViews(useCases.getUiApp, hub, browser, instanceViews);
+    // Every part change reaches the open views of the apps that show it
+    parts.onChange((kind, name) => {
+        liveViews.partChanged(kind, name).catch((error: unknown) => {
+            options.report.info('Views not refreshed after a part change', { kind, name, reason: error instanceof Error ? error.message : String(error) });
+        });
+    });
     return {
         useCases,
         repository,
         hub,
         authorities,
         calls: authorities.calls,
-        liveViews: new LiveViews(useCases.getUiApp, hub, browser),
+        liveViews,
+        instanceViews,
         browser,
         report: options.report,
         viewUrl: (appId) => `${options.origin()}/apps/${appId}`,

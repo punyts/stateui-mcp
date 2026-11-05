@@ -74,6 +74,20 @@ export interface PreviewOpenResult {
     readonly rendered: boolean;
 }
 
+/** A screen of an app with screens, and its params, that `open` shows instead of the one the instance is on */
+export interface PreviewScreen {
+    readonly screen: string;
+    readonly params?: Readonly<Record<string, unknown>>;
+}
+
+/** The query of a view URL that opens a screen: `?screen=<name>&params=<json>` */
+export function screenQuery(at: PreviewScreen | undefined): string {
+    if (at === undefined) return '';
+    const query = new URLSearchParams({ screen: at.screen });
+    if (at.params !== undefined) query.set('params', JSON.stringify(at.params));
+    return `?${query.toString()}`;
+}
+
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 } as const;
 const RENDER_TIMEOUT_MS = 10_000;
 const SETTLE_MS = 300;
@@ -149,16 +163,18 @@ export class BrowserPreview {
 
     /**
      * Opens the headless page of the app and waits until it has rendered `revision`. A page that is already open is
-     * loaded again, so it shows the current document and state and not what it held since the last write
+     * loaded again, so it shows the current document and state and not what it held since the last write. An app with
+     * screens opens on the screen its instance is on (its `start` screen at first), or on `at` when given
      */
-    async open(appId: string, revision: number): Promise<PreviewOpenResult> {
+    async open(appId: string, revision: number, at?: PreviewScreen): Promise<PreviewOpenResult> {
         return this.lock.run(appId, async () => {
             const existing = this.pages.get(appId);
             if (existing !== undefined && !existing.isClosed()) {
                 this.hub.markStale(appId, 'headless');
-                await existing.reload({ waitUntil: 'domcontentloaded' });
+                if (at === undefined) await existing.reload({ waitUntil: 'domcontentloaded' });
+                else await existing.goto(this.viewUrl(appId, at), { waitUntil: 'domcontentloaded' });
             } else {
-                await this.pageFor(appId);
+                await this.pageFor(appId, at);
             }
             const rendered = await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             return { rendered };
@@ -306,7 +322,11 @@ export class BrowserPreview {
         return this.browser;
     }
 
-    private async pageFor(appId: string): Promise<Page> {
+    private viewUrl(appId: string, at?: PreviewScreen): string {
+        return `${this.baseUrl()}/apps/${appId}${screenQuery(at)}`;
+    }
+
+    private async pageFor(appId: string, at?: PreviewScreen): Promise<Page> {
         const existing = this.pages.get(appId);
         if (existing !== undefined && !existing.isClosed()) return existing;
         const browser = await this.launch();
@@ -315,7 +335,7 @@ export class BrowserPreview {
         page.on('close', () => {
             if (this.pages.get(appId) === page) this.pages.delete(appId);
         });
-        await page.goto(`${this.baseUrl()}/apps/${appId}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(this.viewUrl(appId, at), { waitUntil: 'domcontentloaded' });
         return page;
     }
 

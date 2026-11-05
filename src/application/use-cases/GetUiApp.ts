@@ -29,7 +29,7 @@ function iconProperties(catalog: ComponentCatalog, component: string): ReadonlyS
  * placement, option and item entries that carry one). Strings that are not icon names drop out later, when the
  * catalog is asked for path data
  */
-function collectIconNames(document: UiDocument, catalog: ComponentCatalog): Set<string> {
+export function collectIconNames(document: UiDocument, catalog: ComponentCatalog): Set<string> {
     const names = new Set<string>();
     const stack: JsonValue[] = [document];
     while (stack.length > 0) {

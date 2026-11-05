@@ -13,7 +13,9 @@ import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { isAppId } from '../storage/PartFolders.js';
+import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
+import type { Authority } from '@punyts/state-sync/authority';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
@@ -40,6 +42,8 @@ export interface HttpServerOptions {
     /** The statenet's WebSocket URL, which the views of Persisted apps connect to */
     readonly statenet?: string;
     readonly liveViews: LiveViews;
+    /** The views of the owner's apps (parts): an app id that is not an app document's is looked up here */
+    readonly instances?: InstanceViews;
     readonly mcp: McpEndpoint;
     readonly runtime: RuntimeBundle;
     /** The compiled host script, served as `/assets/host.js` */
@@ -136,7 +140,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * | Route | What |
  * |---|---|
  * | `GET /` | the apps, with a link to each |
- * | `GET /apps/:appId` | the live view of an app |
+ * | `GET /apps/:appId` | the live view of an app: an app document, or an owner app (a part) assembled, with the default persona's instance |
  * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
@@ -223,20 +227,23 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     async function appRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const app = await repository.findById(appId);
-        if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
+        const part = app === undefined ? await options.instances?.find(appId) : undefined;
+        if (app === undefined && part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
-        const persistedUrl = app.sync === 'persisted' ? options.statenet : undefined;
+        const persistedUrl = app?.sync === 'persisted' ? options.statenet : undefined;
         const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
+        const namespace = part === undefined ? undefined : options.instances?.namespace(part);
         send(
             response,
             200,
             'text/html; charset=utf-8',
             appPage({
                 appId,
-                name: app.name,
+                name: app?.name ?? part?.name ?? '',
                 runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
                 viewKind: headless ? 'headless' : 'browser',
-                ...(persistedUrl !== undefined && { statenetUrl: persistedUrl })
+                ...(persistedUrl !== undefined && { statenetUrl: persistedUrl }),
+                ...(namespace !== undefined && { namespace })
             }),
             { 'Content-Security-Policy': hostPageCsp(runtimeOrigin, persistedUrl), 'Cache-Control': 'no-store' }
         );
@@ -263,7 +270,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
                 hub.recordErrors(appId, errors);
                 const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision, source);
-                if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
+                // An owner app's errors are kept by the hub only, until its preview log moves to the parts (epic 3)
+                if (recorded.kind === 'not-found' && (await options.instances?.find(appId)) === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
                 hub.touch(appId, viewId);
                 sendJson(response, 200, { ok: true });
                 return;
@@ -381,10 +389,14 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
         if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
         const app = await repository.findById(appId);
-        const first = app === undefined ? undefined : await liveViews.attachMessage(appId);
-        if (app === undefined || first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        // A Persisted app's views sync with the statenet; this socket carries only their view frames
-        const authority = app.sync === 'persisted' ? undefined : await authorities.authority(appId, app.document);
+        const part = app === undefined ? await options.instances?.find(appId) : undefined;
+        const first = app === undefined && part === undefined ? undefined : await liveViews.attachMessage(appId);
+        if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
+        // A Persisted app's views sync with the statenet; this socket carries only their view frames. An owner app's
+        // views sync with the default persona's instance
+        let authority: Authority | undefined;
+        if (part !== undefined) authority = await options.instances?.authority(part);
+        else if (app !== undefined && app.sync !== 'persisted') authority = await authorities.authority(appId, app.document);
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
                 if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));

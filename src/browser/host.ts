@@ -15,6 +15,12 @@
  * acknowledged in `localStorage`, with the document beside them, so the app opens and takes changes offline and sends
  * them when the socket is back.
  *
+ * An owner app (`data-namespace` on the body, `instances.<persona>.<ownerId>.<appId>`) syncs with the default
+ * persona's instance: besides `$.data` and `$.app`, its state holds the articulation of each screen (`$.screens`) and
+ * the route (`$.route`). A load lays that state over the assembled app as the runtime's `instance`; a route another
+ * view moved arrives as a `navigate` command, since the runtime protects `$.route`. `?screen=<name>&params=<json>` in
+ * the page URL navigates there once the app is ready.
+ *
  * A Persisted app (`data-statenet-url` on the body) has no server logic: the sync client connects straight to the
  * statenet, and the socket to the server carries only the view frames, reconnecting on its own.
  * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
@@ -35,10 +41,12 @@ function isLogicEvent(name: string): boolean {
     return name === 'logic.failed' || /^notify\.[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name);
 }
 
-/** The synced part of the runtime store that the frame shows */
+/** The synced part of the runtime store that the frame shows; `screens` and `route` only for an owner app's instance */
 interface ViewState {
     data: JsonRecord;
     app: JsonRecord;
+    screens: JsonRecord;
+    route?: Json;
 }
 
 type ChangeOp = 'set' | 'replace' | 'merge' | 'delete';
@@ -160,9 +168,14 @@ function diffComplete(path: string, a: unknown, b: unknown, writes: PathWrite[])
 /** The properties a record view takes its records in */
 const RECORD_COLLECTIONS = ['records', 'items'];
 
+/** `$.app` and `$.screens.{name}`: the root of a node tree, which only a load mounts */
+function isTreeRoot(path: string): boolean {
+    return path === '$.app' || /^\$\.screens\.[^.]+$/.test(path);
+}
+
 function diffArticulation(path: string, before: unknown, after: unknown, documentValue: unknown, writes: PathWrite[]): boolean {
     if (deepEqual(before, after)) return true;
-    if (after === undefined || path === '$.app' ? !isRecord(after) : false) return false;
+    if (after === undefined || isTreeRoot(path) ? !isRecord(after) : false) return false;
     if (isRecord(after) && isRecord(documentValue)) {
         if (isRecord(before) && Object.keys(before).some((key) => !(key in after))) return false;
         for (const key of Object.keys(after)) {
@@ -176,7 +189,7 @@ function diffArticulation(path: string, before: unknown, after: unknown, documen
         }
         return writes.length <= MAX_WRITES;
     }
-    if (path === '$.app') return false;
+    if (isTreeRoot(path)) return false;
     writes.push({ path, value: after as Json });
     return writes.length <= MAX_WRITES;
 }
@@ -274,15 +287,17 @@ function articulation(value: Json): Json | undefined {
 
 /**
  * The part of a runtime change that is synced, or undefined: `$.data`, and below `$.app` the articulation (no `_`
- * content, no `component`, `on`, `layout`, `placement` or `theme` of a node). `$.theme` and `$.locale` stay in the view
+ * content, no `component`, `on`, `layout`, `placement` or `theme` of a node). An instance also syncs the articulation
+ * below `$.screens.{name}` and `$.route`. `$.theme` and `$.locale` stay in the view
  */
-function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined): { path: string; op: ChangeOp; value?: Json } | undefined {
+function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined, instance: boolean): { path: string; op: ChangeOp; value?: Json } | undefined {
     const segments = path.split('.');
     const branch = segments[1];
-    if (segments[0] !== '$' || (branch !== 'data' && branch !== 'app') || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
+    const branches = instance ? ['data', 'app', 'screens', 'route'] : ['data', 'app'];
+    if (segments[0] !== '$' || branch === undefined || !branches.includes(branch) || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
     let kept = value;
-    if (branch === 'app') {
-        const below = segments.slice(2);
+    if (branch === 'app' || branch === 'screens') {
+        const below = segments.slice(branch === 'app' ? 2 : 3);
         if (below.some((segment) => segment.startsWith(CONTENT_PREFIX))) return undefined;
         if (below.length > 0 && NODE_KEYS.includes(below[below.length - 1] as string)) return undefined;
         if (kept !== undefined) {
@@ -296,12 +311,21 @@ function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined): { 
 
 /** Applies one change to a view state in place, as the sync client does: missing parents are created, a delete below one does nothing */
 function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | undefined): void {
-    const [, branch, ...rest] = path.split('.') as [string, 'data' | 'app', ...string[]];
-    if (rest.length === 0) {
-        state[branch] = op === 'delete' || !isRecord(value) ? {} : copy(value);
+    const [, branch, ...rest] = path.split('.') as [string, keyof ViewState, ...string[]];
+    if (branch === 'route' && rest.length === 0) {
+        if (op === 'delete' || value === undefined) delete state.route;
+        else state.route = copy(value);
         return;
     }
-    let container: Record<string, unknown> = state[branch];
+    if (rest.length === 0) {
+        state[branch as 'data' | 'app' | 'screens'] = op === 'delete' || !isRecord(value) ? {} : copy(value);
+        return;
+    }
+    if (branch === 'route' && !isRecord(state.route)) {
+        if (op === 'delete') return;
+        state.route = {};
+    }
+    let container: Record<string, unknown> = state[branch] as Record<string, unknown>;
     for (const segment of rest.slice(0, -1)) {
         let child = container[segment];
         if (typeof child !== 'object' || child === null) {
@@ -323,7 +347,13 @@ function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | und
 }
 
 function viewState(state: SyncState): ViewState {
-    return { data: isRecord(state['data']) ? copy(state['data']) : {}, app: isRecord(state['app']) ? copy(state['app']) : {} };
+    const route = state['route'];
+    return {
+        data: isRecord(state['data']) ? copy(state['data']) : {},
+        app: isRecord(state['app']) ? copy(state['app']) : {},
+        screens: isRecord(state['screens']) ? copy(state['screens']) : {},
+        ...(route !== undefined && { route: copy(route) })
+    };
 }
 
 function createNonce(): string {
@@ -361,6 +391,10 @@ class LiveView {
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
     private readonly namespace: string;
+    /** An owner app's view: the state is the default persona's instance */
+    private readonly instance: boolean;
+    /** `?screen=` and `?params=`: where the view navigates once the app is first ready */
+    private openAt: { screen: string; params?: Json } | undefined;
     /** The statenet's URL for a Persisted app; `undefined` in Full mode */
     private readonly statenetUrl: string | undefined;
     private readonly syncMode: 'full' | 'persisted';
@@ -381,7 +415,7 @@ class LiveView {
     /** The synced state as the sync client shows it; undefined until it has one */
     private synced: ViewState | undefined;
     /** The synced part of what the frame holds, as far as the host knows */
-    private shown: ViewState = { data: {}, app: {} };
+    private shown: ViewState = { data: {}, app: {}, screens: {} };
     private readonly listeners = new Set<(changes: LocalChange[]) => void>();
     private syncStatus: { mode: 'full' | 'persisted'; status: string; waiting: number };
     private readonly sentIcons = new Set<string>();
@@ -398,13 +432,25 @@ class LiveView {
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
         this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
-        this.namespace = `apps.${this.appId.toLowerCase()}`;
+        this.namespace = body.dataset['namespace'] || `apps.${this.appId.toLowerCase()}`;
+        this.instance = this.namespace.startsWith('instances.');
         this.statenetUrl = body.dataset['statenetUrl'] || undefined;
         this.syncMode = this.statenetUrl === undefined ? 'full' : 'persisted';
         this.syncStatus = { mode: this.syncMode, status: 'connecting', waiting: 0 };
         const query = new URLSearchParams(window.location.search);
         this.mode = query.get('mode') ?? undefined;
         this.locale = query.get('locale') ?? undefined;
+        const screen = query.get('screen');
+        if (screen !== null && screen !== '') {
+            let params: Json | undefined;
+            try {
+                const parsed: unknown = JSON.parse(query.get('params') ?? 'null');
+                params = isRecord(parsed) && isJson(parsed) ? parsed : undefined;
+            } catch {
+                params = undefined;
+            }
+            this.openAt = { screen, ...(params !== undefined && { params }) };
+        }
     }
 
     start(): void {
@@ -620,13 +666,34 @@ class LiveView {
         const writes: PathWrite[] = [];
         const ok =
             diffComplete('$.data', this.shown.data, next.data, writes) &&
-            diffArticulation('$.app', this.shown.app, next.app, this.app.document['app'], writes);
+            diffArticulation('$.app', this.shown.app, next.app, this.app.document['app'], writes) &&
+            this.diffScreens(next, writes);
         if (!ok) {
             this.sendLoad();
             return;
         }
+        const moved = this.instance && !deepEqual(this.shown.route, next.route) && isRecord(next.route) && typeof next.route['screen'] === 'string';
         this.shown = copy(next);
         if (writes.length > 0) this.post({ type: 'write', writes });
+        // The runtime protects $.route: a route another view moved is followed with navigate
+        if (moved && isRecord(next.route)) {
+            const params = next.route['params'];
+            this.post({ type: 'command', target: next.route['screen'] as string, command: 'navigate', ...(params !== undefined && { value: params }) });
+        }
+    }
+
+    /** The writes of each screen's articulation, against the screen's root in the document; false when one needs a load */
+    private diffScreens(next: ViewState, writes: PathWrite[]): boolean {
+        if (!this.instance) return true;
+        const screens = isRecord(this.app?.document['screens']) ? this.app.document['screens'] : {};
+        for (const name of new Set([...Object.keys(this.shown.screens), ...Object.keys(next.screens)])) {
+            const screen = screens[name];
+            if (!isRecord(screen) || !SEGMENT.test(name)) continue;
+            const before = this.shown.screens[name] ?? {};
+            const after = next.screens[name] ?? {};
+            if (!diffArticulation(`$.screens.${name}`, before, after, screen['root'], writes)) return false;
+        }
+        return true;
     }
 
     private sendLoad(): void {
@@ -634,7 +701,7 @@ class LiveView {
         if (app === undefined || !this.frameLoaded) return;
         const icons = iconsMessage(app.icons, new Set());
         const documentData = app.document['data'];
-        this.shown = this.synced !== undefined ? copy(this.synced) : { data: isRecord(documentData) ? copy(documentData) : {}, app: {} };
+        this.shown = this.synced !== undefined ? copy(this.synced) : { data: isRecord(documentData) ? copy(documentData) : {}, app: {}, screens: {} };
         this.ready = false;
         this.load++;
         this.setStatus('loading');
@@ -642,7 +709,7 @@ class LiveView {
             type: 'load',
             document: app.document,
             mode: this.syncMode,
-            ...(this.synced !== undefined && { state: this.synced }),
+            ...(this.synced !== undefined && (this.instance ? { instance: this.instanceOf(this.synced) } : { state: { data: this.synced.data, app: this.synced.app } })),
             ...(icons !== undefined && { icons })
         });
         this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
@@ -651,6 +718,11 @@ class LiveView {
         this.sentIcons.clear();
         Object.keys(app.icons).forEach((name) => this.sentIcons.add(name));
         this.revision = app.revision;
+    }
+
+    /** The synced state as the runtime's `instance`: the shell, the screens, the data and the route */
+    private instanceOf(state: ViewState): JsonRecord {
+        return { app: state.app, screens: state.screens, data: state.data, ...(isRecord(state.route) && { route: state.route }) };
     }
 
     private markRendered(revision: number): void {
@@ -712,6 +784,9 @@ class LiveView {
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
         }
+        const at = this.openAt;
+        this.openAt = undefined;
+        if (at !== undefined) this.post({ type: 'command', target: at.screen, command: 'navigate', ...(at.params !== undefined && { value: at.params }) });
         this.report({ type: 'ready', revision: this.revision, load: this.load });
     }
 
@@ -722,7 +797,7 @@ class LiveView {
         if (op !== 'set' && op !== 'replace' && op !== 'merge' && op !== 'delete') return;
         const value = change['value'];
         if (value !== undefined && !isJson(value)) return;
-        const synced = toSyncedChange(change['path'], op, value);
+        const synced = toSyncedChange(change['path'], op, value, this.instance);
         if (synced === undefined) return;
         applyTo(this.shown, synced.path, synced.op, synced.value);
         if (this.synced !== undefined) applyTo(this.synced, synced.path, synced.op, synced.value);

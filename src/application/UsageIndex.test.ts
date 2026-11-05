@@ -204,5 +204,34 @@ describe('UsageIndex and deleteRule', () => {
             expect(stale.kind).toBe('conflict');
             expect(index.usedBy('components', 'badge')).toEqual([{ kind: 'components', name: 'card' }]);
         });
+
+        it('should tell the listeners of each change that succeeds, after the index took it, and none after they stop', async () => {
+            // Arrange
+            const parts = await storedShop();
+            const index = await parts.usage();
+            const plainCard = deepFreeze({ tree: { component: 'text' }, exposes: [] }) as unknown as UiPartBodies['components'];
+            const heard: string[] = [];
+            const seenIndexed: boolean[] = [];
+            parts.onChange(() => {
+                throw new Error('a failing listener');
+            });
+            const stop = parts.onChange((kind, name) => {
+                heard.push(`${kind}:${name}`);
+                seenIndexed.push(index.has(kind, name));
+            });
+
+            // Act
+            await parts.write('components', 'card', plainCard, 1);
+            await parts.write('components', 'card', plainCard, 9);
+            await parts.rename('themes', 'store', 'brand');
+            await parts.delete('components', 'badge', 1);
+            await parts.create({ kind: 'themes', name: 'night', body: STORE_THEME });
+            stop();
+            await parts.create({ kind: 'themes', name: 'day', body: STORE_THEME });
+
+            // Assert
+            expect(heard).toEqual(['components:card', 'themes:brand', 'components:badge', 'themes:night']);
+            expect(seenIndexed).toEqual([true, true, false, true]);
+        });
     });
 });

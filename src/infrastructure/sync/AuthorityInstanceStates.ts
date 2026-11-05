@@ -1,3 +1,4 @@
+import type { Authority } from '@punyts/state-sync/authority';
 import type { InstanceShape, InstanceStates, InstanceWriteOptions } from '../../application/ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
@@ -50,6 +51,12 @@ export class AuthorityInstanceStates implements InstanceStates {
     async state(app: UiPart<'apps'>): Promise<JsonObject> {
         const { start, storage } = await this.started(app);
         return this.authorities.instanceState(start, storage);
+    }
+
+    /** The authority of the app's running instance, for a view's socket; started (or restarted over a changed definition) first */
+    async authority(app: UiPart<'apps'>): Promise<Authority> {
+        const { start, storage } = await this.started(app);
+        return this.authorities.instance(start, storage);
     }
 
     private key(app: UiPart<'apps'>): InstanceKey {

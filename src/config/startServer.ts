@@ -79,6 +79,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         authorities: services.authorities,
         ...(options.statenet !== undefined && { statenet: options.statenet }),
         liveViews: services.liveViews,
+        instances: services.instanceViews,
         mcp: sessions,
         runtime,
         hostScript,
