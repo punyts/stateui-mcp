@@ -11,6 +11,14 @@ How to run one build:
 3. When the agent says it is done, take `ui_screenshot` with `fullPage: true`, then again at a 390 px wide viewport, and review the checklist.
 4. `node scripts/summarizeToolLog.mjs .measurements/<phase>/<request>-*/calls.jsonl` prints the numbers for the table.
 
+The scripts in `scripts/measurement/` do steps 1 to 3 headless, with Claude Code signed in (`claude auth login`) and the library built (`npm run build`):
+
+- `node scripts/measurement/runBuild.mjs <phase> <store|finance|booking> <n> [port]` runs one build: a fresh `claude -p` session (`claude-opus-5-5`, or `BUILD_MODEL`) in an empty folder, with this library's server as its only tools, a fresh data folder and a tool log. It writes `transcript.jsonl` and `run.json` (model, commit, exit code, minutes) next to `calls.jsonl`. Builds can run side by side on ports 10 apart (4300, 4310, 4320).
+- `node scripts/measurement/shots.mjs <phase> <request> <n> [port]` saves every screen of every app part, full page at 1280 and 390 px, into `shots/`.
+- `node scripts/measurement/reviewBuild.mjs <phase> <request> <n> [port]` judges the checklist: a fresh `claude -p` session (`claude-sonnet-5-5`, or `REVIEW_MODEL`) with the read, screenshot and interact tools only, which writes `review.json` with met or not met and one sentence of evidence per item.
+
+Set `CLAUDE_BIN` when `claude` is not on the path (on Windows the scripts default to the `claude.exe` of the global npm install).
+
 ## Store
 
 **Prompt:**
