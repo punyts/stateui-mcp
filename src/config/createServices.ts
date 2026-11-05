@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
+import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
@@ -81,7 +82,7 @@ export function createServices(options: ServicesOptions): Services {
         { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) }
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
-    const parts = new FilePartRepository(folders, lock, { now, newId: randomUUID });
+    const parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock, { now, newId: randomUUID }));
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
