@@ -64,6 +64,8 @@ export interface Services {
     readonly liveViews: LiveViews;
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
+    /** Finishes a part rename that a crash stopped halfway (`rename.pending.json`); true when there was one */
+    readonly recoverParts: () => Promise<boolean>;
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
     readonly viewUrl: (appId: string) => string;
@@ -92,7 +94,8 @@ export function createServices(options: ServicesOptions): Services {
         { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) }
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
-    const parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock, { now, newId: randomUUID }));
+    const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
+    const parts = new IndexedUiPartRepository(partFiles);
     const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
     const instances = new FileUiInstanceRepository(folders, lock, ownerId);
     const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields));
@@ -120,6 +123,7 @@ export function createServices(options: ServicesOptions): Services {
         calls: authorities.calls,
         liveViews,
         instanceViews,
+        recoverParts: () => partFiles.recover(),
         browser,
         report: options.report,
         viewUrl: (appId) => `${options.origin()}/apps/${appId}`,

@@ -5,6 +5,7 @@ import type {
     UiPartDeleteResult,
     UiPartRenameResult,
     UiPartRepository,
+    UiPartRewrite,
     UiPartSummary,
     UiPartWriteResult
 } from '../application/ports/UiPartRepository.js';
@@ -80,18 +81,31 @@ export class InMemoryUiPartRepository implements UiPartRepository {
         return { kind: 'deleted' };
     }
 
-    async rename(kind: PartKind, from: string, to: string): Promise<UiPartRenameResult> {
+    async rename(kind: PartKind, from: string, to: string, rewrites: readonly UiPartRewrite[] = []): Promise<UiPartRenameResult> {
         const problem = partNameProblem(to);
         if (problem !== undefined) return { kind: 'invalid', reason: problem };
+        if (rewrites.some((rewrite) => !isPartBody(rewrite.body))) return { kind: 'invalid', reason: PART_BODY_PROBLEM };
         const part = this.byName(kind, from);
         if (part === undefined) return { kind: 'not-found' };
         const names = this.namesOf(kind);
         if (names.has(to)) return { kind: 'duplicate-name' };
-        const renamed = renameUiPart(part, to, this.now());
-        this.parts.set(renamed.id, renamed);
+        const now = this.now();
+        let body = part.body;
+        const revised: UiPart[] = [];
+        for (const rewrite of rewrites) {
+            const self = rewrite.kind === kind && rewrite.name === from;
+            const current = this.byName(rewrite.kind, rewrite.name);
+            if (current === undefined || !isRevisionCurrent(current.revision, rewrite.expectedRevision)) {
+                return { kind: 'conflict', part: { kind: rewrite.kind, name: rewrite.name }, currentRevision: current?.revision ?? 0 };
+            }
+            if (self) body = structuredClone(rewrite.body) as UiPart['body'];
+            else revised.push(reviseUiPart(current, structuredClone(rewrite.body) as UiPart['body'], now));
+        }
+        const renamed = renameUiPart({ ...part, body }, to, now);
+        for (const written of [renamed, ...revised]) this.parts.set(written.id, written);
         names.delete(from);
         names.set(to, renamed.id);
-        return { kind: 'renamed', revision: renamed.revision };
+        return { kind: 'renamed', revision: renamed.revision, rewritten: revised.map(({ kind: of, name, revision }) => ({ kind: of, name, revision })) };
     }
 
     private namesOf(kind: PartKind): Map<string, string> {

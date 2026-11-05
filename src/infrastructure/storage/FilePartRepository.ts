@@ -6,6 +6,8 @@ import type {
     UiPartDeleteResult,
     UiPartRenameResult,
     UiPartRepository,
+    UiPartRewrite,
+    UiPartRewritten,
     UiPartSummary,
     UiPartWriteResult
 } from '../../application/ports/UiPartRepository.js';
@@ -32,6 +34,39 @@ interface PartFile {
 }
 
 const NAMES_LOCK = 'names.json';
+/** Taken first by every rename, so two renames never wait on each other's part locks */
+const RENAME_LOCK = '*rename';
+
+/** One file of a rename: the part file as it is to be */
+interface JournalFile {
+    readonly kind: PartKind;
+    readonly id: string;
+    readonly file: PartFile;
+}
+
+/** `rename.pending.json`: every part file a rename writes, with its new content */
+interface RenameJournal {
+    readonly files: readonly JournalFile[];
+}
+
+function isRenameJournal(value: unknown): value is RenameJournal {
+    if (!isJsonObject(value) || !Array.isArray(value['files'])) return false;
+    return value['files'].every(
+        (entry: unknown) =>
+            isJsonObject(entry) &&
+            isPartKind(entry['kind']) &&
+            typeof entry['id'] === 'string' &&
+            isPartId(entry['id']) &&
+            isPartFile(entry['file']) &&
+            entry['file'].kind === entry['kind'] &&
+            entry['file'].id === entry['id']
+    );
+}
+
+/** Runs `task` holding every lock of `keys`, taken in the order given */
+function withLocks<T>(lock: KeyedLock, keys: readonly string[], task: () => Promise<T>): Promise<T> {
+    return keys.reduceRight<() => Promise<T>>((inner, key) => () => lock.run(key, inner), task)();
+}
 
 function isPartFile(value: unknown): value is PartFile {
     return (
@@ -73,6 +108,8 @@ function toPart<K extends PartKind>(file: PartFile): UiPart<K> {
 export interface FilePartRepositoryOptions {
     readonly now?: () => Date;
     readonly newId?: () => string;
+    /** Called after each file a rename writes (the journal, each part file, `names.json`); tests throw here to stop a rename halfway */
+    readonly afterRenameWrite?: (path: string) => void;
 }
 
 /**
@@ -81,13 +118,20 @@ export interface FilePartRepositoryOptions {
  * after it, and at the first call the names are read from the part files and `names.json` is rewritten when it is
  * missing or disagrees (a crash between the two writes leaves it behind).
  *
+ * A rename that rewrites other parts (O2.5) first writes `rename.pending.json`, every part file it will write with its
+ * new content, then the part files and `names.json`, and removes the journal last. A journal that is still there was
+ * stopped halfway: `recover` (also run before the first call reads the names) writes the files that differ from it and
+ * removes it. A rename of a part that nothing names writes that one file and `names.json`, with no journal.
+ *
  * Locks (`KeyedLock`, one process): `{kind}/{name}` for a write, and `{kind}/*names` before it for create, rename and
- * delete, so two creates of one name cannot both win and a write queued behind a rename finds the name gone
+ * delete, so two creates of one name cannot both win and a write queued behind a rename finds the name gone. A rename
+ * takes `*rename` first and then the name locks of every part it writes, in order
  */
 export class FilePartRepository implements UiPartRepository {
     private loading: Promise<Map<PartKind, Map<string, string>>> | undefined;
     private readonly now: () => Date;
     private readonly newId: () => string;
+    private readonly afterRenameWrite: (path: string) => void;
 
     constructor(
         private readonly folders: PartFolders,
@@ -96,6 +140,7 @@ export class FilePartRepository implements UiPartRepository {
     ) {
         this.now = options.now ?? (() => new Date());
         this.newId = options.newId ?? randomUUID;
+        this.afterRenameWrite = options.afterRenameWrite ?? (() => undefined);
     }
 
     async create<K extends PartKind>(input: CreateUiPartInput<K>): Promise<CreateUiPartResult<K>> {
@@ -166,25 +211,90 @@ export class FilePartRepository implements UiPartRepository {
         );
     }
 
-    async rename(kind: PartKind, from: string, to: string): Promise<UiPartRenameResult> {
+    async rename(kind: PartKind, from: string, to: string, rewrites: readonly UiPartRewrite[] = []): Promise<UiPartRenameResult> {
         const problem = partNameProblem(to);
         if (problem !== undefined) return { kind: 'invalid', reason: problem };
         if (!isPartKind(kind)) return { kind: 'not-found' };
-        const names = (await this.names()).get(kind) as Map<string, string>;
-        return this.lock.run(`${kind}/*names`, () =>
-            this.lock.run(`${kind}/${from}`, async (): Promise<UiPartRenameResult> => {
-                const id = names.get(from);
-                const part = id === undefined ? undefined : await this.read(kind, id);
-                if (part === undefined) return { kind: 'not-found' };
-                if (names.has(to)) return { kind: 'duplicate-name' };
-                const renamed = renameUiPart(part, to, this.now());
-                await writeJsonAtomic(this.folders.partFile(kind, renamed.id), toFile(renamed));
+        for (const rewrite of rewrites) {
+            if (!isPartKind(rewrite.kind)) return { kind: 'not-found' };
+            if (!isPartBody(rewrite.body)) return { kind: 'invalid', reason: PART_BODY_PROBLEM };
+        }
+        const index = await this.names();
+        const names = index.get(kind) as Map<string, string>;
+        const partKeys = [...new Set([`${kind}/${from}`, ...rewrites.map((rewrite) => `${rewrite.kind}/${rewrite.name}`)])].sort();
+        return withLocks(this.lock, [RENAME_LOCK, `${kind}/*names`, ...partKeys], async (): Promise<UiPartRenameResult> => {
+            const id = names.get(from);
+            const part = id === undefined ? undefined : await this.read(kind, id);
+            if (part === undefined) return { kind: 'not-found' };
+            if (names.has(to)) return { kind: 'duplicate-name' };
+            const now = this.now();
+            let renamedBody = part.body;
+            const revised: UiPart[] = [];
+            for (const rewrite of rewrites) {
+                const self = rewrite.kind === kind && rewrite.name === from;
+                const rewriteId = index.get(rewrite.kind)?.get(rewrite.name);
+                const current = self ? part : rewriteId === undefined ? undefined : await this.read(rewrite.kind, rewriteId);
+                if (current === undefined || !isRevisionCurrent(current.revision, rewrite.expectedRevision)) {
+                    return { kind: 'conflict', part: { kind: rewrite.kind, name: rewrite.name }, currentRevision: current?.revision ?? 0 };
+                }
+                if (self) renamedBody = rewrite.body as UiPartBodies[PartKind];
+                else revised.push(reviseUiPart(current, rewrite.body as UiPartBodies[PartKind], now));
+            }
+            const renamed = renameUiPart({ ...part, body: renamedBody }, to, now);
+            const files = [renamed, ...revised].map((written) => ({ kind: written.kind, id: written.id, file: toFile(written) }));
+            await this.apply(files, () => {
                 names.delete(from);
                 names.set(to, renamed.id);
-                await this.saveNames();
-                return { kind: 'renamed', revision: renamed.revision };
-            })
-        );
+            });
+            const rewritten: UiPartRewritten[] = revised.map(({ kind: of, name, revision }) => ({ kind: of, name, revision }));
+            return { kind: 'renamed', revision: renamed.revision, rewritten };
+        });
+    }
+
+    /**
+     * Finishes a rename that was stopped halfway: writes each file of `rename.pending.json` whose content differs, removes
+     * the journal, then reads the names from the part files again and rewrites `names.json`. True when there was a
+     * journal. Running it again changes nothing
+     */
+    async recover(): Promise<boolean> {
+        const finished = await this.lock.run(RENAME_LOCK, () => this.finishJournal());
+        if (finished) {
+            // the names are read from the part files again, which rewrites names.json when it disagrees
+            this.loading = undefined;
+            await this.names();
+        }
+        return finished;
+    }
+
+    /** Writes the part files of a rename (through the journal when there are several) and `names.json` */
+    private async apply(files: readonly JournalFile[], renameInIndex: () => void): Promise<void> {
+        const journal = this.folders.renameJournal();
+        if (files.length > 1) {
+            await writeJsonAtomic(journal, { files } satisfies RenameJournal);
+            this.afterRenameWrite(journal);
+        }
+        for (const { kind, id, file } of files) {
+            const path = this.folders.partFile(kind, id);
+            await writeJsonAtomic(path, file);
+            this.afterRenameWrite(path);
+        }
+        renameInIndex();
+        await this.saveNames();
+        this.afterRenameWrite(this.folders.namesFile());
+        if (files.length > 1) await rm(journal, { force: true });
+    }
+
+    private async finishJournal(): Promise<boolean> {
+        const journal = await readJson(this.folders.renameJournal());
+        if (journal === undefined) return false;
+        if (!isRenameJournal(journal)) throw new Error('rename.pending.json is damaged');
+        for (const { kind, id, file } of journal.files) {
+            const path = this.folders.partFile(kind, id);
+            const current = await readJson(path);
+            if (JSON.stringify(current) !== JSON.stringify(file)) await writeJsonAtomic(path, file);
+        }
+        await rm(this.folders.renameJournal(), { force: true });
+        return true;
     }
 
     private async read<K extends PartKind>(kind: K, id: string): Promise<UiPart<K> | undefined> {
@@ -204,6 +314,7 @@ export class FilePartRepository implements UiPartRepository {
     }
 
     private async load(): Promise<Map<PartKind, Map<string, string>>> {
+        await this.lock.run(RENAME_LOCK, () => this.finishJournal());
         const index = new Map<PartKind, Map<string, string>>();
         for (const kind of PART_KINDS) {
             const names = new Map<string, string>();

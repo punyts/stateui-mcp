@@ -180,10 +180,43 @@ describe.each(ADAPTERS)('UiPartRepository contract: %s', (_name, createRepositor
         // Assert
         expect([taken, missing]).toEqual([{ kind: 'duplicate-name' }, { kind: 'not-found' }]);
         expect(invalid.kind).toBe('invalid');
-        expect(renamed).toEqual({ kind: 'renamed', revision: 2 });
+        expect(renamed).toEqual({ kind: 'renamed', revision: 2, rewritten: [] });
         expect((await parts.findByName('models', 'item'))?.id).toBe(idOf(1));
         expect(await parts.findByName('models', 'product')).toBeUndefined();
         expect((await parts.list('models')).map((part) => part.name)).toEqual(['item', 'order']);
+    });
+
+    it('should write the new bodies of the rewritten parts with the rename, each one revision up', async () => {
+        // Arrange
+        const parts = await createRepository();
+        await parts.create({ kind: 'models', name: 'product', body: MODEL });
+        await parts.create({ kind: 'data', name: 'stock', body: { model: 'product', records: {} } as never });
+        const dataset = { model: 'item', records: {} };
+
+        // Act
+        const renamed = await parts.rename('models', 'product', 'item', [{ kind: 'data', name: 'stock', body: dataset, expectedRevision: 1 }]);
+
+        // Assert
+        expect(renamed).toEqual({ kind: 'renamed', revision: 2, rewritten: [{ kind: 'data', name: 'stock', revision: 2 }] });
+        expect((await parts.findByName('data', 'stock'))?.body).toEqual(dataset);
+        expect((await parts.findByName('models', 'item'))?.revision).toBe(2);
+    });
+
+    it('should refuse a rename whose rewritten part moved since it was read, and change nothing', async () => {
+        // Arrange
+        const parts = await createRepository();
+        await parts.create({ kind: 'models', name: 'product', body: MODEL });
+        await parts.create({ kind: 'data', name: 'stock', body: { model: 'product', records: {} } as never });
+
+        // Act
+        const stale = await parts.rename('models', 'product', 'item', [{ kind: 'data', name: 'stock', body: { model: 'item', records: {} }, expectedRevision: 4 }]);
+        const gone = await parts.rename('models', 'product', 'item', [{ kind: 'data', name: 'nothing', body: {}, expectedRevision: 1 }]);
+
+        // Assert
+        expect(stale).toEqual({ kind: 'conflict', part: { kind: 'data', name: 'stock' }, currentRevision: 1 });
+        expect(gone).toEqual({ kind: 'conflict', part: { kind: 'data', name: 'nothing' }, currentRevision: 0 });
+        expect((await parts.findByName('models', 'product'))?.revision).toBe(1);
+        expect((await parts.findByName('data', 'stock'))?.body).toEqual({ model: 'product', records: {} });
     });
 
     it('should delete with the current revision only', async () => {

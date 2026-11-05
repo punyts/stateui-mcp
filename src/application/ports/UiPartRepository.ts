@@ -40,9 +40,28 @@ export type UiPartDeleteResult =
     | { readonly kind: 'conflict'; readonly currentRevision: number }
     | { readonly kind: 'not-found' };
 
-/** The outcome of a rename. Only `renamed` changed anything; the part keeps its id and goes one revision up */
+/** A part that names the renamed part, with its new body and the revision its old body was read at */
+export interface UiPartRewrite {
+    readonly kind: PartKind;
+    readonly name: string;
+    readonly body: object;
+    readonly expectedRevision: number;
+}
+
+/** A part a rename wrote, with its new revision */
+export interface UiPartRewritten {
+    readonly kind: PartKind;
+    readonly name: string;
+    readonly revision: number;
+}
+
+/**
+ * The outcome of a rename. Only `renamed` changed anything: the part keeps its id and goes one revision up, and so does
+ * each rewritten part. `conflict` names a rewritten part whose revision moved since it was read
+ */
 export type UiPartRenameResult =
-    | { readonly kind: 'renamed'; readonly revision: number }
+    | { readonly kind: 'renamed'; readonly revision: number; readonly rewritten: readonly UiPartRewritten[] }
+    | { readonly kind: 'conflict'; readonly part: { readonly kind: PartKind; readonly name: string }; readonly currentRevision: number }
     | { readonly kind: 'duplicate-name' }
     | { readonly kind: 'not-found' }
     | UiPartInvalid;
@@ -51,8 +70,8 @@ export type UiPartRenameResult =
  * Storage of the owner's parts, one contract for every kind. A part is found by kind and name, or by its immutable id;
  * names are unique within a kind. Writes and deletes take `expectedRevision`: a stale one returns `conflict` and
  * changes nothing. Bodies keep their key order. The repository checks names and that a body is an object; whether a
- * body is a valid part, and what depends on it, is the use cases' (O2.4). A rename changes only the part's name: the
- * parts that name it are the rename use case's (O2.5)
+ * body is a valid part, and what depends on it, is the use cases' (O2.4). A rename changes the part's name and writes the
+ * new bodies of the parts that name it (`rewrites`, which the rename use case computes, O2.5) all together or not at all
  */
 export interface UiPartRepository {
     create<K extends PartKind>(input: CreateUiPartInput<K>): Promise<CreateUiPartResult<K>>;
@@ -62,5 +81,5 @@ export interface UiPartRepository {
     list(kind: PartKind): Promise<readonly UiPartSummary[]>;
     write<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], expectedRevision: number): Promise<UiPartWriteResult>;
     delete(kind: PartKind, name: string, expectedRevision: number): Promise<UiPartDeleteResult>;
-    rename(kind: PartKind, from: string, to: string): Promise<UiPartRenameResult>;
+    rename(kind: PartKind, from: string, to: string, rewrites?: readonly UiPartRewrite[]): Promise<UiPartRenameResult>;
 }

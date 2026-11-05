@@ -6,6 +6,7 @@ import type {
     UiPartDeleteResult,
     UiPartRenameResult,
     UiPartRepository,
+    UiPartRewrite,
     UiPartSummary,
     UiPartWriteResult
 } from './ports/UiPartRepository.js';
@@ -92,13 +93,17 @@ export class IndexedUiPartRepository implements UiPartRepository {
         return result;
     }
 
-    async rename(kind: PartKind, from: string, to: string): Promise<UiPartRenameResult> {
+    async rename(kind: PartKind, from: string, to: string, rewrites: readonly UiPartRewrite[] = []): Promise<UiPartRenameResult> {
         const index = await this.usage();
-        const result = await this.inner.rename(kind, from, to);
-        if (result.kind === 'renamed') {
-            index.rename(kind, from, to);
-            this.changed(kind, to);
+        const result = await this.inner.rename(kind, from, to, rewrites);
+        if (result.kind !== 'renamed') return result;
+        index.rename(kind, from, to);
+        for (const rewrite of rewrites) {
+            const self = rewrite.kind === kind && rewrite.name === from;
+            index.set(rewrite.kind, self ? to : rewrite.name, rewrite.body as UiPartBodies[PartKind]);
         }
+        this.changed(kind, to);
+        for (const { kind: of, name } of result.rewritten) this.changed(of, name);
         return result;
     }
 }

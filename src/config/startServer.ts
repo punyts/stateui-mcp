@@ -67,6 +67,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         ...(options.procedures !== undefined && { procedures: options.procedures }),
         ...(options.toolLog !== undefined && { toolLog: options.toolLog })
     });
+    // A rename stopped halfway by a crash is finished before anything reads a part
+    if (await services.recoverParts()) options.report.info('Finished a part rename that was stopped halfway', {});
     const dependencies = { ...services, useCases: services.useCases };
     const sessions = new McpHttpSessions(() => createStateUiMcpServer(dependencies), options.report);
     const http = await startHttpServer({

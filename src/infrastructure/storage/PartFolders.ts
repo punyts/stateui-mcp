@@ -19,6 +19,7 @@ export const isPartId = isAppId;
  *
  *     <dataDir>/<kind>/<id>.json     id, kind, name, revision, createdAt, updatedAt and the body (kinds: `PART_KINDS`)
  *     <dataDir>/names.json           { <kind>: { <name>: <id> } }, an index rebuilt from the part files
+ *     <dataDir>/rename.pending.json  only while a rename writes several parts: every part file it writes (O2.5)
  *
  * Each app also has a side folder named by its UUID (the app's part id once apps are parts):
  *
@@ -54,6 +55,11 @@ export class PartFolders {
 
     namesFile(): string {
         return join(this.root, 'names.json');
+    }
+
+    /** The journal of a rename that writes several part files */
+    renameJournal(): string {
+        return join(this.root, 'rename.pending.json');
     }
 
     /** The default persona's diff of one app of one owner */
