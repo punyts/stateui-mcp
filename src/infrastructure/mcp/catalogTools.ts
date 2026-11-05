@@ -58,7 +58,7 @@ export function createCatalogTools(
         {
             name: 'ui_component_get',
             description:
-                'Get the full catalog entry of one component: shape (properties and defaults), slots, events, commands, tokens (the component tokens its look reads, with type and default, such as image.fill; set them in a node "theme" to change that node and its subtree), an example node and the languages it ships. An unknown name returns the nearest names.',
+                'Get what you need to use one component: its properties (type, and default, allowed values, validators and required only where they apply; runtime: true marks a value the component sets while the app runs, kind: "content" a translatable text), shared and layout settings, slots, events, commands, tokens (the component tokens its look reads, with type and default, such as image.fill; set them in a node "theme" to change that node and its subtree), an example node and the languages it ships. A composed component gives its tree and the paths it exposes instead of properties. An unknown name returns the nearest names.',
             inputSchema: COMPONENT_GET.schema,
             annotations: READ_ONLY,
             run: (args) => {

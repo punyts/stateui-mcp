@@ -110,12 +110,15 @@ describe('catalog tools', () => {
     });
 
 
-    it('should return the full entry of a component', async () => {
+    it('should return the compact entry of a component', async () => {
         const result = await call(harness.client, 'ui_component_get', { name: 'button' });
 
         expect(result.isError).toBe(false);
         expect(result.body['name']).toBe('button');
         expect(result.body['events']).toContain('press');
+        expect(result.body).not.toHaveProperty('shape');
+        expect(result.body).not.toHaveProperty('purposes');
+        expect(JSON.stringify(result.body['properties'])).not.toContain('"reflect"');
     });
 
     it('should answer an unknown component with the nearest names', async () => {
