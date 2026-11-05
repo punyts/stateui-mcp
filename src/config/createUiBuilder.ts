@@ -1,5 +1,6 @@
 import type {
     ComponentCatalog,
+    InstanceStates,
     LiveStateReader,
     UiAppRepository,
     UiAppValidator,
@@ -26,7 +27,7 @@ import { ReadFileText } from '../application/use-cases/ReadFileText.js';
 import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewErrors.js';
 import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
-import { SetState } from '../application/use-cases/SetState.js';
+import { SetPartState, SetState } from '../application/use-cases/SetState.js';
 import { ResetInstance, ResetState } from '../application/use-cases/ResetState.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
@@ -47,6 +48,8 @@ export interface UiBuilderPorts {
     readonly parts?: UiPartRepository & UsageSource;
     /** The default persona's instances of owner apps (`FileUiInstanceRepository`); with `parts`, `resetInstance` and `writePersonaData` exist */
     readonly instances?: UiInstanceRepository;
+    /** The running instances of owner apps (`AuthorityInstanceStates`); with `parts`, `setPartState` exists */
+    readonly instanceStates?: InstanceStates;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;
@@ -94,11 +97,13 @@ export interface UiBuilderUseCases {
     readonly resetInstance?: ResetInstance;
     /** With `parts` and `instances` only */
     readonly writePersonaData?: WritePersonaData;
+    /** With `parts` and `instanceStates` only */
+    readonly setPartState?: SetPartState;
 }
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, parts, instances, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
+    const { repository, parts, instances, instanceStates, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     return {
@@ -131,6 +136,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
             instances !== undefined && {
                 resetInstance: new ResetInstance(parts, instances, report),
                 writePersonaData: new WritePersonaData(parts, instances, validator, report)
-            })
+            }),
+        ...(parts !== undefined && instanceStates !== undefined && { setPartState: new SetPartState(parts, instanceStates, validator, report) })
     };
 }

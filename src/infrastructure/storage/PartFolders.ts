@@ -1,10 +1,8 @@
 import { join, resolve } from 'node:path';
 import { isKeyName } from '@punyts/stateui-app/core';
+import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
 import type { PartKind } from '../../domain/partName.js';
 import { isPartKind } from '../../domain/UiPart.js';
-
-/** The only persona of the local server: its owner is also its one user */
-export const DEFAULT_PERSONA = 'default';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

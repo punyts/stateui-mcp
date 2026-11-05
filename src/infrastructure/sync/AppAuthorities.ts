@@ -4,12 +4,14 @@ import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
+import type { InstanceKey } from '../../domain/InstanceKey.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import { AppCalls } from './AppCalls.js';
 import type { AppProcedure } from './AppCalls.js';
 import { AppLogic } from './AppLogic.js';
 import { appNamespace } from './FileNamespaceStorage.js';
+import type { InstanceStart } from './InstanceStart.js';
 
 /** A client emit, with the app and the id of the view that raised it */
 export type AppEmitHandler = (appId: string, name: string, value: JsonValue | undefined, viewId: string) => void;
@@ -50,14 +52,24 @@ export interface AppLogicOptions {
 }
 
 /**
- * One state-sync authority per app, made when the app's state is first needed (Full mode). It owns the order of the
- * app's state changes: the views' changes over their sockets and the tools' writes. The state starts as the document's
- * `data` and an empty `app`; `$.app` stays sparse (only the articulation a user or a tool changed), so changes create
- * missing parents. With `logic` options each app's `logic` runs on its authority (`AppLogic`)
+ * One state-sync authority per running app, made when its state is first needed (Full mode), keyed by its sync
+ * namespace (`appNamespace`). It owns the order of the state changes: the views' changes over their sockets and the
+ * tools' writes. `$.app` stays sparse (only the articulation a user or a tool changed), so changes create missing
+ * parents. With `logic` options the app's `logic` runs on its authority (`AppLogic`).
+ *
+ * - An old app document (`apps.<appId>`): the state starts as the document's `data` and an empty `app`, kept by the
+ *   storage given to the constructor.
+ * - An instance of an owner app (`instances.<persona>.<ownerId>.<appId>`): the state is the assembled view with the
+ *   persona's instance laid over it, kept by the instance's own storage (`InstanceNamespaceStorage`), and the logic is
+ *   the assembled logic (the app's units and its bound modules)
  */
 export class AppAuthorities {
+    /** By namespace */
     private readonly authorities = new Map<string, Promise<Authority>>();
+    /** By namespace */
     private readonly logics = new Map<string, AppLogic>();
+    /** The app id each namespace records its events and calls under */
+    private readonly appIds = new Map<string, string>();
     /** The answers to the apps' `call` commands */
     readonly calls: AppCalls;
 
@@ -73,30 +85,56 @@ export class AppAuthorities {
 
     /** The authority of an app; `document` gives the state at revision 0 when nothing is stored */
     authority(appId: string, document: UiDocument): Promise<Authority> {
-        const key = appId.toLowerCase();
-        let authority = this.authorities.get(key);
+        const data = document['data'];
+        return this.open(appNamespace(appId), appId.toLowerCase(), document, this.storage, { data: (isJsonObject(data) ? data : {}) as SyncValue, app: {} });
+    }
+
+    /** The authority of a running instance, over the instance's own storage, which gives the starting state */
+    instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
+        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {});
+    }
+
+    /** A tool's write to a running instance, as `write` is for an old app */
+    async writeInstance(start: InstanceStart, storage: NamespaceStorage, path: string, value: JsonValue | undefined, options: { logic?: boolean } = {}): Promise<string | undefined> {
+        return this.writeTo(appNamespace(start.key), await this.instance(start, storage), path, value, options);
+    }
+
+    /** A copy of a running instance's state, without `$.server` */
+    async instanceState(start: InstanceStart, storage: NamespaceStorage): Promise<JsonObject> {
+        const { server: _server, ...state } = (await this.instance(start, storage)).state() as JsonObject;
+        return state;
+    }
+
+    /** Closes a running instance's connections, waits for its saves and forgets it */
+    forgetInstance(key: InstanceKey): Promise<void> {
+        return this.forgetNamespace(appNamespace(key));
+    }
+
+    /** The authority of a namespace, made on first use; its emits and its logic's events are recorded under `appId` */
+    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>): Promise<Authority> {
+        let authority = this.authorities.get(namespace);
         if (authority === undefined) {
-            const data = document['data'];
             authority = createAuthority({
-                namespace: appNamespace(key),
-                storage: this.storage,
-                initial: { data: (isJsonObject(data) ? data : {}) as SyncValue, app: {} },
+                namespace,
+                storage,
+                initial,
                 createParents: true,
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey })
             }).then((created) => {
-                created.onEmit((name, value, clientId) => this.onEmit(key, name, value as JsonValue | undefined, clientId));
-                this.startLogic(key, created, document);
+                created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
+                this.startLogic(namespace, appId, created, document);
                 return created;
             }, (error: unknown) => {
-                throw this.explain(key, error);
+                throw this.explain(appId, error);
             });
-            authority.catch(() => this.authorities.delete(key));
-            this.authorities.set(key, authority);
+            authority.catch(() => this.authorities.delete(namespace));
+            this.authorities.set(namespace, authority);
+            this.appIds.set(namespace, appId);
         }
         return authority;
     }
 
-    private startLogic(appId: string, authority: Authority, document: UiDocument): void {
+    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument): void {
         if (this.logic === undefined) return;
         const { library, report } = this.logic;
         const logic = new AppLogic(
@@ -106,7 +144,7 @@ export class AppAuthorities {
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             (name, payload) => this.calls.ask(appId, name, payload)
         );
-        this.logics.set(appId, logic);
+        this.logics.set(namespace, logic);
         try {
             logic.setDocument(document);
         } catch (error) {
@@ -120,7 +158,7 @@ export class AppAuthorities {
      * rest of `$.data` keeps what users and tools changed. Then its logic is rebuilt
      */
     async documentChanged(appId: string, document: UiDocument, previous?: UiDocument): Promise<void> {
-        const key = appId.toLowerCase();
+        const key = appNamespace(appId);
         const authority = this.authorities.get(key);
         if (authority !== undefined && previous !== undefined) {
             const writes: DataWrite[] = [];
@@ -146,8 +184,11 @@ export class AppAuthorities {
      * when a guard refused it
      */
     async write(appId: string, document: UiDocument, path: string, value: JsonValue | undefined, options: { logic?: boolean } = {}): Promise<string | undefined> {
-        const authority = await this.authority(appId, document);
-        const logic = this.logics.get(appId.toLowerCase());
+        return this.writeTo(appNamespace(appId), await this.authority(appId, document), path, value, options);
+    }
+
+    private writeTo(namespace: string, authority: Authority, path: string, value: JsonValue | undefined, options: { logic?: boolean }): string | undefined {
+        const logic = this.logics.get(namespace);
         if (logic !== undefined) return logic.write(path, value, options.logic !== false);
         authority.write(value === undefined ? { path, op: 'delete' } : { path, op: 'set', value: value as SyncValue });
         return undefined;
@@ -165,7 +206,7 @@ export class AppAuthorities {
             { path: '$.data', op: 'set', value: (isJsonObject(data) ? data : {}) as SyncValue },
             { path: '$.app', op: 'set', value: {} }
         ]);
-        const logic = this.logics.get(appId.toLowerCase());
+        const logic = this.logics.get(appNamespace(appId));
         if (logic === undefined) return;
         try {
             logic.setDocument(document);
@@ -176,11 +217,11 @@ export class AppAuthorities {
 
     /** The app's logic trace, oldest run first; undefined when its logic does not run on the server */
     trace(appId: string): LogicTraceRun[] | undefined {
-        return this.logics.get(appId.toLowerCase())?.trace();
+        return this.logics.get(appNamespace(appId))?.trace();
     }
 
     clearTrace(appId: string): void {
-        this.logics.get(appId.toLowerCase())?.clearTrace();
+        this.logics.get(appNamespace(appId))?.clearTrace();
     }
 
     /** A stored `$.server` without a key is the one failure the operator can fix; it gets a message that says how */
@@ -200,13 +241,17 @@ export class AppAuthorities {
 
     /** Closes the app's connections, waits for its saves and forgets it; for a deleted app */
     async forget(appId: string): Promise<void> {
-        const key = appId.toLowerCase();
-        const authority = this.authorities.get(key);
+        await this.forgetNamespace(appNamespace(appId));
+    }
+
+    private async forgetNamespace(namespace: string): Promise<void> {
+        const authority = this.authorities.get(namespace);
         if (authority === undefined) return;
-        this.authorities.delete(key);
-        this.logics.get(key)?.dispose();
-        this.logics.delete(key);
-        this.calls.forget(key);
+        this.authorities.delete(namespace);
+        this.logics.get(namespace)?.dispose();
+        this.logics.delete(namespace);
+        this.calls.forget(this.appIds.get(namespace) ?? '');
+        this.appIds.delete(namespace);
         const created = await authority.catch(() => undefined);
         if (created === undefined) return;
         created.close();
@@ -215,6 +260,6 @@ export class AppAuthorities {
 
     /** Closes every connection and waits for every save */
     async close(): Promise<void> {
-        await Promise.all([...this.authorities.keys()].map((appId) => this.forget(appId)));
+        await Promise.all([...this.authorities.keys()].map((namespace) => this.forgetNamespace(namespace)));
     }
 }

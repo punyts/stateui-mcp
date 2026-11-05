@@ -20,6 +20,7 @@ import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileReposi
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
+import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
 import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import { PersistedStates } from '../infrastructure/sync/PersistedStates.js';
@@ -89,12 +90,14 @@ export function createServices(options: ServicesOptions): Services {
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
     const parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock, { now, newId: randomUUID }));
-    const instances = new FileUiInstanceRepository(folders, lock, options.ownerId ?? LOCAL_OWNER_ID);
+    const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
+    const instances = new FileUiInstanceRepository(folders, lock, ownerId);
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields));
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { repository, parts, instances, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
+        { repository, parts, instances, instanceStates, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);
