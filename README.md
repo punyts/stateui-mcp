@@ -143,7 +143,17 @@ The runtime port is a second origin that serves only the app frame; every other 
 
 ## Data directory
 
-One folder per app, named by its UUID:
+The directory holds two stores side by side while the owner tree is built. The tools use the old one, one folder per app; the owner parts, their instances and the converted apps' old files are beside it:
+
+```text
+data/<appId>/                       an app of the old store (below); after convert only errors.json and the uploaded files stay
+data/<kind>/<id>.json               an owner part; data/names.json indexes them by name (Owner parts, below)
+data/rename.pending.json            the journal of a rename stopped halfway, replayed at start
+data/personas/default/...           the default persona's instances and persona records
+data/.converted/<appId>/            app.json and state.json of a converted app, until convert --purge
+```
+
+The old store, one folder per app, named by its UUID:
 
 ```text
 data/<appId>/app.json      id, name, revision, createdAt, updatedAt and the document
@@ -155,7 +165,7 @@ data/<appId>/files/<id>    the bytes of one uploaded file
 
 Every file is written to a temporary file in the same folder and renamed into place, and the writes of one app run one at a time, so a reader never sees half a file and a write is checked against the revision it read. `children` and keyed data maps are ordered by key: the files are written with `JSON.stringify` and read with `JSON.parse` and nothing re-sorts them (integer-like keys are refused, because JavaScript would move them). `app.json` (the document and its revision) and `state.json` (the synced state, written by the authority) are separate, so a state write never touches the document revision. Limits: 1 MiB per document, 2000 nodes, 10 MiB per file, 50 files and 100 MiB per app. Uploaded files that nothing references (not in the document or the synced state, read live in every mode: the server's authority, the statenet, or the statenet alone for a Persisted app; `$.server` is not included) are removed after 24 hours, when the next upload to the app happens.
 
-**Owner parts (in progress, not used by the tools yet).** The owner-tree design moves apps to reusable parts (apps, themes, logic modules, models, datasets, components, patterns). `UiPart` (`src/domain/UiPart.ts`) is one stored part: an immutable UUID `id`, the `kind`, a slug `name` (`isPartName` of `@punyts/stateui-app/core`), the `revision` and the `body` of its kind. `UiPartRepository` (`src/application/ports/`) is the storage contract for every kind: `create`, `findByName`, `findById`, `list`, `write` and `delete` with `expectedRevision`, and `rename`; results are `created`, `written`, `deleted`, `renamed`, `conflict`, `not-found`, `duplicate-name` or `invalid` (a name that is not a slug, a body that is not an object, or a given `id` that is not a UUID or that a part of the kind has). `create` takes an optional `id` so the converter can keep an old app's id. `FilePartRepository` stores them in the same data directory, beside the app folders (`PartFolders` builds every path, from a kind and a UUID only):
+**Owner parts (built; the tools do not use them yet).** The owner-tree design moves apps to reusable parts (apps, themes, logic modules, models, datasets, components, patterns). `UiPart` (`src/domain/UiPart.ts`) is one stored part: an immutable UUID `id`, the `kind`, a slug `name` (`isPartName` of `@punyts/stateui-app/core`), the `revision` and the `body` of its kind. `UiPartRepository` (`src/application/ports/`) is the storage contract for every kind: `create`, `findByName`, `findById`, `list`, `write` and `delete` with `expectedRevision`, and `rename`; results are `created`, `written`, `deleted`, `renamed`, `conflict`, `not-found`, `duplicate-name` or `invalid` (a name that is not a slug, a body that is not an object, or a given `id` that is not a UUID or that a part of the kind has). `create` takes an optional `id` so the converter can keep an old app's id. `FilePartRepository` stores them in the same data directory, beside the app folders (`PartFolders` builds every path, from a kind and a UUID only):
 
 ```text
 data/<kind>/<id>.json      id, kind, name, revision, createdAt, updatedAt and the body; kinds: apps, themes, logic, models, data, components, patterns
@@ -199,6 +209,16 @@ node dist/cli.js convert --data-dir ./data --purge     # later: delete data/.con
 ```
 
 For each app, `convertDataDir` (`src/config/`) runs `splitDocument` of `@punyts/stateui-app/core` on the document, with the live data of `state.json` in place of the document's (the articulation is dropped), and creates the parts: its themes, a dataset and an inferred model for each key of `data`, its components, then the app, whose part id is the old app id. Names that a stored part or an earlier app of the run has get another one, and the report lists them. The default persona's instance is cleared, then `app.json` and `state.json` move to `data/.converted/<appId>/`; `errors.json`, `files.json` and the uploaded bytes stay in `data/<appId>/`, so the app's files are still listed under the same id. An app the converter cannot split (a rule that switches a hidden tab strip, for one) keeps its files where they are and is listed with the reasons. The plan is made from the stored files alone, so a dry run prints the same report and writes nothing. A second run converts nothing new; when an earlier run created an app's parts and stopped before moving its files, the next run only moves them. The command exits 0 with a report, `Nothing to convert in <dir>.` when there is nothing, and 2 for an unknown option.
+
+**Do not run it before the release that switches the tools to parts.** Until then the `ui_*` tools read `app.json`, so a converted app disappears from them. The upgrade, once that release is installed:
+
+1. Stop the server.
+2. `stateui-mcp convert --dry-run` and read the report: the parts each app becomes, the names that changed and the apps that cannot be converted, with the reasons.
+3. `stateui-mcp convert`.
+4. Start the server and check the apps; `.converted/` still holds the old files.
+5. `stateui-mcp convert --purge`.
+
+An app that is not converted keeps its folder; fix what the report names in that app (with the old release) or rebuild it from parts.
 
 ## Security notes
 
