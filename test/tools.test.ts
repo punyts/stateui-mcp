@@ -754,7 +754,7 @@ describe('live tools', () => {
         const appId = await call(harness.client, 'ui_app_create', {
             name: 'shop',
             document: {
-                app: { component: 'page', children: { header: { component: 'text', _text: 'Shop' } } },
+                app: { component: 'page', children: { header: { component: 'text', _text: 'Shop' }, main: { component: 'outlet' } } },
                 screens: {
                     home: { title: 'Home', root: { component: 'page', children: { toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } } } },
                     product: { title: 'Product', params: { id: { type: 'string', required: true } }, root: { component: 'page' } }
