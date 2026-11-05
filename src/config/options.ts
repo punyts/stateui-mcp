@@ -23,7 +23,7 @@ Usage: stateui-mcp [options]
        stateui-mcp convert [--data-dir <dir>] [--dry-run] [--purge]   (stateui-mcp convert --help)
 
 Options:
-  --data-dir <dir>     Where the apps are stored, one folder per app
+  --data-dir <dir>     Where the parts, instances and app files are stored
                        (env STATEUI_MCP_DATA_DIR, default ./data)
   --port <number>      Port of the HTTP server: /mcp and the browser view
                        (env STATEUI_MCP_PORT, default 4100)

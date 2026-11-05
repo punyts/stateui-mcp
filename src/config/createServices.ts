@@ -28,7 +28,7 @@ import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js'
 import type { ToolCallLog } from '../application/ports/ToolCallLog.js';
 
 export interface ServicesOptions {
-    /** Where the apps live: one folder per app */
+    /** Where the parts, instances and app files live */
     readonly dataDir: string;
     readonly report: UseCaseReport;
     /** The origin the HTTP server listens on. A function, because the port may be chosen when the server starts */
