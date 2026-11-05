@@ -1,6 +1,10 @@
 import { join, resolve } from 'node:path';
+import { isKeyName } from '@punyts/stateui-app/core';
 import type { PartKind } from '../../domain/partName.js';
 import { isPartKind } from '../../domain/UiPart.js';
+
+/** The only persona of the local server: its owner is also its one user */
+export const DEFAULT_PERSONA = 'default';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,7 +30,12 @@ export const isPartId = isAppId;
  *     <dataDir>/<appId>/files.json   metadata of the uploaded files
  *     <dataDir>/<appId>/files/<id>   the bytes of one uploaded file
  *
- * Only kinds and UUIDs reach a path: anything else is refused here, so no input can name a file outside `root`
+ * The default persona's instances and persona datasets (O2.7), keyed by app id so a rename moves nothing:
+ *
+ *     <dataDir>/personas/default/apps/<ownerId>/<appId>.json      the instance: the diff over the definition
+ *     <dataDir>/personas/default/data/<appId>/<binding>.json      { model, records } of one persona binding (a capital as ^ and its small letter)
+ *
+ * Only kinds, UUIDs and binding key names reach a path: anything else is refused here, so no input can name a file outside `root`
  */
 export class PartFolders {
     readonly root: string;
@@ -47,6 +56,30 @@ export class PartFolders {
 
     namesFile(): string {
         return join(this.root, 'names.json');
+    }
+
+    /** The default persona's diff of one app of one owner */
+    instanceFile(ownerId: string, appId: string): string {
+        if (!UUID.test(ownerId)) throw new Error('An owner id is a UUID');
+        if (!UUID.test(appId)) throw new Error('An app id is a UUID');
+        return join(this.root, 'personas', DEFAULT_PERSONA, 'apps', ownerId.toLowerCase(), `${appId.toLowerCase()}.json`);
+    }
+
+    /** The folder of the default persona's datasets of one app */
+    personaDataDir(appId: string): string {
+        if (!UUID.test(appId)) throw new Error('An app id is a UUID');
+        return join(this.root, 'personas', DEFAULT_PERSONA, 'data', appId.toLowerCase());
+    }
+
+    /**
+     * The records of one persona binding. A binding name is a key name (`[A-Za-z_][A-Za-z0-9_]*`); each capital becomes
+     * `^` and its small letter (`notesByDay` is `notes^by^day.json`), so two names that differ in case get two files on a
+     * file system that ignores case
+     */
+    personaDataFile(appId: string, binding: string): string {
+        if (!isKeyName(binding)) throw new Error('A binding name is a key name');
+        const file = binding.replace(/[A-Z]/g, (capital) => `^${capital.toLowerCase()}`);
+        return join(this.personaDataDir(appId), `${file}.json`);
     }
 
     dir(appId: string): string {

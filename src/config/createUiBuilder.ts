@@ -5,6 +5,7 @@ import type {
     UiAppValidator,
     UiFileRepository,
     UiFileStore,
+    UiInstanceRepository,
     UiPartRepository,
     UiPreviewLog
 } from '../application/ports/index.js';
@@ -26,12 +27,13 @@ import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewError
 import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
 import { SetState } from '../application/use-cases/SetState.js';
-import { ResetState } from '../application/use-cases/ResetState.js';
+import { ResetInstance, ResetState } from '../application/use-cases/ResetState.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
 import { WriteApp } from '../application/use-cases/WriteApp.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
+import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
 import type { UsageSource } from '../application/UsageIndex.js';
 
 /** The adapters the use cases run on */
@@ -43,6 +45,8 @@ export interface UiBuilderPorts {
      * `FilePartRepository` in the server). With it, `writePart` and `validatePartApp` exist; no tool calls them yet
      */
     readonly parts?: UiPartRepository & UsageSource;
+    /** The default persona's instances of owner apps (`FileUiInstanceRepository`); with `parts`, `resetInstance` and `writePersonaData` exist */
+    readonly instances?: UiInstanceRepository;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;
@@ -86,11 +90,15 @@ export interface UiBuilderUseCases {
     readonly writePart?: WritePart;
     /** With `parts` only */
     readonly validatePartApp?: ValidatePartApp;
+    /** With `parts` and `instances` only */
+    readonly resetInstance?: ResetInstance;
+    /** With `parts` and `instances` only */
+    readonly writePersonaData?: WritePersonaData;
 }
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, parts, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
+    const { repository, parts, instances, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     return {
@@ -118,6 +126,11 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         ...(parts !== undefined && {
             writePart: new WritePart(parts, parts, validator, report),
             validatePartApp: new ValidatePartApp(parts, parts, validator, report)
-        })
+        }),
+        ...(parts !== undefined &&
+            instances !== undefined && {
+                resetInstance: new ResetInstance(parts, instances, report),
+                writePersonaData: new WritePersonaData(parts, instances, validator, report)
+            })
     };
 }

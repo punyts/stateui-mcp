@@ -1,5 +1,7 @@
 import { isRevisionCurrent } from '../../domain/revision.js';
 import type { UiAppRepository } from '../ports/UiAppRepository.js';
+import type { UiInstanceRepository } from '../ports/UiInstanceRepository.js';
+import type { UiPartRepository } from '../ports/UiPartRepository.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 
 export type ResetStateResult =
@@ -40,6 +42,32 @@ export class ResetState {
 
     private finish(result: ResetStateResult): ResetStateResult {
         this.report.info('App state reset', { appId: result.appId, outcome: result.kind });
+        return result;
+    }
+}
+
+export type ResetInstanceResult = { readonly kind: 'reset'; readonly app: string } | { readonly kind: 'not-found'; readonly app: string };
+
+/**
+ * Puts the default persona's use of an owner app back to the definition: its instance (the diff) and the records of its
+ * persona bindings are removed, so the next read is the definition. The definition and every part stay as they are
+ */
+export class ResetInstance {
+    constructor(
+        private readonly parts: UiPartRepository,
+        private readonly instances: UiInstanceRepository,
+        private readonly report: UseCaseReport
+    ) {}
+
+    async execute(app: string): Promise<ResetInstanceResult> {
+        const part = await this.parts.findByName('apps', app);
+        if (part === undefined) return this.finish({ kind: 'not-found', app });
+        await this.instances.reset(part.id);
+        return this.finish({ kind: 'reset', app });
+    }
+
+    private finish(result: ResetInstanceResult): ResetInstanceResult {
+        this.report.info('Instance reset', { app: result.app, outcome: result.kind });
         return result;
     }
 }

@@ -12,6 +12,7 @@ import { LivePreviewLog } from '../infrastructure/preview/LivePreviewLog.js';
 import { LiveViews } from '../infrastructure/preview/LiveViews.js';
 import { PreviewHub } from '../infrastructure/preview/PreviewHub.js';
 import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
+import { FileUiInstanceRepository } from '../infrastructure/storage/FileUiInstanceRepository.js';
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { FileUiAppRepository } from '../infrastructure/storage/FileUiAppRepository.js';
 import { FileUiErrorLog } from '../infrastructure/storage/FileUiErrorLog.js';
@@ -42,7 +43,12 @@ export interface ServicesOptions {
     readonly procedures?: Readonly<Record<string, AppProcedure>>;
     /** A file that gets one JSON line per tool call; absent: no log */
     readonly toolLog?: string;
+    /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
+    readonly ownerId?: string;
 }
+
+/** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
+export const LOCAL_OWNER_ID = '00000000-0000-4000-8000-000000000001';
 
 /** Everything the transports need: the use cases, the live views, the browser and the repository */
 export interface Services {
@@ -83,11 +89,12 @@ export function createServices(options: ServicesOptions): Services {
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
     const parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock, { now, newId: randomUUID }));
+    const instances = new FileUiInstanceRepository(folders, lock, options.ownerId ?? LOCAL_OWNER_ID);
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { repository, parts, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
+        { repository, parts, instances, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);
