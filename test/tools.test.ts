@@ -108,7 +108,9 @@ describe('tool list', () => {
                 'ui_list',
                 'ui_get',
                 'ui_delete',
-                'ui_rename'
+                'ui_rename',
+                'ui_app_configure',
+                'ui_screen_create'
             ].sort()
         );
     });

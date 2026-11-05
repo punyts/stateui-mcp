@@ -84,7 +84,7 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 | `ui_component_get` | `name` | the catalog entry; an unknown name is `unknown-component` with `nearest` |
 | `ui_icons_list` | `query?`, `category?`, `filled?`, `limit?` | `{ icons, total, more }` |
 | `ui_tokens_list` | `group?`, `query?`, `includeOverlays?` | `{ count, tokens, overlays? }`; `unknown-group` lists the groups |
-| `ui_app_create` | `name`, `document?` | `{ appId, revision }`; `invalid-document`, `invalid-name`, `duplicate-name` |
+| `ui_app_create` | `name`, `document?` (old store); or `name`, `shell`, `title?`, `themes?`, `data?`, `logic?` (an app of parts) | `{ appId, revision }`; `invalid-document`, `invalid-name`, `duplicate-name`. With `shell`: `{ name, id, revision, start, warnings }`, see below |
 | `ui_app_list` | none | `{ count, apps: [{ appId, name, revision, updatedAt }] }` |
 | `ui_app_get` | `appId`, `path?`, `depth?`, `resolved?` | `{ appId, revision, path, value, resolved, note? }`; `missing-path`, `invalid-path` |
 | `ui_validate` | `appId` (old store) or `app` (an app of parts) | `{ appId, revision, valid, errors, warnings, preview }`; with `app`: `{ app, revision, valid, errors, warnings, uses }`, each error naming its `part` |
@@ -112,6 +112,9 @@ The generic tools of the owner's parts (owner-tree epic 3, beside the tools abov
 | `ui_get` | `kind`, `name`, `app?`, `path?`, `depth?`, `resolved?` | `{ kind, name, id, revision, path, value, resolved, note? }`; a screen has its app's id and revision; `resolved` (apps only) is the assembled app; `not-found` with `nearest`, `missing-path` |
 | `ui_delete` | `kind`, `name`, `app?`, `expectedRevision` | `{ kind, name, revision }`; `in-use` with `users` (a used part, a start screen), `conflict`, `not-found`. Deleting an app also deletes its instance and closes its views |
 | `ui_rename` | `kind`, `name`, `to`, `app?`, `expectedRevision` | `{ kind, name, revision, rewritten: [{ kind, name, revision }] }` (`RenamePart`); `duplicate-name`, `invalid-name`, `conflict`, `not-found` |
+| `ui_app_create` with `shell` | `name`, `shell` (a node tree with one `outlet`, or `{ pattern, params? }`), `title?`, `themes?`, `data?`, `logic?` (the three parts of `uses`), `sync?` (`full` only) | `{ name, id, revision, start: "home", warnings }` (`CreatePartApp`): the app starts with one screen, `home`. `not-found` with `missing: [{ kind, name, nearest }]`, `invalid-app` with `errors` (each naming its `part`), `invalid-argument` "No such pattern" |
+| `ui_app_configure` | `name`, `expectedRevision`, `title?`, `uses?`, `start?` | `{ name, revision, warnings }` (`ConfigureApp`): only those fields change; a new `uses` replaces the old one and is checked whole. `not-found`, `invalid-app`, `conflict` |
+| `ui_screen_create` | `app`, `name`, `expectedRevision` (the app's), `title?`, `params?` (the screen's typed params), `root` or `pattern` with `patternParams?` | `{ app, name, revision, warnings }` (`CreateScreen`), with the app's new revision. `duplicate-name`, `conflict`, `not-found`, `invalid-app`, `invalid-argument` "No such pattern" |
 
 Read-only tools carry `readOnlyHint`; `ui_app_delete`, `ui_delete` and `ui_rename` carry `destructiveHint`, so the client asks the user. A failed call has `isError: true` and the body `{ error, message, ...details }`. Codes: `invalid-argument` (with `argument`), `not-found`, `unknown-tool`, `internal-error`, `browser-unavailable`, `not-rendered`, `action-failed`, and the codes in the table. Arguments are plain JSON; extra arguments and an `appId` that is not a UUID are refused.
 

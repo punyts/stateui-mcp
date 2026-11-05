@@ -2,21 +2,30 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { formatRenderedTree } from '../../application/outline/formatRenderedTree.js';
 import { BrowserUnavailableError } from '../preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../preview/BrowserPreview.js';
+import { PART_APP_FIELDS, USES_TEXT, runPartAppCreate } from './partAppTools.js';
 import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
 
 const APP_CREATE = defineInput({
-    name: { type: 'string', required: true, description: 'The application name; unique among the applications' },
-    document: { type: 'object', description: 'An optional starting document as a JSON object; without it the app starts as an empty page' },
+    name: {
+        type: 'string',
+        required: true,
+        description: 'The application name; unique among the applications. An app of parts (with shell): lower-case letters, digits and dashes, starting with a letter'
+    },
+    document: { type: 'object', description: 'Old store: an optional starting document as a JSON object; without it the app starts as an empty page' },
     sync: {
         type: 'string',
         enum: ['full', 'persisted'],
         description:
-            'full (default): the server keeps the state and ui_state_set may change it. persisted: the statenet keeps it and the views sync with it directly; the tools only read it. Needs a server started with --statenet'
-    }
+            'full (default): the server keeps the state and ui_state_set may change it. persisted (old store only): the statenet keeps it and the views sync with it directly; the tools only read it. Needs a server started with --statenet'
+    },
+    ...PART_APP_FIELDS
 });
+
+/** The arguments only an app of parts takes */
+const PART_APP_ONLY = ['title', 'themes', 'data', 'logic'] as const;
 
 const APP_LIST = defineInput({});
 
@@ -61,7 +70,7 @@ function invalidArgument(parsed: { argument: string; message: string }): ToolOut
 
 /** The lifecycle and read tools: create, list, get, validate, outline and read the state */
 export function createAppTools(
-    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'validatePartApp' | 'outlineApp' | 'getState'>,
+    useCases: Pick<UiBuilderUseCases, 'createApp' | 'createPartApp' | 'listApps' | 'getApp' | 'validateApp' | 'validatePartApp' | 'outlineApp' | 'getState'>,
     /** The headless page, for ui_tree with rendered: true; absent, that answers browser-unavailable */
     browser?: Pick<PreviewBrowser, 'rendered'>
 ): readonly UiToolDefinition[] {
@@ -69,12 +78,20 @@ export function createAppTools(
         {
             name: 'ui_app_create',
             description:
-                'Create an app, empty or from a starting document. The document is validated first: on blocking errors nothing is created and the errors come back with their state paths. Returns { appId, revision }.',
+                `Create an app. With shell: an app of the owner's parts (build time), with a title, the parts it uses and a shell; it starts with one screen, home, its start screen, and ui_screen_create adds more. ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, warnings }. Without shell (the old store, until it is removed): an app, empty or from a starting document, validated first; returns { appId, revision }.`,
             inputSchema: APP_CREATE.schema,
             annotations: CREATES,
             run: async (args) => {
                 const parsed = APP_CREATE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
+                const { shell } = parsed.value;
+                if (shell !== undefined) {
+                    if (parsed.value.document !== undefined) return fail('invalid-argument', 'Give shell (an app of parts) or document (the old store), not both', { argument: 'document' });
+                    if (useCases.createPartApp === undefined) return fail('invalid-argument', 'This server has no parts; give document instead of shell', { argument: 'shell' });
+                    return runPartAppCreate(useCases.createPartApp, { ...parsed.value, shell });
+                }
+                const partOnly = PART_APP_ONLY.find((key) => parsed.value[key] !== undefined);
+                if (partOnly !== undefined) return fail('invalid-argument', `${partOnly} is for an app of parts, which needs shell`, { argument: 'shell' });
                 const result = await useCases.createApp.execute({
                     name: parsed.value.name,
                     ...(parsed.value.document !== undefined && { document: parsed.value.document }),

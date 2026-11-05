@@ -85,7 +85,7 @@ export function createServices(options: ServicesOptions): Services {
     const hub = new PreviewHub(now);
     const relay = options.statenet === undefined ? undefined : new StatenetRelayStorage(options.statenet, options.serverKey);
     const persisted = options.statenet === undefined ? undefined : new PersistedStates(options.statenet);
-    const { validator, catalog, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
+    const { validator, catalog, patterns, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
     const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
     const parts = new IndexedUiPartRepository(partFiles);
     // Instances bound to one shared dataset see each other's changes (Full mode)
@@ -109,7 +109,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { repository, parts, instances, instanceStates, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
+        { repository, parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, liveState: new HubLiveState(hub) },
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);

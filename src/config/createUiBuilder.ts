@@ -1,6 +1,7 @@
 import type {
     ComponentCatalog,
     InstanceStates,
+    PatternCatalog,
     LiveStateReader,
     UiAppRepository,
     UiAppValidator,
@@ -11,7 +12,9 @@ import type {
     UiPreviewLog
 } from '../application/ports/index.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
-import { CreateApp } from '../application/use-cases/CreateApp.js';
+import { ConfigureApp } from '../application/use-cases/ConfigureApp.js';
+import { CreateApp, CreatePartApp } from '../application/use-cases/CreateApp.js';
+import { CreateScreen } from '../application/use-cases/CreateScreen.js';
 import { DeleteApp } from '../application/use-cases/DeleteApp.js';
 import { DeletePart } from '../application/use-cases/DeletePart.js';
 import { GetApp } from '../application/use-cases/GetApp.js';
@@ -59,6 +62,8 @@ export interface UiBuilderPorts {
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;
+    /** The library's patterns, which `ui_app_create` and `ui_screen_create` may start from */
+    readonly patterns: PatternCatalog;
     readonly fileRepository: UiFileRepository;
     readonly fileStore: UiFileStore;
     readonly liveState: LiveStateReader;
@@ -96,6 +101,12 @@ export interface UiBuilderUseCases {
     readonly readFile: ReadFile;
     readonly readFileText: ReadFileText;
     /** With `parts` only */
+    readonly createPartApp?: CreatePartApp;
+    /** With `parts` only */
+    readonly configureApp?: ConfigureApp;
+    /** With `parts` only */
+    readonly createScreen?: CreateScreen;
+    /** With `parts` only */
     readonly listParts?: ListParts;
     /** With `parts` only */
     readonly getPart?: GetPart;
@@ -121,7 +132,7 @@ export interface UiBuilderUseCases {
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, parts, instances, instanceStates, validator, previewLog, catalog, fileRepository, fileStore, liveState } = ports;
+    const { repository, parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     return {
@@ -147,6 +158,9 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         readFile,
         readFileText: new ReadFileText(readFile),
         ...(parts !== undefined && {
+            createPartApp: new CreatePartApp(parts, validator, patterns, report),
+            configureApp: new ConfigureApp(parts, validator, report),
+            createScreen: new CreateScreen(parts, validator, patterns, report),
             listParts: new ListParts(parts, report),
             getPart: new GetPart(parts, validator, report),
             deletePart: new DeletePart(parts, parts, report, instances),

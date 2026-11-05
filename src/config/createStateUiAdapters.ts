@@ -1,16 +1,19 @@
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import { libraryFromCatalog } from '@punyts/stateui-app/core';
 import type { CatalogSource, ComponentLibrary } from '@punyts/stateui-app/core';
-import type { ComponentCatalog, ToolCallLog, UiAppValidator, UseCaseReport } from '../application/ports/index.js';
+import type { ComponentCatalog, PatternCatalog, ToolCallLog, UiAppValidator, UseCaseReport } from '../application/ports/index.js';
 import { FileToolCallLog } from '../infrastructure/storage/FileToolCallLog.js';
 import { StateUiAppValidator } from '../infrastructure/StateUiAppValidator.js';
 import { StateUiComponentCatalog } from '../infrastructure/StateUiComponentCatalog.js';
+import { StateUiPatternCatalog } from '../infrastructure/StateUiPatternCatalog.js';
 import { loadCatalogFile, loadIconsFile } from '../infrastructure/stateUiLibrary.js';
 
 /** The validator and the catalog, both over the files of `@punyts/stateui-components`, read once per process */
 export interface StateUiAdapters {
     readonly validator: UiAppValidator;
     readonly catalog: ComponentCatalog;
+    /** The library's patterns and theme presets */
+    readonly patterns: PatternCatalog;
     /** The icons the runtime page ships, so an app response leaves their path data out */
     readonly coreIconNames: readonly string[];
     /** The component library, for running app logic on the server */
@@ -36,6 +39,7 @@ export function createStateUiAdapters(options: StateUiAdapterOptions = {}): Stat
     return {
         validator,
         catalog,
+        patterns: new StateUiPatternCatalog(catalogFile),
         coreIconNames: CORE_ICON_NAMES,
         library: libraryFromCatalog(catalogFile as unknown as CatalogSource),
         ...(toolCallLog !== undefined && { toolCallLog })

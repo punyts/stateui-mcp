@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import type { IconsFile } from '@punyts/stateui-components';
+import type { PatternEntry, ThemePresetEntry } from '../application/ports/PatternCatalog.js';
 import type { JsonObject } from '../domain/JsonValue.js';
 
 /** A catalog entry as `catalog.json` holds it. A root entry has `shape`, a composed one has `tree` and `exposes` */
@@ -43,6 +44,10 @@ export interface CatalogFileTheme {
 export interface CatalogFile {
     readonly components: readonly CatalogFileComponent[];
     readonly theme: CatalogFileTheme;
+    /** The library's shell and screen patterns, by name; absent until search epic 2 S2.1b builds them (S2.5 makes it required) */
+    readonly patterns?: readonly PatternEntry[];
+    /** The library's theme presets, by name; absent until search epic 2 S2.7 */
+    readonly themePresets?: readonly ThemePresetEntry[];
 }
 
 /**

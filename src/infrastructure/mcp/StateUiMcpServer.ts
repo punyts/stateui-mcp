@@ -14,6 +14,7 @@ import { createDeleteTools } from './deleteTools.js';
 import { createFileTools } from './fileTools.js';
 import { SERVER_INSTRUCTIONS, START_HERE } from './instructions.js';
 import { createLiveTools } from './liveTools.js';
+import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
 import { fail } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
@@ -48,6 +49,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createCatalogTools(useCases),
         ...createAppTools(useCases, browser),
         ...createPartTools(useCases, liveViews),
+        ...createPartAppTools(useCases),
         ...createWriteTools(useCases, liveViews),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...(authorities !== undefined && { logic: authorities }) }),
         ...createFileTools(useCases),
