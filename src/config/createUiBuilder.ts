@@ -33,7 +33,9 @@ import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
 import { WriteApp } from '../application/use-cases/WriteApp.js';
+import { QueryData } from '../application/use-cases/QueryData.js';
 import { RenamePart } from '../application/use-cases/RenamePart.js';
+import { WriteData } from '../application/use-cases/WriteData.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
 import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
 import type { UsageSource } from '../application/UsageIndex.js';
@@ -95,6 +97,10 @@ export interface UiBuilderUseCases {
     /** With `parts` only */
     readonly renamePart?: RenamePart;
     /** With `parts` only */
+    readonly writeData?: WriteData;
+    /** With `parts` only */
+    readonly queryData?: QueryData;
+    /** With `parts` only */
     readonly validatePartApp?: ValidatePartApp;
     /** With `parts` and `instances` only */
     readonly resetInstance?: ResetInstance;
@@ -134,6 +140,8 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         ...(parts !== undefined && {
             writePart: new WritePart(parts, parts, validator, report),
             renamePart: new RenamePart(parts, parts, report),
+            writeData: new WriteData(parts, validator, newId, report),
+            queryData: new QueryData(parts, report),
             validatePartApp: new ValidatePartApp(parts, parts, validator, report)
         }),
         ...(parts !== undefined &&
