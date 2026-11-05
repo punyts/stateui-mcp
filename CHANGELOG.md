@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Generic part tools (O3.1 of the owner-tree epic 3): `ui_list`, `ui_get`, `ui_delete` and `ui_rename` for every part kind and the screens of an app (`ListParts`, `GetPart`, `DeletePart` and `partTools.ts`); `ui_delete` and `ui_rename` are annotated destructive. `ui_validate` takes `app` (an app of parts, `ValidatePartApp`) besides `appId`. `RenamePart` takes `expectedRevision` for a part; `UiAppValidator.assembleApp` gives the assembled app for `ui_get` with `resolved`. The old tools stay until O3.12.
+
 **Upgrade (breaking, with the tools release of the owner tree):** the owner-tree storage below ships together with the per-part tools as one major version. After installing it, stop the server, run `stateui-mcp convert --dry-run`, read the report, run `stateui-mcp convert`, check the apps, then `stateui-mcp convert --purge` (README, "Converting the old apps"). Do not run `convert` with this version alone: its tools still read `app.json`.
 
 - Converter runner (O2.10). `stateui-mcp convert [--data-dir <dir>] [--dry-run] [--purge]` (`convertDataDir`, `formatConvertReport` in `src/config/convertDataDir.ts`; `parseConvertOptions`) splits each old app folder's `app.json` and `state.json` with `splitDocument` into parts, keeps the app id as the app part's id, clears the default persona's instance and moves the two files to `.converted/<appId>/`; an app it cannot split stays in place and is reported. `--dry-run` writes nothing and reports the same; `--purge` deletes `.converted/`. `CreateUiPartInput` takes an optional `id` (a UUID that the kind does not have yet; `PART_ID_PROBLEM`, `PART_ID_TAKEN`).

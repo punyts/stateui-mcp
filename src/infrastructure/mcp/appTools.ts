@@ -27,7 +27,10 @@ const APP_GET = defineInput({
     resolved: { type: 'boolean', description: 'true: merge in component defaults. Read only; never write a resolved value back' }
 });
 
-const VALIDATE = defineInput({ appId: APP_ID });
+const VALIDATE = defineInput({
+    appId: { type: 'string', uuid: true, description: 'An application of the old store: its id from ui_app_create or ui_app_list' },
+    app: { type: 'string', description: 'An app of parts: its name from ui_list (kind "apps"). Give appId or app' }
+});
 
 const OUTLINE = defineInput({
     appId: APP_ID,
@@ -58,7 +61,7 @@ function invalidArgument(parsed: { argument: string; message: string }): ToolOut
 
 /** The lifecycle and read tools: create, list, get, validate, outline and read the state */
 export function createAppTools(
-    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'outlineApp' | 'getState'>,
+    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'validatePartApp' | 'outlineApp' | 'getState'>,
     /** The headless page, for ui_tree with rendered: true; absent, that answers browser-unavailable */
     browser?: Pick<PreviewBrowser, 'rendered'>
 ): readonly UiToolDefinition[] {
@@ -142,13 +145,23 @@ export function createAppTools(
         {
             name: 'ui_validate',
             description:
-                'Validate the stored application. Returns { appId, revision, valid, errors, warnings, preview }: each error and warning has a code and the state path it concerns; preview says whether a preview is open and lists its runtime errors.',
+                'Validate a stored application. With appId (an application of the old store) returns { appId, revision, valid, errors, warnings, preview }: each error and warning has a code and the state path it concerns; preview says whether a preview is open and lists its runtime errors. With app (an app of parts) it validates the app assembled with every part it uses and returns { app, revision, valid, errors, warnings, uses }: each error and warning also names the part that holds it, and uses lists the parts the app names.',
             inputSchema: VALIDATE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = VALIDATE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.validateApp.execute(parsed.value.appId);
+                const { appId, app } = parsed.value;
+                if ((appId === undefined) === (app === undefined)) {
+                    return fail('invalid-argument', 'Give appId (an application of the old store) or app (an app of parts), not both', { argument: appId === undefined ? 'app' : 'appId' });
+                }
+                if (app !== undefined) {
+                    if (useCases.validatePartApp === undefined) return fail('not-found', `No app named "${app}"`, { app });
+                    const part = await useCases.validatePartApp.execute(app);
+                    if (part.kind === 'not-found') return fail('not-found', `No app named "${app}"; ui_list lists the apps`, { app });
+                    return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: part.errors, warnings: part.warnings, uses: part.uses });
+                }
+                const result = await useCases.validateApp.execute(appId as string);
                 if (result.kind === 'not-found') return notFound(result.appId);
                 return succeed({
                     appId: result.appId,

@@ -1,4 +1,5 @@
 import {
+    assembleApp,
     buildAppOverlay,
     extractBaseOverlay,
     extractLinks,
@@ -115,6 +116,10 @@ export class StateUiAppValidator implements UiAppValidator {
 
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
         return assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName });
+    }
+
+    assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument {
+        return JSON.parse(JSON.stringify(assembleApp(blueprint, parts).document)) as UiDocument;
     }
 
     validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {

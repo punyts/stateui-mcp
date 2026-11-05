@@ -88,6 +88,15 @@ export function appWithRenamedScreen(app: UiPartBodies['apps'], from: string, to
     return structuredClone(next) as unknown as UiPartBodies['apps'];
 }
 
+/** The app without the screen `name`, the other screens in their places; undefined when it has no such screen */
+export function appWithoutScreen(app: UiPartBodies['apps'], name: string): UiPartBodies['apps'] | undefined {
+    const source = app as unknown as Record<string, Json>;
+    const screens = source['screens'];
+    if (!isRecord(screens) || !Object.hasOwn(screens, name)) return undefined;
+    const kept = Object.fromEntries(Object.entries(screens).filter(([key]) => key !== name));
+    return structuredClone({ ...source, screens: kept }) as unknown as UiPartBodies['apps'];
+}
+
 /** True when the app has a screen of this name */
 export function hasScreen(app: UiPartBodies['apps'], name: string): boolean {
     const screens = (app as unknown as Record<string, Json>)['screens'];

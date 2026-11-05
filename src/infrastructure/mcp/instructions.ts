@@ -29,7 +29,7 @@ const LOGIC = [
 ];
 
 const SAFETY = [
-    'ui_app_delete cannot be undone. Ask the user before you call it, and pass the revision you read as expectedRevision; a conflict means the app changed and nothing was deleted.'
+    'ui_app_delete and ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.'
 ];
 
 /** The `instructions` field of the server, shown by the client to the model */

@@ -87,7 +87,7 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 | `ui_app_create` | `name`, `document?` | `{ appId, revision }`; `invalid-document`, `invalid-name`, `duplicate-name` |
 | `ui_app_list` | none | `{ count, apps: [{ appId, name, revision, updatedAt }] }` |
 | `ui_app_get` | `appId`, `path?`, `depth?`, `resolved?` | `{ appId, revision, path, value, resolved, note? }`; `missing-path`, `invalid-path` |
-| `ui_validate` | `appId` | `{ appId, revision, valid, errors, warnings, preview }` |
+| `ui_validate` | `appId` (old store) or `app` (an app of parts) | `{ appId, revision, valid, errors, warnings, preview }`; with `app`: `{ app, revision, valid, errors, warnings, uses }`, each error naming its `part` |
 | `ui_outline` | `appId`, `path?`, `depth?`, `locale?` | `{ appId, revision, text, lineCount, cutLines, localeApplied }`; the outline of the root ends with the logic |
 | `ui_tree` | `appId`, `path?`, `depth?`, `paths?`, `rendered?` | `{ appId, revision, text, lineCount, cutLines, nodeCount }`; the structure as a nested list, one line per node with key, component and state path, bullets alternating `-` and `*` by level, slot nodes marked `[slot]`. `rendered: true` lists what the headless page draws instead: rendered rows and cards with their runtime paths (`…board.cols.k_open.body.main.slots.0`), `(hidden)` nodes with their subtree counted |
 | `ui_state_get` | `appId`, `path?`, `full?` | `{ appId, revision, source, state, preview }`, or with `path` `{ appId, revision, source, path, value, preview }` (`source` is `live` when an open view answered, else `stored`) (`unknown-path` names the closest part that exists); `state` is the synced state (`data` and the `app` articulation), asked of an open view or read from the stored copy. `data:` URIs and strings over 300 characters are shortened unless `full: true` |
@@ -104,7 +104,16 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 | `ui_call_answer` | `appId`, `id`, `status` (`accepted` or `rejected`), `value?`, `reason?` | `{ appId, id, answered: true }`; the machine that made the `logic.call` gets the answer as its result; `not-waiting` when no call with that id waits |
 | `ui_logic_trace` | `appId`, `limit?`, `clear?` | `{ appId, runs: [{ at, cause, changes, events: [{ depth, kind, name, outcome, path?, from?, to?, row?, writes?, reason? }] }] }`: the last runs of the logic (at most 25 kept), one event per unit whose trigger matched; `no-logic` when the logic does not run on the server |
 
-Read-only tools carry `readOnlyHint`; only `ui_app_delete` carries `destructiveHint`. A failed call has `isError: true` and the body `{ error, message, ...details }`. Codes: `invalid-argument` (with `argument`), `not-found`, `unknown-tool`, `internal-error`, `browser-unavailable`, `not-rendered`, `action-failed`, and the codes in the table. Arguments are plain JSON; extra arguments and an `appId` that is not a UUID are refused.
+The generic tools of the owner's parts (owner-tree epic 3, beside the tools above until the old ones are removed; `kind` is one of `apps`, `themes`, `logic`, `models`, `data`, `components`, `patterns`, `screens`, and `screens` takes `app`):
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `ui_list` | `kind`, `query?`, `app?` | `{ kind, count, items: [{ name, revision, updatedAt, title?, uses? }] }`, by name; screens: `{ kind, app, revision, count, items: [{ name, title?, start? }] }`. `query` keeps the items with every word in the name or title |
+| `ui_get` | `kind`, `name`, `app?`, `path?`, `depth?`, `resolved?` | `{ kind, name, id, revision, path, value, resolved, note? }`; a screen has its app's id and revision; `resolved` (apps only) is the assembled app; `not-found` with `nearest`, `missing-path` |
+| `ui_delete` | `kind`, `name`, `app?`, `expectedRevision` | `{ kind, name, revision }`; `in-use` with `users` (a used part, a start screen), `conflict`, `not-found`. Deleting an app also deletes its instance and closes its views |
+| `ui_rename` | `kind`, `name`, `to`, `app?`, `expectedRevision` | `{ kind, name, revision, rewritten: [{ kind, name, revision }] }` (`RenamePart`); `duplicate-name`, `invalid-name`, `conflict`, `not-found` |
+
+Read-only tools carry `readOnlyHint`; `ui_app_delete`, `ui_delete` and `ui_rename` carry `destructiveHint`, so the client asks the user. A failed call has `isError: true` and the body `{ error, message, ...details }`. Codes: `invalid-argument` (with `argument`), `not-found`, `unknown-tool`, `internal-error`, `browser-unavailable`, `not-rendered`, `action-failed`, and the codes in the table. Arguments are plain JSON; extra arguments and an `appId` that is not a UUID are refused.
 
 Differences from `ui-builder`: no `workspace-missing` or `user-missing`, no `ownerId` in `ui_app_list`, no approval marker on `ui_app_delete` (the client can ask the user; the tool is annotated destructive), and `ui_preview`, `ui_command` and `ui_state_get` work against real views instead of an API socket.
 

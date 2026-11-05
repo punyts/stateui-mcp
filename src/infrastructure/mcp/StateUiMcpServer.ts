@@ -14,6 +14,7 @@ import { createDeleteTools } from './deleteTools.js';
 import { createFileTools } from './fileTools.js';
 import { SERVER_INSTRUCTIONS, START_HERE } from './instructions.js';
 import { createLiveTools } from './liveTools.js';
+import { createPartTools } from './partTools.js';
 import { fail } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 import { createWriteTools } from './writeTools.js';
@@ -40,12 +41,13 @@ export interface StateUiToolDependencies {
 
 const START_HERE_TOOLS = new Set(['ui_components_list', 'ui_app_create']);
 
-/** Every tool of the server: catalog, lifecycle and reads, writes, the live tools, `ui_file_read` and `ui_app_delete` */
+/** Every tool of the server: catalog, lifecycle and reads, the generic part tools, writes, the live tools, `ui_file_read` and `ui_app_delete` */
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {
     const { useCases, hub, liveViews, browser, viewUrl, calls, authorities } = dependencies;
     const tools = [
         ...createCatalogTools(useCases),
         ...createAppTools(useCases, browser),
+        ...createPartTools(useCases, liveViews),
         ...createWriteTools(useCases, liveViews),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...(authorities !== undefined && { logic: authorities }) }),
         ...createFileTools(useCases),

@@ -13,12 +13,15 @@ import type {
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { CreateApp } from '../application/use-cases/CreateApp.js';
 import { DeleteApp } from '../application/use-cases/DeleteApp.js';
+import { DeletePart } from '../application/use-cases/DeletePart.js';
 import { GetApp } from '../application/use-cases/GetApp.js';
 import { GetComponent } from '../application/use-cases/GetComponent.js';
+import { GetPart } from '../application/use-cases/GetPart.js';
 import { GetState } from '../application/use-cases/GetState.js';
 import { GetUiApp } from '../application/use-cases/GetUiApp.js';
 import { ListApps } from '../application/use-cases/ListApps.js';
 import { ListComponents } from '../application/use-cases/ListComponents.js';
+import { ListParts } from '../application/use-cases/ListParts.js';
 import { ListIcons } from '../application/use-cases/ListIcons.js';
 import { ListTokens } from '../application/use-cases/ListTokens.js';
 import { OutlineApp } from '../application/use-cases/OutlineApp.js';
@@ -93,6 +96,12 @@ export interface UiBuilderUseCases {
     readonly readFile: ReadFile;
     readonly readFileText: ReadFileText;
     /** With `parts` only */
+    readonly listParts?: ListParts;
+    /** With `parts` only */
+    readonly getPart?: GetPart;
+    /** With `parts` only; with `instances` too, deleting an app removes its instance */
+    readonly deletePart?: DeletePart;
+    /** With `parts` only */
     readonly writePart?: WritePart;
     /** With `parts` only */
     readonly renamePart?: RenamePart;
@@ -138,6 +147,9 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         readFile,
         readFileText: new ReadFileText(readFile),
         ...(parts !== undefined && {
+            listParts: new ListParts(parts, report),
+            getPart: new GetPart(parts, validator, report),
+            deletePart: new DeletePart(parts, parts, report, instances),
             writePart: new WritePart(parts, parts, validator, report),
             renamePart: new RenamePart(parts, parts, report),
             writeData: new WriteData(parts, validator, newId, report),

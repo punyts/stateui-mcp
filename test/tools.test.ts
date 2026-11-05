@@ -104,12 +104,16 @@ describe('tool list', () => {
                 'ui_call_answer',
                 'ui_tree',
                 'ui_state_reset',
-                'ui_logic_trace'
+                'ui_logic_trace',
+                'ui_list',
+                'ui_get',
+                'ui_delete',
+                'ui_rename'
             ].sort()
         );
     });
 
-    it('should mark the read tools read-only and only the delete tool destructive', async () => {
+    it('should mark the read tools read-only and only the delete and rename tools destructive, for the client to ask the user', async () => {
         const { tools } = await harness.client.listTools();
         const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
@@ -117,9 +121,11 @@ describe('tool list', () => {
         const destructive = tools.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
 
         expect(readOnly.sort()).toEqual(
-            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace'].sort()
+            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get'].sort()
         );
-        expect(destructive).toEqual(['ui_app_delete']);
+        expect(destructive.sort()).toEqual(['ui_app_delete', 'ui_delete', 'ui_rename']);
+        expect(byName.get('ui_delete')?.annotations).toEqual(byName.get('ui_app_delete')?.annotations);
+        expect(byName.get('ui_rename')?.annotations).toEqual(byName.get('ui_delete')?.annotations);
         expect(byName.get('ui_app_create')?.annotations?.readOnlyHint).toBe(false);
     });
 

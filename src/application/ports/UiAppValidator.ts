@@ -50,6 +50,11 @@ export interface UiAppValidator {
      */
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[];
     /**
+     * The document the runtime mounts for an app: its blueprint assembled with the parts it uses (`parts`, loaded by
+     * the caller). What assembles is returned; the errors are `validateAssembled`'s
+     */
+    assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument;
+    /**
      * The errors and warnings of one part on its own, by the reader of its kind: an app's blueprint and the errors of
      * the assembled app that the app itself holds, a theme's tokens and overlays, a module, a model, a dataset's shape and
      * records against its model, a component's tree, a pattern's shape. `parts` holds what the part names (an app's

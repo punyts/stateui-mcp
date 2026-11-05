@@ -13,6 +13,8 @@ export interface RenamePartInput {
     readonly kind: PartKind;
     readonly name: string;
     readonly to: string;
+    /** The part's revision the caller read; a part at another revision is not renamed (`conflict`) */
+    readonly expectedRevision?: number;
 }
 
 /** A screen of an app under a new name: a write of the app, so it takes the app's revision */
@@ -69,6 +71,7 @@ export class RenamePart {
         for (let attempt = 1; attempt <= RENAME_ATTEMPTS; attempt++) {
             const part = await this.parts.findByName(kind, name);
             if (part === undefined) return { kind: 'not-found' };
+            if (input.expectedRevision !== undefined && part.revision !== input.expectedRevision) return { kind: 'conflict', currentRevision: part.revision };
             if ((await this.parts.findByName(kind, to)) !== undefined) return { kind: 'duplicate-name' };
             const rewrites = await this.rewrites(kind, name, to);
             const renamed = await this.parts.rename(kind, name, to, rewrites);
