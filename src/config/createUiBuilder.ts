@@ -2,6 +2,7 @@ import type {
     ComponentCatalog,
     InstanceStates,
     PatternCatalog,
+    AppFolderStore,
     UiAppValidator,
     UiFileRepository,
     UiFileStore,
@@ -60,6 +61,8 @@ export interface UiBuilderPorts {
     readonly patterns: PatternCatalog;
     readonly fileRepository: UiFileRepository;
     readonly fileStore: UiFileStore;
+    /** The side folders of app parts, removed with the app */
+    readonly appFolders: AppFolderStore;
 }
 
 /** What the use cases need besides ports: the clock, ids and the reporter */
@@ -110,7 +113,7 @@ export interface UiBuilderUseCases {
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore } = ports;
+    const { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders } = ports;
     const { now, newId, report } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
     const runCommand = new RunCommand(catalog, previewLog, now, newId, report);
@@ -137,7 +140,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         writeLocale: new WriteLocale(parts, validator, report),
         listParts: new ListParts(parts, report),
         getPart: new GetPart(parts, validator, report),
-        deletePart: new DeletePart(parts, parts, report, instances),
+        deletePart: new DeletePart(parts, parts, report, { instances, states: instanceStates, folder: appFolders }),
         writePart,
         renamePart: new RenamePart(parts, parts, report),
         writeData: new WriteData(parts, validator, newId, report),

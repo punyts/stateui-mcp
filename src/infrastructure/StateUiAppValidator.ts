@@ -22,9 +22,11 @@ import type { ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '.
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
+import { checkDocumentLimits } from '../domain/limits.js';
 import type { PartKind } from '../domain/partName.js';
 import type { UiDocument } from '../domain/UiApp.js';
 import type { UiPartBodies } from '../domain/UiPart.js';
+import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
 import { themeContrast } from './contrast.js';
 import { assembledErrors, partErrors } from './partChecks.js';
@@ -101,7 +103,14 @@ export class StateUiAppValidator implements UiAppValidator {
     }
 
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
-        return assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName });
+        const errors = assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName });
+        if (errors.some(isBlockingError)) return errors;
+
+        const document = this.assembleApp(blueprint, parts);
+        const own = { kind: 'apps', name } as UiPartError['part'];
+        const limits = checkDocumentLimits(document).map((error) => ({ ...error, part: own }));
+        if (limits.length > 0) return [...errors, ...limits];
+        return [...errors, ...this.untranslated(document, own), ...viewportWarnings(document).map((warning) => ({ ...warning, part: own }))];
     }
 
     assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument {
@@ -110,6 +119,17 @@ export class StateUiAppValidator implements UiAppValidator {
 
     validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
         return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName });
+    }
+
+    /** `SUI-LOCALE-MISSING` warnings (and the errors of an overlay) for each language the shell or a screen of the assembled app declares in `locales` */
+    private untranslated(document: UiDocument, part: UiPartError['part']): UiPartError[] {
+        const declared = (owner: unknown): string[] => (isJsonObject(owner) && isJsonObject(owner['locales']) ? Object.keys(owner['locales']) : []);
+        const screens = isJsonObject(document['screens']) ? document['screens'] : {};
+        const found = [
+            ...declared(document).flatMap((code) => this.validateLocale(document, code)),
+            ...Object.keys(screens).flatMap((screen) => declared(screens[screen]).flatMap((code) => this.validateLocale(document, code, screen)))
+        ];
+        return found.map((error) => ({ ...error, part }));
     }
 
     /** Controllers own runtime properties (`current`, `status`, `slots`); a read of the resolved node leaves them out */
@@ -226,4 +246,32 @@ export class StateUiAppValidator implements UiAppValidator {
             }
         ) as unknown as JsonObject;
     }
+}
+
+/** The warning code of a layout that does not fit a phone */
+export const VIEWPORT_WARNING = 'SUI-VIEWPORT-NARROW';
+
+/**
+ * Layouts that do not fit a phone: a page whose side nav never collapses (`navBreakpoint` 0 with the nav at the
+ * start) keeps the nav beside the content at every width and squeezes the content. Looks at the shell and at each screen
+ */
+function viewportWarnings(document: UiDocument): UiBuildError[] {
+    const warnings: UiBuildError[] = [];
+    const visit = (value: unknown, path: string): void => {
+        if (!isJsonObject(value)) return;
+        if (value['component'] === 'page' && isJsonObject(value['nav']) && value['navBreakpoint'] === 0 && (value['navPosition'] ?? 'start') === 'start') {
+            warnings.push({
+                code: VIEWPORT_WARNING,
+                severity: 'warning',
+                statePath: path,
+                component: 'page',
+                message: `The page at ${path} has navBreakpoint 0, so its side nav stays beside the content on a phone; leave navBreakpoint out (768) so the nav moves behind a menu button on narrow screens`
+            });
+        }
+        for (const [key, item] of Object.entries(value)) if (isJsonObject(item)) visit(item, `${path}.${key}`);
+    };
+    visit(document['app'], '$.app');
+    const screens = isJsonObject(document['screens']) ? document['screens'] : {};
+    for (const [name, screen] of Object.entries(screens)) if (isJsonObject(screen)) visit(screen['root'], screenPath(name));
+    return warnings;
 }

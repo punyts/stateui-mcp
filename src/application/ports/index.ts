@@ -6,6 +6,7 @@ export type * from './InstanceStates.js';
 export type * from './UiAppValidator.js';
 export type * from './UiFileRepository.js';
 export type * from './UiFileStore.js';
+export type * from './AppFolderStore.js';
 export type * from './UiPreviewLog.js';
 export type * from './UseCaseReport.js';
 export type * from './ToolCallLog.js';

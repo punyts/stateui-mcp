@@ -195,6 +195,42 @@ describe('ui_delete', () => {
         await expect(stat(instance)).rejects.toThrow();
     });
 
+    it('should remove the side folder of an app, its errors and files, and its stored instance, and keep them away', async () => {
+        // Arrange: a running instance whose state was changed, an uploaded file and a reported runtime error
+        const form = deepFreeze({
+            start: 'home',
+            shell: { component: 'page', children: { search: { component: 'textField', _label: 'Search' }, main: { component: 'outlet' } } },
+            screens: { home: { root: { component: 'panel' } } }
+        }) as unknown as UiPartBodies['apps'];
+        await write('apps', 'form', form);
+        const id = (await call(harness.client, 'ui_get', { kind: 'apps', name: 'form', path: 'start' })).body['id'] as string;
+        const folders = new PartFolders(data.dir);
+        const upload = await harness.services.useCases.uploadFile.execute(id, {
+            name: 'notes.txt',
+            content: (async function* () {
+                yield Buffer.from('hello');
+            })()
+        });
+        await harness.services.useCases.recordPreviewErrors.execute(id, [{ code: 'SUI-RUN-BINDING', message: 'boom' }]);
+        const typed = await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.search.value', value: 'lamp' });
+        const side = folders.dir(id);
+        const instance = folders.instanceFile(LOCAL_OWNER_ID, id);
+        expect((await stat(side)).isDirectory()).toBe(true);
+
+        // Act
+        const deleted = await call(harness.client, 'ui_delete', { kind: 'apps', name: 'form', expectedRevision: 1 });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Assert
+        expect(upload.kind).toBe('uploaded');
+        expect(typed.isError).toBe(false);
+        expect(deleted.isError).toBe(false);
+        await expect(stat(side)).rejects.toThrow();
+        await expect(stat(instance)).rejects.toThrow();
+        expect(await harness.services.useCases.recordPreviewErrors.execute(id, [{ code: 'X', message: 'm' }])).toMatchObject({ kind: 'not-found' });
+        await expect(stat(side)).rejects.toThrow();
+    });
+
     it('should refuse a stale revision and a missing part, and change nothing', async () => {
         // Act
         const stale = await call(harness.client, 'ui_delete', { kind: 'apps', name: 'shop', expectedRevision: 4 });

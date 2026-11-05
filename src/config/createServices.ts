@@ -18,6 +18,7 @@ import { FileUiInstanceRepository } from '../infrastructure/storage/FileUiInstan
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { FileUiErrorLog } from '../infrastructure/storage/FileUiErrorLog.js';
 import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileRepository.js';
+import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js';
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
@@ -97,7 +98,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore },
+        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: new FsAppFolderStore(folders, lock) },
         { now, newId: randomUUID, report: options.report }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);

@@ -3,7 +3,10 @@ import { nearestNames } from '../../domain/nearestNames.js';
 import type { PartKind } from '../../domain/partName.js';
 import { appWithoutScreen } from '../../domain/renameReferences.js';
 import { deleteRule } from '../deleteRule.js';
+import type { AppFolderStore } from '../ports/AppFolderStore.js';
+import type { InstanceStates } from '../ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../ports/UiInstanceRepository.js';
+import type { UiPart } from '../../domain/UiPart.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 import type { UsageSource } from '../UsageIndex.js';
@@ -22,16 +25,25 @@ export type DeletePartResult =
     /** `nearest` are app names when `missingApp` (a screen's app) is set */
     | { readonly kind: 'not-found'; readonly nearest: readonly string[]; readonly missingApp?: string };
 
+/** What deleting an app removes besides the part: its running instance, the stored instance and persona records, and its side folder */
+export interface AppCleanup {
+    readonly instances: Pick<UiInstanceRepository, 'reset'>;
+    readonly folder: AppFolderStore;
+    /** The running instances: the one of the deleted app is stopped first, so it cannot save its state again */
+    readonly states?: Pick<InstanceStates, 'stop'>;
+}
+
 /**
  * Deletes a part while nothing uses it (`deleteRule`), or a screen that is not its app's `start`, with the revision the
- * caller read. Deleting an app also removes its default persona's instance and persona records, which are keyed by its id
+ * caller read. Deleting an app also stops its running instance and removes its default persona's instance and persona
+ * records, which are keyed by its id, and its side folder (preview errors and uploaded files)
  */
 export class DeletePart {
     constructor(
         private readonly parts: UiPartRepository,
         private readonly usage: UsageSource,
         private readonly report: UseCaseReport,
-        private readonly instances?: Pick<UiInstanceRepository, 'reset'>
+        private readonly cleanup?: AppCleanup
     ) {}
 
     async execute(input: DeletePartInput): Promise<DeletePartResult> {
@@ -50,8 +62,20 @@ export class DeletePart {
         const deleted = await this.parts.delete(kind, name, expectedRevision);
         if (deleted.kind === 'conflict') return deleted;
         if (deleted.kind === 'not-found') return { kind: 'not-found', nearest: [] };
-        if (kind === 'apps') await this.instances?.reset(part.id);
+        if (kind === 'apps') await this.removeAppData(part as UiPart<'apps'>);
         return { kind: 'deleted', id: part.id, revision: part.revision };
+    }
+
+    /** The part is gone, so nothing can start its instance or add to its folder again: stop it, then remove what it kept */
+    private async removeAppData(part: UiPart<'apps'>): Promise<void> {
+        const cleanup = this.cleanup;
+        if (cleanup === undefined) return;
+        const remove = async (): Promise<void> => {
+            await cleanup.instances.reset(part.id);
+            await cleanup.folder.remove(part.id);
+        };
+        if (cleanup.states === undefined) await remove();
+        else await cleanup.states.stop(part, remove);
     }
 
     private async deleteScreen(input: { readonly app: string; readonly name: string; readonly expectedRevision: number }): Promise<DeletePartResult> {
