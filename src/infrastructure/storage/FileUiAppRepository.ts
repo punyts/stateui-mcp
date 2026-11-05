@@ -16,8 +16,8 @@ import { INITIAL_REVISION, isRevisionCurrent, nextRevision } from '../../domain/
 import type { UiApp, UiDocument, UiStateSnapshot, UiSyncMode } from '../../domain/UiApp.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { PersistedStates } from '../sync/PersistedStates.js';
-import type { AppFolders } from './AppFolders.js';
-import { isAppId } from './AppFolders.js';
+import type { PartFolders } from './PartFolders.js';
+import { isAppId } from './PartFolders.js';
 import { isMissing, readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
 
@@ -49,7 +49,7 @@ function isAppFile(value: unknown): value is AppFile {
 }
 
 /**
- * Apps as folders of JSON files (see `AppFolders`). Every write is a temporary file renamed into place, and the
+ * Apps as folders of JSON files (see `PartFolders`). Every write is a temporary file renamed into place, and the
  * writes of one app run one at a time, so a compare-and-set on the revision is real. Documents are written with
  * `JSON.stringify` and read with `JSON.parse` and nothing in between rebuilds an object, so the order of `children`
  * and of keyed data maps survives (integer-like keys are refused before they get here).
@@ -59,7 +59,7 @@ function isAppFile(value: unknown): value is AppFile {
  */
 export class FileUiAppRepository implements UiAppRepository {
     constructor(
-        private readonly folders: AppFolders,
+        private readonly folders: PartFolders,
         private readonly lock: KeyedLock,
         private readonly states: AppAuthorities,
         private readonly now: () => Date = () => new Date(),

@@ -4,17 +4,17 @@ import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { SaveFileResult, UiFileStore } from '../../application/ports/UiFileStore.js';
-import type { AppFolders } from './AppFolders.js';
+import type { PartFolders } from './PartFolders.js';
 import { isMissing } from './atomicFile.js';
 
 const HEAD_BYTES = 4096;
 
 /**
- * Keeps file bytes in `<appFolder>/files/<fileId>`. `AppFolders` accepts UUIDs only, so no name or other input can
+ * Keeps file bytes in `<appFolder>/files/<fileId>`. `PartFolders` accepts UUIDs only, so no name or other input can
  * leave the folder. Bytes go to `<path>.part` and are renamed when complete, so a reader never sees half a file
  */
 export class FsUiFileStore implements UiFileStore {
-    constructor(private readonly folders: AppFolders) {}
+    constructor(private readonly folders: PartFolders) {}
 
     async save(appId: string, fileId: string, content: AsyncIterable<Uint8Array>, maxBytes: number): Promise<SaveFileResult> {
         const target = this.folders.fileBytes(appId, fileId);

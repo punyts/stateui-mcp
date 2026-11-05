@@ -39,6 +39,20 @@ export function partNameProblem(name: unknown): string | undefined {
     return `"${String(name)}" is not a part name: lower-case letters, digits and dashes, starting with a letter, at most 63 characters`;
 }
 
+/** The reason a repository gives for a body that is not a JSON object */
+export const PART_BODY_PROBLEM = 'a part body must be a JSON object';
+
+/** True for a non-array object, the only body a repository stores; whether it is a valid part of its kind is the use cases' */
+export function isPartBody(value: unknown): boolean {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Why a repository refuses this kind, name and body, or undefined when it stores them */
+export function partInputProblem(kind: unknown, name: unknown, body: unknown): string | undefined {
+    if (!isPartKind(kind)) return `"${String(kind)}" is not a part kind`;
+    return partNameProblem(name) ?? (isPartBody(body) ? undefined : PART_BODY_PROBLEM);
+}
+
 export interface NewUiPartInput<K extends PartKind> {
     readonly id: string;
     readonly kind: K;

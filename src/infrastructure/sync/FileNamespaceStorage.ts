@@ -1,8 +1,8 @@
 import { access } from 'node:fs/promises';
 import type { NamespaceStorage, StoredNamespace } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
-import type { AppFolders } from '../storage/AppFolders.js';
-import { isAppId } from '../storage/AppFolders.js';
+import type { PartFolders } from '../storage/PartFolders.js';
+import { isAppId } from '../storage/PartFolders.js';
 import { readJson, writeJsonAtomic } from '../storage/atomicFile.js';
 
 const NAMESPACE_PREFIX = 'apps.';
@@ -33,7 +33,7 @@ function isStoredNamespace(value: unknown): value is StoredNamespace {
  * the applied change ids. A save after the app was deleted is dropped, so a delete that races a save leaves no folder
  */
 export class FileNamespaceStorage implements NamespaceStorage {
-    constructor(private readonly folders: AppFolders) {}
+    constructor(private readonly folders: PartFolders) {}
 
     async load(namespace: string): Promise<StoredNamespace | undefined> {
         const parsed = await readJson(this.folders.stateFile(appIdOf(namespace)));

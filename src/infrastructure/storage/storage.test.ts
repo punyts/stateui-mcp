@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
 import type { UiDocument } from '../../domain/UiApp.js';
-import { AppFolders } from './AppFolders.js';
+import { PartFolders } from './PartFolders.js';
 import { writeFileAtomic } from './atomicFile.js';
 import { FileUiAppRepository } from './FileUiAppRepository.js';
 import { FileUiErrorLog } from './FileUiErrorLog.js';
@@ -15,7 +15,7 @@ import { AppAuthorities } from '../sync/AppAuthorities.js';
 import { FileNamespaceStorage } from '../sync/FileNamespaceStorage.js';
 
 let dir: string;
-let folders: AppFolders;
+let folders: PartFolders;
 let lock: KeyedLock;
 let apps: FileUiAppRepository;
 let authorities: AppAuthorities;
@@ -37,7 +37,7 @@ async function createApp(name = 'one', document: UiDocument = ORDERED): Promise<
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-mcp-'));
-    folders = new AppFolders(dir);
+    folders = new PartFolders(dir);
     lock = new KeyedLock();
     authorities = createAuthorities();
     apps = new FileUiAppRepository(folders, lock, authorities);
@@ -74,7 +74,7 @@ describe('writeFileAtomic', () => {
     });
 });
 
-describe('AppFolders', () => {
+describe('PartFolders', () => {
     it('should refuse an id that is not a UUID', () => {
         expect(() => folders.dir('../escape')).toThrow('UUID');
         expect(() => folders.fileBytes('11111111-1111-4111-8111-111111111111', '..')).toThrow('UUID');

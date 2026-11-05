@@ -2,8 +2,8 @@ import type { UiViewLoad } from '../../application/ports/UiPreviewLog.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import type { AppFolders } from './AppFolders.js';
-import { isAppId } from './AppFolders.js';
+import type { PartFolders } from './PartFolders.js';
+import { isAppId } from './PartFolders.js';
 import { readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
 
@@ -34,7 +34,7 @@ function toEntry(value: unknown): LoggedError | undefined {
  */
 export class FileUiErrorLog {
     constructor(
-        private readonly folders: AppFolders,
+        private readonly folders: PartFolders,
         private readonly lock: KeyedLock
     ) {}
 

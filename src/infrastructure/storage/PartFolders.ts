@@ -1,0 +1,77 @@
+import { join, resolve } from 'node:path';
+import type { PartKind } from '../../domain/partName.js';
+import { isPartKind } from '../../domain/UiPart.js';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isAppId(value: string): boolean {
+    return UUID.test(value);
+}
+
+/** True for a UUID, the only form of a part id that reaches a path */
+export const isPartId = isAppId;
+
+/**
+ * The layout of the data directory. The owner's parts are one file per part in a folder per kind, named by the part's
+ * UUID, so a rename moves no file; `names.json` maps the names of each kind to ids:
+ *
+ *     <dataDir>/<kind>/<id>.json     id, kind, name, revision, createdAt, updatedAt and the body (kinds: `PART_KINDS`)
+ *     <dataDir>/names.json           { <kind>: { <name>: <id> } }, an index rebuilt from the part files
+ *
+ * Each app also has a side folder named by its UUID (the app's part id once apps are parts):
+ *
+ *     <dataDir>/<appId>/app.json     id, name, revision, createdAt, updatedAt and the document (the old store)
+ *     <dataDir>/<appId>/state.json   the revision and the state snapshot (the old store)
+ *     <dataDir>/<appId>/errors.json  the bounded preview error log
+ *     <dataDir>/<appId>/files.json   metadata of the uploaded files
+ *     <dataDir>/<appId>/files/<id>   the bytes of one uploaded file
+ *
+ * Only kinds and UUIDs reach a path: anything else is refused here, so no input can name a file outside `root`
+ */
+export class PartFolders {
+    readonly root: string;
+
+    constructor(dataDir: string) {
+        this.root = resolve(dataDir);
+    }
+
+    kindDir(kind: PartKind): string {
+        if (!isPartKind(kind)) throw new Error('Not a part kind');
+        return join(this.root, kind);
+    }
+
+    partFile(kind: PartKind, partId: string): string {
+        if (!UUID.test(partId)) throw new Error('A part id is a UUID');
+        return join(this.kindDir(kind), `${partId.toLowerCase()}.json`);
+    }
+
+    namesFile(): string {
+        return join(this.root, 'names.json');
+    }
+
+    dir(appId: string): string {
+        if (!UUID.test(appId)) throw new Error('An app id is a UUID');
+        return join(this.root, appId.toLowerCase());
+    }
+
+    appFile(appId: string): string {
+        return join(this.dir(appId), 'app.json');
+    }
+
+    stateFile(appId: string): string {
+        return join(this.dir(appId), 'state.json');
+    }
+
+    errorsFile(appId: string): string {
+        return join(this.dir(appId), 'errors.json');
+    }
+
+    filesIndex(appId: string): string {
+        return join(this.dir(appId), 'files.json');
+    }
+
+    fileBytes(appId: string, fileId: string): string {
+        if (!UUID.test(fileId)) throw new Error('A file id is a UUID');
+        return join(this.dir(appId), 'files', fileId.toLowerCase());
+    }
+}

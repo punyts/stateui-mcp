@@ -12,7 +12,7 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import { isAppId } from '../storage/AppFolders.js';
+import { isAppId } from '../storage/PartFolders.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';

@@ -10,7 +10,8 @@ import { HubLiveState } from '../infrastructure/preview/HubLiveState.js';
 import { LivePreviewLog } from '../infrastructure/preview/LivePreviewLog.js';
 import { LiveViews } from '../infrastructure/preview/LiveViews.js';
 import { PreviewHub } from '../infrastructure/preview/PreviewHub.js';
-import { AppFolders } from '../infrastructure/storage/AppFolders.js';
+import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
+import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { FileUiAppRepository } from '../infrastructure/storage/FileUiAppRepository.js';
 import { FileUiErrorLog } from '../infrastructure/storage/FileUiErrorLog.js';
 import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileRepository.js';
@@ -63,7 +64,7 @@ export interface Services {
 
 /** The composition root of the server: plain factories, no container */
 export function createServices(options: ServicesOptions): Services {
-    const folders = new AppFolders(options.dataDir);
+    const folders = new PartFolders(options.dataDir);
     const lock = new KeyedLock();
     const now = (): Date => new Date();
     const hub = new PreviewHub(now);
@@ -80,11 +81,12 @@ export function createServices(options: ServicesOptions): Services {
         { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) }
     );
     const repository = new FileUiAppRepository(folders, lock, authorities, now, randomUUID, persisted);
+    const parts = new FilePartRepository(folders, lock, { now, newId: randomUUID });
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
     const useCases = createUiBuilderUseCases(
-        { repository, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
+        { repository, parts, validator, previewLog, catalog, fileRepository, fileStore, liveState: new HubLiveState(hub) },
         { now, newId: randomUUID, report: options.report, coreIconNames: CORE_ICON_NAMES }
     );
     const browser = options.browser ?? new BrowserPreview(hub, options.origin);

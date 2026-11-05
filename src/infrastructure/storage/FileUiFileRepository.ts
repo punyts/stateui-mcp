@@ -2,8 +2,8 @@ import type { AddUiFileInput, AddUiFileResult, UiFileRepository, UiFileUsage } f
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_BYTES_PER_APP, MAX_FILES_PER_APP } from '../../domain/UiFile.js';
 import type { UiFile } from '../../domain/UiFile.js';
-import type { AppFolders } from './AppFolders.js';
-import { isAppId } from './AppFolders.js';
+import type { PartFolders } from './PartFolders.js';
+import { isAppId } from './PartFolders.js';
 import { readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
 
@@ -32,7 +32,7 @@ function isFileEntry(value: unknown): value is FileEntry {
 /** The metadata of the files of an app, in `files.json` of the app folder. It shares the lock of the app with the app repository */
 export class FileUiFileRepository implements UiFileRepository {
     constructor(
-        private readonly folders: AppFolders,
+        private readonly folders: PartFolders,
         private readonly lock: KeyedLock,
         private readonly now: () => Date = () => new Date()
     ) {}

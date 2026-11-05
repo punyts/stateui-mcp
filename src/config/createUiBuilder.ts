@@ -36,7 +36,7 @@ import { WriteApp } from '../application/use-cases/WriteApp.js';
 export interface UiBuilderPorts {
     /** The old one-document-per-app store, which the current tools use until epic 3 removes them */
     readonly repository: UiAppRepository;
-    /** The owner's parts, beside the app store; the file adapter comes with O2.2 and the use cases that read it after */
+    /** The owner's parts, beside the app store (`FilePartRepository` in the server); no use case reads them yet */
     readonly parts?: UiPartRepository;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;

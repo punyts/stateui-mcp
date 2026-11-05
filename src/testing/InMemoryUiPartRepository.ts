@@ -9,7 +9,7 @@ import type {
     UiPartWriteResult
 } from '../application/ports/UiPartRepository.js';
 import type { PartKind } from '../domain/partName.js';
-import { createUiPart, isPartKind, partNameProblem, renameUiPart, reviseUiPart } from '../domain/UiPart.js';
+import { PART_BODY_PROBLEM, createUiPart, isPartBody, partInputProblem, partNameProblem, renameUiPart, reviseUiPart } from '../domain/UiPart.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
 import { isRevisionCurrent } from '../domain/revision.js';
 
@@ -18,15 +18,9 @@ export interface InMemoryUiPartRepositoryOptions {
     readonly now?: () => Date;
 }
 
-function isBody(value: unknown): boolean {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-const NOT_AN_OBJECT = 'a part body must be a JSON object';
-
 /**
  * `UiPartRepository` in memory, for use-case tests. Bodies are copied in and out (`structuredClone`, which keeps key
- * order), so a caller cannot change a stored part. Its results match the file adapter's (the contract test of O2.2)
+ * order), so a caller cannot change a stored part. Its results match the file adapter's (`partRepository.contract.test.ts`)
  */
 export class InMemoryUiPartRepository implements UiPartRepository {
     private readonly parts = new Map<string, UiPart>();
@@ -40,8 +34,8 @@ export class InMemoryUiPartRepository implements UiPartRepository {
     }
 
     async create<K extends PartKind>(input: CreateUiPartInput<K>): Promise<CreateUiPartResult<K>> {
-        const invalid = this.invalid(input.kind, input.name, input.body);
-        if (invalid !== undefined) return invalid;
+        const problem = partInputProblem(input.kind, input.name, input.body);
+        if (problem !== undefined) return { kind: 'invalid', reason: problem };
         const names = this.namesOf(input.kind);
         if (names.has(input.name)) return { kind: 'duplicate-name' };
         const part = createUiPart({ id: this.newId(), kind: input.kind, name: input.name, body: structuredClone(input.body), now: this.now() });
@@ -68,7 +62,7 @@ export class InMemoryUiPartRepository implements UiPartRepository {
     }
 
     async write<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], expectedRevision: number): Promise<UiPartWriteResult> {
-        if (!isBody(body)) return { kind: 'invalid', reason: NOT_AN_OBJECT };
+        if (!isPartBody(body)) return { kind: 'invalid', reason: PART_BODY_PROBLEM };
         const part = this.byName(kind, name);
         if (part === undefined) return { kind: 'not-found' };
         if (!isRevisionCurrent(part.revision, expectedRevision)) return { kind: 'conflict', currentRevision: part.revision };
@@ -98,13 +92,6 @@ export class InMemoryUiPartRepository implements UiPartRepository {
         names.delete(from);
         names.set(to, renamed.id);
         return { kind: 'renamed', revision: renamed.revision };
-    }
-
-    private invalid(kind: PartKind, name: string, body: unknown): { kind: 'invalid'; reason: string } | undefined {
-        if (!isPartKind(kind)) return { kind: 'invalid', reason: `"${String(kind)}" is not a part kind` };
-        const problem = partNameProblem(name);
-        if (problem !== undefined) return { kind: 'invalid', reason: problem };
-        return isBody(body) ? undefined : { kind: 'invalid', reason: NOT_AN_OBJECT };
     }
 
     private namesOf(kind: PartKind): Map<string, string> {
