@@ -22,6 +22,7 @@ export interface CliOptions {
 export const HELP_TEXT = `stateui-mcp: an MCP server for building StateUI apps, with a live browser view of each app
 
 Usage: stateui-mcp [options]
+       stateui-mcp convert [--data-dir <dir>] [--dry-run] [--purge]   (stateui-mcp convert --help)
 
 Options:
   --data-dir <dir>     Where the apps are stored, one folder per app
@@ -52,7 +53,67 @@ Without --stdio the server speaks streamable HTTP at http://<host>:<port>/mcp.
 Open http://<host>:<port>/ for the list of apps.
 `;
 
+export const CONVERT_HELP_TEXT = `stateui-mcp convert: turns the apps of the old single-document store into owner parts, once
+
+Usage: stateui-mcp convert [options]
+
+Each app folder of the data directory with an app.json is split into parts (the app, its theme,
+its datasets with their models, its components); the app keeps its id. Its app.json and state.json
+move to <dir>/.converted/<appId>/; errors.json and the uploaded files stay. An app that cannot be
+converted keeps its files and is listed with the reasons. Running it again converts nothing new.
+Stop the server first.
+
+Options:
+  --data-dir <dir>     The data directory (env STATEUI_MCP_DATA_DIR, default ./data)
+  --dry-run            Print the report and change nothing
+  --purge              Delete <dir>/.converted/ afterwards
+  -h, --help           Show this help
+`;
+
+export interface ConvertCliOptions {
+    readonly dataDir: string;
+    readonly dryRun: boolean;
+    readonly purge: boolean;
+    readonly help: boolean;
+}
+
 export class UsageError extends Error {}
+
+/** Reads the options of `stateui-mcp convert` (the arguments after `convert`) and the environment */
+export function parseConvertOptions(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): ConvertCliOptions {
+    let dataDir = env['STATEUI_MCP_DATA_DIR'] ?? './data';
+    let dryRun = false;
+    let purge = false;
+    let help = false;
+    for (let index = 0; index < argv.length; index++) {
+        const argument = argv[index] as string;
+        if (argument.startsWith('--data-dir=')) {
+            dataDir = argument.slice('--data-dir='.length);
+            continue;
+        }
+        switch (argument) {
+            case '--data-dir': {
+                const next = argv[++index];
+                if (next === undefined) throw new UsageError('--data-dir needs a value');
+                dataDir = next;
+                break;
+            }
+            case '--dry-run':
+                dryRun = true;
+                break;
+            case '--purge':
+                purge = true;
+                break;
+            case '-h':
+            case '--help':
+                help = true;
+                break;
+            default:
+                throw new UsageError(`Unknown option of convert: ${argument}`);
+        }
+    }
+    return { dataDir: resolve(dataDir), dryRun, purge, help };
+}
 
 function parsePort(text: string): number {
     const port = Number(text);

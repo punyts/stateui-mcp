@@ -9,6 +9,9 @@ import type {
     UiPartSummary,
     UiPartWriteResult
 } from '../application/ports/UiPartRepository.js';
+import { PART_ID_PROBLEM, PART_ID_TAKEN } from '../application/ports/UiPartRepository.js';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import type { PartKind } from '../domain/partName.js';
 import { PART_BODY_PROBLEM, createUiPart, isPartBody, partInputProblem, partNameProblem, renameUiPart, reviseUiPart } from '../domain/UiPart.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
@@ -39,7 +42,9 @@ export class InMemoryUiPartRepository implements UiPartRepository {
         if (problem !== undefined) return { kind: 'invalid', reason: problem };
         const names = this.namesOf(input.kind);
         if (names.has(input.name)) return { kind: 'duplicate-name' };
-        const part = createUiPart({ id: this.newId(), kind: input.kind, name: input.name, body: structuredClone(input.body), now: this.now() });
+        if (input.id !== undefined && !UUID.test(input.id)) return { kind: 'invalid', reason: PART_ID_PROBLEM };
+        if (input.id !== undefined && this.parts.has(input.id.toLowerCase())) return { kind: 'invalid', reason: PART_ID_TAKEN };
+        const part = createUiPart({ id: input.id?.toLowerCase() ?? this.newId(), kind: input.kind, name: input.name, body: structuredClone(input.body), now: this.now() });
         this.parts.set(part.id, part as UiPart);
         names.set(part.name, part.id);
         return { kind: 'created', part: structuredClone(part) };

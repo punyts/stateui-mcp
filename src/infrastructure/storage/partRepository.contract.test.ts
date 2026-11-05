@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { PART_ID_PROBLEM, PART_ID_TAKEN } from '../../application/ports/UiPartRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
 import { InMemoryUiPartRepository } from '../../testing/InMemoryUiPartRepository.js';
@@ -57,6 +58,24 @@ describe.each(ADAPTERS)('UiPartRepository contract: %s', (_name, createRepositor
         expect(byName).toEqual(byId);
         expect(byName).toEqual(created.kind === 'created' ? created.part : undefined);
         expect(Object.keys(byName?.body.fields ?? {})).toEqual(['zeta', 'alpha', 'mid']);
+    });
+
+    it('should keep a given id, and refuse one that is not a UUID or that a part of the kind has', async () => {
+        // Arrange
+        const parts = await createRepository();
+        const kept = '0b9c2f3e-5d4a-4e1f-9a7b-3c2d1e0f9a8b';
+
+        // Act
+        const created = await parts.create({ kind: 'models', name: 'product', body: MODEL, id: kept });
+        const taken = await parts.create({ kind: 'models', name: 'price', body: MODEL, id: kept });
+        const notUuid = await parts.create({ kind: 'models', name: 'stock', body: MODEL, id: '../product' });
+
+        // Assert
+        expect(created.kind === 'created' ? created.part.id : undefined).toBe(kept);
+        expect((await parts.findById('models', kept))?.name).toBe('product');
+        expect(taken).toEqual({ kind: 'invalid', reason: PART_ID_TAKEN });
+        expect(notUuid).toEqual({ kind: 'invalid', reason: PART_ID_PROBLEM });
+        expect((await parts.list('models')).map((part) => part.name)).toEqual(['product']);
     });
 
     it('should refuse a second part of one name in a kind and allow it in another kind', async () => {

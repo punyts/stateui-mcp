@@ -1,12 +1,21 @@
 import type { PartKind } from '../../domain/partName.js';
 import type { UiPart, UiPartBodies } from '../../domain/UiPart.js';
 
-/** What a caller supplies to create a part. The id, revision and timestamps come from the adapter */
+/** What a caller supplies to create a part. The revision and timestamps come from the adapter, and the id unless given */
 export interface CreateUiPartInput<K extends PartKind> {
     readonly kind: K;
     readonly name: string;
     readonly body: UiPartBodies[K];
+    /**
+     * The part's id, a UUID, when the caller must keep one (the converter keeps an old app's id as its part id); one a
+     * part of the kind already has is `invalid`
+     */
+    readonly id?: string;
 }
+
+/** Why a given part id cannot be used, or undefined */
+export const PART_ID_PROBLEM = 'A part id is a UUID';
+export const PART_ID_TAKEN = 'A part of this kind already has this id';
 
 /** One row of a part list: no body */
 export interface UiPartSummary {

@@ -11,6 +11,7 @@ import type {
     UiPartSummary,
     UiPartWriteResult
 } from '../../application/ports/UiPartRepository.js';
+import { PART_ID_PROBLEM, PART_ID_TAKEN } from '../../application/ports/UiPartRepository.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { PART_KINDS } from '../../domain/partName.js';
 import type { PartKind } from '../../domain/partName.js';
@@ -149,7 +150,9 @@ export class FilePartRepository implements UiPartRepository {
         const names = (await this.names()).get(input.kind) as Map<string, string>;
         return this.lock.run(`${input.kind}/*names`, async (): Promise<CreateUiPartResult<K>> => {
             if (names.has(input.name)) return { kind: 'duplicate-name' };
-            const part = createUiPart({ id: this.newId(), kind: input.kind, name: input.name, body: input.body, now: this.now() });
+            if (input.id !== undefined && !isPartId(input.id)) return { kind: 'invalid', reason: PART_ID_PROBLEM };
+            if (input.id !== undefined && (await this.read(input.kind, input.id.toLowerCase())) !== undefined) return { kind: 'invalid', reason: PART_ID_TAKEN };
+            const part = createUiPart({ id: input.id?.toLowerCase() ?? this.newId(), kind: input.kind, name: input.name, body: input.body, now: this.now() });
             await writeJsonAtomic(this.folders.partFile(part.kind, part.id), toFile(part as UiPart));
             names.set(part.name, part.id);
             await this.saveNames();
