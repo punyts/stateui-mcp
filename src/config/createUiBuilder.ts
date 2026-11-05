@@ -24,7 +24,7 @@ import { GetPart } from '../application/use-cases/GetPart.js';
 import { GetState } from '../application/use-cases/GetState.js';
 import { GetUiApp } from '../application/use-cases/GetUiApp.js';
 import { ListApps } from '../application/use-cases/ListApps.js';
-import { ListComponents } from '../application/use-cases/ListComponents.js';
+import { SearchComponents } from '../application/use-cases/SearchComponents.js';
 import { ListParts } from '../application/use-cases/ListParts.js';
 import { ListIcons } from '../application/use-cases/ListIcons.js';
 import { ListTokens } from '../application/use-cases/ListTokens.js';
@@ -90,7 +90,7 @@ export interface UiBuilderUseCases {
     readonly createApp: CreateApp;
     readonly listApps: ListApps;
     readonly deleteApp: DeleteApp;
-    readonly listComponents: ListComponents;
+    readonly searchComponents: SearchComponents;
     readonly getComponent: GetComponent;
     readonly listIcons: ListIcons;
     readonly listTokens: ListTokens;
@@ -171,7 +171,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         createApp: new CreateApp(repository, validator, report),
         listApps: new ListApps(repository, report),
         deleteApp: new DeleteApp(repository, report),
-        listComponents: new ListComponents(catalog),
+        searchComponents: new SearchComponents(catalog),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog),
         listTokens: new ListTokens(catalog),

@@ -67,10 +67,10 @@ describe('FileToolCallLog', () => {
         const log = new FileToolCallLog(file, { info: vi.fn() });
 
         // Act
-        await log.record({ at: ENTRY.at, tool: 'ui_components_list', ok: true, requestChars: 2, responseChars: 50 });
+        await log.record({ at: ENTRY.at, tool: 'ui_components_search', ok: true, requestChars: 2, responseChars: 50 });
 
         // Assert
-        expect(JSON.parse(await readFile(file, 'utf8')) as object).toEqual({ at: ENTRY.at, tool: 'ui_components_list', ok: true, requestChars: 2, responseChars: 50 });
+        expect(JSON.parse(await readFile(file, 'utf8')) as object).toEqual({ at: ENTRY.at, tool: 'ui_components_search', ok: true, requestChars: 2, responseChars: 50 });
     });
 
     it('should not throw when the write fails, and report it once', async () => {

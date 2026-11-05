@@ -50,7 +50,7 @@ export interface StateUiToolDependencies {
     readonly toolCallLog?: ToolCallLog;
 }
 
-const START_HERE_TOOLS = new Set(['ui_components_list', 'ui_app_create']);
+const START_HERE_TOOLS = new Set(['ui_components_search', 'ui_app_create']);
 
 /** Every tool of the server: catalog, lifecycle and reads, the generic part tools, writes, the live tools, `ui_file_read` and `ui_app_delete` */
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {

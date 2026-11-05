@@ -57,7 +57,7 @@ function trigrams(text: string): Set<string> {
 }
 
 function toSummary(component: CatalogFileComponent): ComponentSummary {
-    return { name: component.name, tier: component.tier, size: component.size, summary: component.summary };
+    return { name: component.name, tier: component.tier, size: component.size, summary: component.summary, category: component.category, purposes: component.purposes };
 }
 
 function toEntry(component: CatalogFileComponent): ComponentEntry {

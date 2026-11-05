@@ -8,6 +8,10 @@ export interface ComponentSummary {
     readonly tier: ComponentTier;
     readonly size: string;
     readonly summary: string;
+    /** One of `COMPONENT_CATEGORIES` */
+    readonly category: string;
+    /** What a person uses the component for, in plain words */
+    readonly purposes: readonly string[];
 }
 
 /** A token a component's CSS reads, which a node's `theme` may override for its subtree: `image.fill`, type `color`, default `{color.surface.sunken}` */

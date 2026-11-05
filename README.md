@@ -80,7 +80,7 @@ The first sixteen are the `ui-builder` tools. The last three are new.
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `ui_components_list` | `query?`, `tier?` | `{ count, components: [{ name, tier, size, summary }] }` |
+| `ui_components_search` | `need`, `category?`, `tier?`, `limit?` (5, at most 20) | `{ results: [{ name, category, tier, summary, matched, example }], weak, categories? }`, best first and never empty: `weak` when nothing fits well, and a need that matches nothing gets the category index and the nearest category's components; an unknown `category` or `tier` is `invalid-argument` with `allowed` |
 | `ui_component_get` | `name` | the catalog entry; an unknown name is `unknown-component` with `nearest` |
 | `ui_icons_list` | `query?`, `category?`, `filled?`, `limit?` | `{ icons, total, more }` |
 | `ui_tokens_list` | `group?`, `query?`, `includeOverlays?` | `{ count, tokens, overlays? }`; `unknown-group` lists the groups |

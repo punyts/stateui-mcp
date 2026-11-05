@@ -5,7 +5,7 @@
  */
 
 const WORKING_LOOP = [
-    'Working loop: ui_components_list to find components, ui_component_get for the shape of each one you use, ui_app_create, then ui_app_write, ui_validate, ui_preview and ui_screenshot to see the result. ui_tree shows the structure with the path of every node, ui_outline the content; ui_interact clicks, types and drags in the running app.',
+    'Working loop: ui_components_search with each need in plain words to find components, ui_component_get for the shape of each one you use, ui_app_create, then ui_app_write, ui_validate, ui_preview and ui_screenshot to see the result. ui_tree shows the structure with the path of every node, ui_outline the content; ui_interact clicks, types and drags in the running app.',
     'Paths: "$.app.children.main" and "app.children.main" name the same node, and every tool takes either form. Rows of a list and cards of a board get their own paths while the app runs (...body.main.slots.0); ui_tree with rendered: true lists them, for ui_interact and ui_screenshot.',
     'Write loop: read the part you will change with ui_app_get and a path, call ui_app_write with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat.',
     'Icon names come from ui_icons_list. Never guess an icon name.',
@@ -36,4 +36,4 @@ const SAFETY = [
 export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LOGIC, ...LIVE_VIEW, ...SAFETY].join('\n\n');
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
-export const START_HERE = 'Start of the working loop: ui_components_list, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';
+export const START_HERE = 'Start of the working loop: ui_components_search, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';

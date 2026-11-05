@@ -82,7 +82,7 @@ describe('tool list', () => {
 
         expect(tools.map((tool) => tool.name).sort()).toEqual(
             [
-                'ui_components_list',
+                'ui_components_search',
                 'ui_component_get',
                 'ui_icons_list',
                 'ui_tokens_list',
@@ -132,7 +132,7 @@ describe('tool list', () => {
         const destructive = tools.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
 
         expect(readOnly.sort()).toEqual(
-            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get', 'ui_data_query'].sort()
+            ['ui_components_search', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get', 'ui_data_query'].sort()
         );
         expect(destructive.sort()).toEqual(['ui_app_delete', 'ui_delete', 'ui_rename']);
         expect(byName.get('ui_delete')?.annotations).toEqual(byName.get('ui_app_delete')?.annotations);
@@ -149,17 +149,58 @@ describe('tool list', () => {
         expect(instructions).toContain('no preview is open; the command was not delivered');
         expect(instructions).toContain('ui_events_read');
         expect(tools.find((tool) => tool.name === 'ui_app_create')?.description).toContain('Start of the working loop');
-        expect(tools.find((tool) => tool.name === 'ui_components_list')?.description).toContain('Start of the working loop');
+        expect(tools.find((tool) => tool.name === 'ui_components_search')?.description).toContain('Start of the working loop');
+        expect(tools.some((tool) => tool.name === 'ui_components_list')).toBe(false);
     });
 });
 
 describe('catalog tools', () => {
-    it('should list components filtered by query and tier', async () => {
-        const result = await call(harness.client, 'ui_components_list', { query: 'button' });
+    it('should find a component by a need in plain words, with the matched phrase and an example', async () => {
+        const result = await call(harness.client, 'ui_components_search', { need: 'pick a date range' });
+        const results = result.body['results'] as { name: string; matched: string[]; example: object }[];
 
         expect(result.isError).toBe(false);
-        expect((result.body['components'] as { name: string }[]).map((component) => component.name)).toContain('button');
-        expect(result.body['count']).toBe((result.body['components'] as unknown[]).length);
+        expect(result.body['weak']).toBe(false);
+        expect(results[0]?.name).toBe('dateRangeField');
+        expect(results[0]?.matched).toContain('pick a date range');
+        expect(results.every((hit) => typeof hit.example === 'object')).toBe(true);
+    });
+
+    it('should narrow by category and cap the limit at 20', async () => {
+        const forms = await call(harness.client, 'ui_components_search', { need: 'enter text', category: 'forms', limit: 50 });
+        const all = await call(harness.client, 'ui_components_search', { need: 'show', limit: 50 });
+
+        expect((forms.body['results'] as { category: string }[]).every((hit) => hit.category === 'forms')).toBe(true);
+        expect((all.body['results'] as unknown[]).length).toBeLessThanOrEqual(20);
+    });
+
+    it('should answer a need that matches nothing with the weak result and the category index', async () => {
+        const nonsense = await call(harness.client, 'ui_components_search', { need: 'xyzzy' });
+        const blank = await call(harness.client, 'ui_components_search', { need: '   ' });
+
+        expect(nonsense.isError).toBe(false);
+        expect(nonsense.body['weak']).toBe(true);
+        expect((nonsense.body['categories'] as unknown[]).length).toBeGreaterThan(0);
+        expect((nonsense.body['results'] as unknown[]).length).toBeGreaterThan(0);
+        expect(blank.body['weak']).toBe(true);
+    });
+
+    it('should refuse an absent need, an unknown category and an unknown tier', async () => {
+        const absent = await call(harness.client, 'ui_components_search', {});
+        const category = await call(harness.client, 'ui_components_search', { need: 'x', category: 'widgets' });
+        const tier = await call(harness.client, 'ui_components_search', { need: 'x', tier: 'atom' });
+
+        expect(absent.body['error']).toBe('invalid-argument');
+        expect(category.body['error']).toBe('invalid-argument');
+        expect(category.body['allowed']).toContain('forms');
+        expect(tier.body['error']).toBe('invalid-argument');
+        expect(tier.body['allowed']).toEqual(['composed', 'root']);
+    });
+
+    it('should not register ui_components_list', async () => {
+        const result = await call(harness.client, 'ui_components_list', { query: 'button' });
+
+        expect(result.isError).toBe(true);
     });
 
     it('should return the full entry of a component', async () => {

@@ -1,15 +1,18 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { DEFAULT_ICON_LIST_LIMIT, MAX_ICON_LIST_LIMIT } from '../../application/use-cases/ListIcons.js';
+import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT } from '../StateUiComponentCatalog.js';
 import { READ_ONLY, defineInput, fail, succeed } from './toolKit.js';
 import type { UiToolDefinition } from './toolKit.js';
 
-const COMPONENTS_LIST = defineInput({
-    query: { type: 'string', description: 'Words that must each appear in the component name or summary' },
-    tier: { type: 'string', enum: ['root', 'composed'], description: 'root: components that draw themselves; composed: ready-made trees of other components' }
+const COMPONENTS_SEARCH = defineInput({
+    need: { type: 'string', required: true, allowEmpty: true, description: 'What the component is for, in plain words, such as "pick a date range" or "show totals by month"' },
+    category: { type: 'string', description: 'Only components of this category (the index in the server instructions lists them)' },
+    tier: { type: 'string', description: 'Only components of this tier: root (draws itself) or composed (a ready-made tree of other components)' },
+    limit: { type: 'integer', minimum: 1, description: `How many results (default ${DEFAULT_SEARCH_LIMIT}, at most ${MAX_SEARCH_LIMIT})` }
 });
 
 const COMPONENT_GET = defineInput({
-    name: { type: 'string', required: true, description: 'The component name from ui_components_list, such as "button"' }
+    name: { type: 'string', required: true, description: 'The component name from ui_components_search, such as "button"' }
 });
 
 const ICONS_LIST = defineInput({
@@ -27,23 +30,29 @@ const TOKENS_LIST = defineInput({
 
 /** The catalog tools: discover the components, icons and theme tokens an application can use */
 export function createCatalogTools(
-    useCases: Pick<UiBuilderUseCases, 'listComponents' | 'getComponent' | 'listIcons' | 'listTokens'>
+    useCases: Pick<UiBuilderUseCases, 'searchComponents' | 'getComponent' | 'listIcons' | 'listTokens'>
 ): readonly UiToolDefinition[] {
     return [
         {
-            name: 'ui_components_list',
+            name: 'ui_components_search',
             description:
-                'List the components an app can use, one line each: name, tier, size and summary. Filter with query words or tier; ui_component_get gives the full shape of one.',
-            inputSchema: COMPONENTS_LIST.schema,
+                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), best first: name, category, tier, summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category.',
+            inputSchema: COMPONENTS_SEARCH.schema,
             annotations: READ_ONLY,
             run: (args) => {
-                const parsed = COMPONENTS_LIST.parse(args);
+                const parsed = COMPONENTS_SEARCH.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
-                const components = useCases.listComponents.execute({
-                    ...(parsed.value.query !== undefined && { query: parsed.value.query }),
-                    ...(parsed.value.tier !== undefined && { tier: parsed.value.tier })
+                const { need, category, tier, limit } = parsed.value;
+                const outcome = useCases.searchComponents.execute({
+                    need,
+                    ...(category !== undefined && { category }),
+                    ...(tier !== undefined && { tier }),
+                    ...(limit !== undefined && { limit })
                 });
-                return succeed({ count: components.length, components });
+                if (outcome.kind === 'invalid-argument') {
+                    return fail('invalid-argument', `Unknown ${outcome.argument}; use one of: ${outcome.allowed.join(', ')}`, { argument: outcome.argument, allowed: outcome.allowed });
+                }
+                return succeed(outcome.result);
             }
         },
         {
