@@ -231,3 +231,60 @@ describe.skipIf(!installed)('the live view of an owner app (Chromium through Pla
         expect(text).not.toContain('About the shop');
     });
 });
+
+/** A stock screen that lists the names of the catalog's records */
+const STOCK = deepFreeze({
+    uses: { data: { products: { dataset: 'catalog' } } },
+    start: 'home',
+    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    screens: { home: { root: { component: 'list', '<-items': '$.data.products', row: { component: 'text', '<-_text': '$row.name' } } } }
+}) as unknown as UiPartBodies['apps'];
+
+describe.skipIf(!installed)('a dataset write reaching an open view (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        for (const [tool, args] of [
+            ['ui_model_write', { model: 'product', operations: [{ op: 'set', field: 'name', type: 'string', required: true }] }],
+            ['ui_data_write', { dataset: 'catalog', model: 'product', operations: [{ op: 'set', path: 'p1', value: { name: 'Lamp' } }] }]
+        ] as const) {
+            const result = await call(harness.client, tool, args);
+            if (result.isError) throw new Error(`${tool}: ${JSON.stringify(result.body)}`);
+        }
+        const written = await harness.server.services.useCases.writePart!.execute({ kind: 'apps', name: 'stock', body: STOCK });
+        if (written.kind !== 'written') throw new Error(JSON.stringify(written));
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser?.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should show a record written with ui_data_write in an open view without a reload', async () => {
+        // Arrange
+        const [stock] = await harness.server.services.instanceViews.appsShowing('apps', 'stock');
+        const page = await browser.newPage();
+        await page.goto(`${harness.server.origin}/apps/${stock?.id ?? ''}`);
+        await page.waitForFunction(() => document.body.dataset['status'] === 'ready');
+        await page.evaluate(() => {
+            (window as unknown as { marker: string }).marker = 'same page';
+        });
+
+        // Act
+        const result = await call(harness.client, 'ui_data_write', { dataset: 'catalog', operations: [{ op: 'add', value: { name: 'Reading chair' } }] });
+        const text = await eventually(() => textOf(page), (value) => typeof value === 'string' && value.includes('Reading chair'));
+        const marker = await page.evaluate(() => (window as unknown as { marker?: string }).marker);
+        await page.close();
+
+        // Assert
+        expect(result.body).toMatchObject({ dataset: 'catalog', revision: 2 });
+        expect(text).toContain('Reading chair');
+        expect(marker).toBe('same page');
+    });
+});

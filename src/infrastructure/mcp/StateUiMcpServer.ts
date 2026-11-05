@@ -18,6 +18,7 @@ import { createLiveTools } from './liveTools.js';
 import { createNodeTools } from './nodeTools.js';
 import { createThemeTools } from './themeTools.js';
 import { createModelTools } from './modelTools.js';
+import { createDataTools } from './dataTools.js';
 import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
@@ -61,6 +62,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createNodeTools(useCases),
         ...createThemeTools(useCases),
         ...createModelTools(useCases),
+        ...createDataTools(useCases),
         ...createWriteTools(useCases, liveViews),
         ...createStateTools({ useCases, ...views }),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...views, ...(authorities !== undefined && { logic: authorities }) }),

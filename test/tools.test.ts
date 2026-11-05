@@ -115,7 +115,9 @@ describe('tool list', () => {
                 'ui_locale_write',
                 'ui_theme_create',
                 'ui_theme_write',
-                'ui_model_write'
+                'ui_model_write',
+                'ui_data_write',
+                'ui_data_query'
             ].sort()
         );
     });
@@ -128,7 +130,7 @@ describe('tool list', () => {
         const destructive = tools.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
 
         expect(readOnly.sort()).toEqual(
-            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get'].sort()
+            ['ui_components_list', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get', 'ui_data_query'].sort()
         );
         expect(destructive.sort()).toEqual(['ui_app_delete', 'ui_delete', 'ui_rename']);
         expect(byName.get('ui_delete')?.annotations).toEqual(byName.get('ui_app_delete')?.annotations);

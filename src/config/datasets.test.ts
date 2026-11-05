@@ -55,7 +55,7 @@ describe('WriteData', () => {
         });
 
         // Assert
-        expect(result).toEqual({ kind: 'written', revision: 2, added: ['rid1', 'rid2'] });
+        expect(result).toEqual({ kind: 'written', revision: 2, added: ['rid1', 'rid2'], created: false });
         expect(Object.entries(await records())).toEqual([
             ['rid1', { name: 'Desk', price: 120 }],
             ['p1', { name: 'Lamp', price: 35 }],
@@ -88,7 +88,7 @@ describe('WriteData', () => {
         const all = await writeData.execute({ name: 'stock', operations: [{ op: 'set', path: '', value: { p3: { name: 'Desk', price: 'no' } } }] });
 
         // Assert
-        expect(other).toEqual({ kind: 'written', revision: 3, added: [] });
+        expect(other).toEqual({ kind: 'written', revision: 3, added: [], created: false });
         expect(all.kind).toBe('invalid');
     });
 
