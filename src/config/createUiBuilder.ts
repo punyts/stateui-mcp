@@ -36,6 +36,7 @@ import { RunCommand } from '../application/use-cases/RunCommand.js';
 import { SetPartState, SetState } from '../application/use-cases/SetState.js';
 import { ResetInstance, ResetState } from '../application/use-cases/ResetState.js';
 import { FindPartApp, GetPartState, RunPartCommand } from '../application/use-cases/RunPartApp.js';
+import { WriteModel } from '../application/use-cases/WriteModel.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
@@ -115,6 +116,8 @@ export interface UiBuilderUseCases {
     /** With `parts` only */
     readonly writeTheme?: WriteTheme;
     /** With `parts` only */
+    readonly writeModel?: WriteModel;
+    /** With `parts` only */
     readonly writeNodes?: WriteNodes;
     /** With `parts` only */
     readonly writeLocale?: WriteLocale;
@@ -180,6 +183,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         ...(parts !== undefined && writePart !== undefined && {
             createTheme: new CreateTheme(parts, writePart, validator, patterns, report),
             writeTheme: new WriteTheme(parts, writePart, validator, catalog, report),
+            writeModel: new WriteModel(parts, parts, writePart, report),
             createPartApp: new CreatePartApp(parts, validator, patterns, report),
             configureApp: new ConfigureApp(parts, validator, report),
             createScreen: new CreateScreen(parts, validator, patterns, report),

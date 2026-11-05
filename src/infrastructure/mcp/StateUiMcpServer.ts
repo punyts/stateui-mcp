@@ -17,6 +17,7 @@ import { SERVER_INSTRUCTIONS, START_HERE } from './instructions.js';
 import { createLiveTools } from './liveTools.js';
 import { createNodeTools } from './nodeTools.js';
 import { createThemeTools } from './themeTools.js';
+import { createModelTools } from './modelTools.js';
 import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
@@ -59,6 +60,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createPartAppTools(useCases),
         ...createNodeTools(useCases),
         ...createThemeTools(useCases),
+        ...createModelTools(useCases),
         ...createWriteTools(useCases, liveViews),
         ...createStateTools({ useCases, ...views }),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...views, ...(authorities !== undefined && { logic: authorities }) }),
