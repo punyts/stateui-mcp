@@ -85,8 +85,9 @@ describe('convertDataDir', () => {
         await writeOldApp(TABS_ID, 'Halo', SAMPLE_TABS_APP);
         const folders = new PartFolders(dataDir);
         const files = new FileUiFileRepository(folders, new KeyedLock());
-        const added = await files.add({ id: FILE_ID, appId: TABS_ID, name: 'lamp.png', size: 4, type: 'image/png', sha256: 'ab' });
+        // The old store's file index, as it was written before the conversion
         await mkdir(join(dataDir, TABS_ID, 'files'), { recursive: true });
+        await writeFile(folders.filesIndex(TABS_ID), JSON.stringify([{ id: FILE_ID, name: 'lamp.png', size: 4, type: 'image/png', sha256: 'ab', createdAt: new Date().toISOString() }]));
         const instances = new FileUiInstanceRepository(folders, new KeyedLock(), LOCAL_OWNER_ID);
         await mkdir(join(folders.instanceFile(LOCAL_OWNER_ID, TABS_ID), '..'), { recursive: true });
         await writeFile(folders.instanceFile(LOCAL_OWNER_ID, TABS_ID), JSON.stringify({ app: { children: { header: { _text: 'Stale' } } } }));
@@ -96,7 +97,6 @@ describe('convertDataDir', () => {
         const report = await convertDataDir({ dataDir });
 
         // Assert
-        expect(added.kind).toBe('added');
         expect(report.unconverted).toEqual([]);
         expect(report.converted.map((app) => app.appId)).toEqual([FORM_ID, TABS_ID]);
         expect(report.converted.every((app) => app.parts.at(-1)?.kind === 'apps')).toBe(true);

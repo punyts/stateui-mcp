@@ -139,7 +139,7 @@ describe('ui_app_create with shell', () => {
         expect(result.body['message']).toContain('No such pattern: "top-nav"');
     });
 
-    it('should refuse a mix of the two forms and part arguments without shell', async () => {
+    it('should refuse a document, a missing shell, a sync mode and a bad name', async () => {
         // Act
         const both = await call(harness.client, 'ui_app_create', { name: 'shop', document: {}, shell: SHELL });
         const titleOnly = await call(harness.client, 'ui_app_create', { name: 'shop', title: 'Shop' });
@@ -164,15 +164,6 @@ describe('ui_app_create with shell', () => {
 
         // Assert
         expect(result.body['error']).toBe('duplicate-name');
-    });
-
-    it('should still create an app of the old store without shell', async () => {
-        // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'Old app' });
-
-        // Assert
-        expect(result.isError).toBe(false);
-        expect(result.body['appId']).toMatch(/^[0-9a-f-]{36}$/);
     });
 });
 

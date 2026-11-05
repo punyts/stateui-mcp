@@ -15,7 +15,7 @@ describe('summarizeToolLog', () => {
         const summary = summarize(entries);
 
         // Assert: catalog characters 4000 + 800 + 400 + 200 + 600 = 6000, the search call included;
-        // failed writes are the three failed ui_app_write calls and the refused ui_state_set;
+        // failed writes are the three failed ui_nodes_write calls and the refused ui_state_set;
         // first-write errors are 3 (a1's first write) + 2 (a2's first write), the retry's 2 left out
         expect(summary).toEqual({ catalogTokens: 1500, failedWrites: 4, firstWriteErrors: 5 });
     });
@@ -23,9 +23,9 @@ describe('summarizeToolLog', () => {
     it('should not count a retry after a failed write to the same target, but count a first write to another target', () => {
         // Arrange
         const entries = [
-            { tool: 'ui_app_write', ok: false, target: 'a', errorCount: 4 },
-            { tool: 'ui_app_write', ok: false, target: 'a', errorCount: 4 },
-            { tool: 'ui_app_write', ok: false, target: 'b', errorCount: 1 }
+            { tool: 'ui_nodes_write', ok: false, target: 'a', errorCount: 4 },
+            { tool: 'ui_nodes_write', ok: false, target: 'a', errorCount: 4 },
+            { tool: 'ui_nodes_write', ok: false, target: 'b', errorCount: 1 }
         ];
 
         // Act
@@ -37,7 +37,7 @@ describe('summarizeToolLog', () => {
     });
 
     it('should know the write tools of today and after the owner-tree epics', () => {
-        expect(['ui_app_write', 'ui_app_create', 'ui_app_delete', 'ui_state_set', 'ui_theme_configure', 'ui_part_rename'].every(isWriteTool)).toBe(true);
+        expect(['ui_nodes_write', 'ui_app_create', 'ui_delete', 'ui_state_set', 'ui_theme_configure', 'ui_part_rename'].every(isWriteTool)).toBe(true);
         expect(['ui_validate', 'ui_state_get', 'ui_components_search', 'ui_preview'].some(isWriteTool)).toBe(false);
     });
 

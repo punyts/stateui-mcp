@@ -2,7 +2,8 @@ import { request as httpRequest } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
-import { FORM_DOCUMENT, call, httpHarness, noBrowser, tempData } from './helpers.js';
+import { EXPECTED_TOOLS } from './expectedTools.js';
+import { FORM_SHELL, call, createApp, httpHarness, noBrowser, shellOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
 const PNG_BYTES = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(32)]);
@@ -11,13 +12,16 @@ let data: TempData;
 let harness: HttpHarness;
 let origin = '';
 let appId = '';
+let appNamespace = '';
 
 beforeAll(async () => {
     data = await tempData();
     harness = await httpHarness(data.dir, noBrowser);
     origin = harness.server.origin;
-    const created = await call(harness.client, 'ui_app_create', { name: 'form <b>bold</b>', document: FORM_DOCUMENT });
-    appId = created.body['appId'] as string;
+    appId = (await createApp(harness.client, 'form', FORM_SHELL)).id;
+    const found = await harness.server.services.useCases.findPartApp.execute('form');
+    if (found.kind !== 'found') throw new Error('the form app is stored');
+    appNamespace = harness.server.services.instanceViews.namespace(found.part);
 });
 
 afterAll(async () => {
@@ -45,29 +49,28 @@ function rawGet(path: string, host: string): Promise<{ status: number }> {
 }
 
 describe('GET /', () => {
-    it('should list the apps with a link to each live view and escape the names', async () => {
+    it('should list the apps with a link to each live view', async () => {
         const response = await fetch(`${origin}/`);
         const html = await response.text();
 
         expect(response.status).toBe(200);
         expect(response.headers.get('content-type')).toContain('text/html');
         expect(html).toContain(`href="/apps/${appId}"`);
-        expect(html).toContain('form &lt;b&gt;bold&lt;/b&gt;');
-        expect(html).not.toContain('<b>bold</b>');
+        expect(html).toContain(`<a href="/apps/${appId}">form</a>`);
     });
 
-    it('should list the app parts next to the app documents', async () => {
+    it('should list every app, the most recently changed first', async () => {
         // Arrange
-        const created = await call(harness.client, 'ui_app_create', { name: 'corner-shop', title: 'Corner shop', shell: { component: 'page', children: { body: { component: 'outlet' } } } });
-        const partId = created.body['id'] as string;
+        const created = await createApp(harness.client, 'corner-shop', shellOf({}), { title: 'Corner shop' });
+        const partId = created.id;
 
         // Act
         const html = await (await fetch(`${origin}/`)).text();
 
         // Assert
-        expect(created.isError).toBeFalsy();
         expect(html).toContain(`<a href="/apps/${partId}">corner-shop</a>`);
         expect(html).toContain(`href="/apps/${appId}"`);
+        expect(html.indexOf(partId)).toBeLessThan(html.indexOf(appId));
     });
 
     it('should send a policy that allows no script', async () => {
@@ -90,7 +93,8 @@ describe('GET /apps/:appId', () => {
         expect(html.replace('<script type="module" src="/assets/host.js"></script>', '')).not.toContain('<script');
         expect(html).not.toContain('style="');
         expect(html).toContain(`data-app-id="${appId}"`);
-        expect(html).toContain('<title>form &lt;b&gt;bold&lt;/b&gt;</title>');
+        expect(html).toContain('<title>form</title>');
+        expect(html).toContain(`data-namespace="${appNamespace}"`);
         expect(csp).toContain("script-src 'self'");
         expect(csp).not.toContain('unsafe');
         expect(csp).toContain("frame-ancestors 'none'");
@@ -202,7 +206,7 @@ describe('POST /apps/:appId/files', () => {
     it('should store a file, sniff its type and let ui_file_read read it', async () => {
         const response = await upload(`/apps/${appId}/files`, Buffer.from('a,b\n1,2\n'), 'rows.csv');
         const body = (await response.json()) as { id: string; name: string; size: number; type: string };
-        const read = await call(harness.client, 'ui_file_read', { appId, fileId: body.id });
+        const read = await call(harness.client, 'ui_file_read', { app: 'form', fileId: body.id });
 
         expect(response.status).toBe(201);
         expect(body).toMatchObject({ name: 'rows.csv', size: 8, type: 'text/csv' });
@@ -260,8 +264,7 @@ describe('POST /apps/:appId/files', () => {
     });
 
     it('should answer 409 with the reason once an app holds the most files', async () => {
-        const created = await call(harness.client, 'ui_app_create', { name: 'quota' });
-        const quotaApp = created.body['appId'] as string;
+        const quotaApp = (await createApp(harness.client, 'quota', shellOf({}))).id;
 
         for (let n = 0; n < MAX_FILES_PER_APP; n++) {
             expect((await upload(`/apps/${quotaApp}/files`, Buffer.from(`file ${n}`), `f${n}.txt`)).status).toBe(201);
@@ -275,6 +278,8 @@ describe('POST /apps/:appId/files', () => {
 
 describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     const VIEW = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
+    const LIVE_PATH = '$.app.children.form.children.email.value';
+    const TYPED_PATH = '$.app.children.form.children.email.value';
 
     interface OpenSocket {
         readonly socket: WebSocket;
@@ -328,7 +333,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     }
 
     function hello(view: OpenSocket): void {
-        view.send({ type: 'hello', namespace: `apps.${appId.toLowerCase()}`, revision: 0, clientId: VIEW, protocol: 1 });
+        view.send({ type: 'hello', namespace: appNamespace, revision: 0, clientId: VIEW, protocol: 1 });
     }
 
     function report(body: Record<string, unknown>): Promise<Response> {
@@ -344,7 +349,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         hello(view);
         const welcome = await view.next((message) => message['type'] === 'welcome');
         const attachedWhileOpen = harness.server.services.hub.viewCount(appId);
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.live', value: 'yes' });
+        await call(harness.client, 'ui_state_set', { app: 'form', path: LIVE_PATH, value: 'yes' });
         const changes = await view.next((message) => message['type'] === 'changes');
         view.socket.close();
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -354,7 +359,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         expect(JSON.stringify(first['message'])).toContain('"component":"panel"');
         expect(welcome).toMatchObject({ type: 'welcome' });
         expect(attachedWhileOpen).toBe(1);
-        expect(changes['changes']).toEqual([expect.objectContaining({ path: '$.data.live', op: 'set', value: 'yes' })]);
+        expect(changes['changes']).toEqual([expect.objectContaining({ path: LIVE_PATH, op: 'set', value: 'yes' })]);
         expect(harness.server.services.hub.viewCount(appId)).toBe(0);
     });
 
@@ -363,47 +368,17 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         hello(view);
         await view.next((message) => message['type'] === 'welcome');
 
-        view.send({ type: 'change', change: { id: 'typed-1', path: '$.data.typed', op: 'set', value: 'x', base: 0 } });
+        view.send({ type: 'change', change: { id: 'typed-1', path: TYPED_PATH, op: 'set', value: 'x', base: 0 } });
         const ack = await view.next((message) => message['type'] === 'ack');
         view.send({ type: 'emit', name: 'form.saved', value: { ok: true } });
         await new Promise((resolve) => setTimeout(resolve, 100));
-        const state = await call(harness.client, 'ui_state_get', { appId });
-        const events = await call(harness.client, 'ui_events_read', { appId });
+        const state = await call(harness.client, 'ui_state_get', { app: 'form' });
+        const events = await call(harness.client, 'ui_events_read', { app: 'form' });
         view.socket.close();
 
         expect(ack).toMatchObject({ id: 'typed-1', result: 'applied' });
-        expect((state.body['state'] as { data: Record<string, unknown> }).data['typed']).toBe('x');
+        expect(JSON.stringify(state.body['state'])).toContain('"value":"x"');
         expect((events.body['events'] as { name: string; payload: unknown }[]).at(-1)).toMatchObject({ name: 'form.saved', payload: { ok: true } });
-    });
-
-    it('should read the state live from an open view that answers the state request, and mark it live', async () => {
-        // Arrange
-        const view = await openSync(appId);
-        await view.next((message) => message['type'] === 'view');
-
-        // Act
-        const reading = call(harness.client, 'ui_state_get', { appId });
-        const asked = await view.next((message) => (message['message'] as { type?: string } | undefined)?.type === 'state');
-        const requestId = (asked['message'] as { id: string }).id;
-        const answered = await report({ type: 'state', requestId, state: { data: { typed: 'live only' }, app: {} } });
-        const result = await reading;
-        view.socket.close();
-
-        // Assert
-        expect(answered.status).toBe(200);
-        expect(result.body).toMatchObject({ source: 'live', state: { data: { typed: 'live only' } }, preview: { attached: true } });
-    });
-
-    it('should read the stored state with source stored when no view is open', async () => {
-        const result = await call(harness.client, 'ui_state_get', { appId });
-
-        expect(result.body).toMatchObject({ source: 'stored', preview: { attached: false } });
-    });
-
-    it('should refuse a state report that is not an object or null', async () => {
-        const response = await report({ type: 'state', requestId: 'r1', state: 'nope' });
-
-        expect(response.status).toBe(400);
     });
 
     it('should refuse a view id that is not a UUID, an unknown app and another origin', async () => {
@@ -414,9 +389,9 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         expect([malformed, unknown, crossOrigin]).toEqual([400, 404, 403]);
     });
 
-    it('should keep the runtime errors a view reports and show them in ui_validate', async () => {
+    it('should keep the runtime errors a view reports and show them in ui_state_get', async () => {
         const response = await report({ type: 'errors', errors: [{ code: 'SUI-RUN-BINDING', message: 'boom', statePath: '$.app' }, { nope: true }], revision: 1 });
-        const validated = await call(harness.client, 'ui_validate', { appId });
+        const validated = await call(harness.client, 'ui_state_get', { app: 'form' });
 
         expect(response.status).toBe(200);
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toContain('SUI-RUN-BINDING');
@@ -429,14 +404,14 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         // Act
         const ready = await report({ type: 'ready', revision: 1, load: 2 });
         await report({ type: 'errors', errors: [{ code: 'SUI-RUN-BINDING', message: 'still there' }], revision: 1, load: 2 });
-        const validated = await call(harness.client, 'ui_validate', { appId });
+        const validated = await call(harness.client, 'ui_state_get', { app: 'form' });
 
         // Assert
         expect(ready.status).toBe(200);
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toEqual(['SUI-RUN-BINDING']);
     });
 
-    it('should refuse a report that is not valid, a state report without a request and the emit report the sync socket replaced', async () => {
+    it('should refuse a report that is not valid, the state report that no longer exists and the emit report the sync socket replaced', async () => {
         const noView = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
         const unknownType = await report({ type: 'launch' });
         const state = await report({ type: 'state', revision: 1, snapshot: { data: {} } });
@@ -476,7 +451,7 @@ describe('/mcp session flow', () => {
 
         expect(sessionId).not.toBe('');
         expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Plan before you search'));
-        expect((list.result?.['tools'] as unknown[]).length).toBe(38);
+        expect((list.result?.['tools'] as unknown[]).length).toBe(EXPECTED_TOOLS.length);
         expect(closed.status).toBe(200);
         expect(afterClose.status).toBe(404);
     });

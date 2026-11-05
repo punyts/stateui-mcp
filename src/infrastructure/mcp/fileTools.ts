@@ -10,20 +10,19 @@ const FILE_READ = defineInput({
 });
 
 export interface FileToolDependencies {
-    readonly useCases: Pick<UiBuilderUseCases, 'readFileText' | 'getApp' | 'findPartApp'>;
-    /** The views of app parts; absent, only appId works */
-    readonly instanceViews?: Pick<InstanceViews, 'view'>;
+    readonly useCases: Pick<UiBuilderUseCases, 'readFileText' | 'findPartApp'>;
+    readonly instanceViews: Pick<InstanceViews, 'view'>;
 }
 
-/** The file tool: read a file uploaded to an app part's instance (`app`) or to an app of the old store (`appId`) */
+/** The file tool: read a file uploaded to an app part's instance */
 export function createFileTools(dependencies: FileToolDependencies): readonly UiToolDefinition[] {
     const { useCases, instanceViews } = dependencies;
-    const resolve = runTargets({ useCases, ...(instanceViews !== undefined && { instanceViews }) });
+    const resolve = runTargets({ useCases, instanceViews });
     return [
         {
             name: 'ui_file_read',
             description:
-                'Run time: read a file a user uploaded while using the app, to the instance of an app part (app) or to an app of the old store (appId). Reading changes nothing. Text, CSV, Markdown and JSON files return { file: { id, name, size, type }, text, truncated } with at most 256 KiB of text; other types return the reference with text null and a note.',
+                'Run time: read a file a user uploaded while using the app, to the instance of an app part. Reading changes nothing. Text, CSV, Markdown and JSON files return { file: { id, name, size, type }, text, truncated } with at most 256 KiB of text; other types return the reference with text null and a note.',
             inputSchema: FILE_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -34,7 +33,7 @@ export function createFileTools(dependencies: FileToolDependencies): readonly Ui
                 if (!isRunTarget(target)) return target;
                 const result = await useCases.readFileText.execute(target.appId, fileId);
                 if (result.kind === 'not-found') {
-                    return fail('not-found', 'No file with this id in this application', { ...runName(target), fileId });
+                    return fail('not-found', 'No file with this id in this app', { ...runName(target), fileId });
                 }
                 return succeed({
                     file: result.file,

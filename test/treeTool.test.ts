@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe('ui_tree with app', () => {
-    it('should give the old ui_outline text of a one-screen app under content and logic', async () => {
+    it('should give the content outline of a one-screen app under content and logic', async () => {
         // Arrange
         await write('models', 'customer', { fields: { name: { type: 'string' } } });
         await write('data', 'customers', { model: 'customer', records: { c1: { name: 'Ada Lovelace' }, c2: { name: 'Grace Hopper' } } });
@@ -160,38 +160,16 @@ describe('ui_tree with app', () => {
             expect(mixed.body).toMatchObject({ error: 'invalid-argument', argument: 'rendered' });
         });
 
-        it('should refuse an unknown screen, naming the screens, and screen or logic with appId', async () => {
-            // Arrange
-            const created = await call(harness.client, 'ui_app_create', { name: 'Old' });
-            const appId = created.body['appId'] as string;
-
+        it('should refuse an unknown screen, naming the screens, a missing app and an unknown app', async () => {
             // Act
             const unknown = await call(harness.client, 'ui_tree', { app: 'shop', screen: 'cart' });
-            const screen = await call(harness.client, 'ui_tree', { appId, screen: 'home' });
-            const logic = await call(harness.client, 'ui_tree', { appId, logic: true });
             const neither = await call(harness.client, 'ui_tree', {});
             const missing = await call(harness.client, 'ui_tree', { app: 'shp' });
 
             // Assert
             expect(unknown.body).toMatchObject({ error: 'invalid-argument', argument: 'screen', screens: ['home', 'detail'] });
-            expect(screen.body).toMatchObject({ error: 'invalid-argument', argument: 'screen' });
-            expect(logic.body).toMatchObject({ error: 'invalid-argument', argument: 'logic' });
             expect(neither.body['error']).toBe('invalid-argument');
             expect(missing.body).toMatchObject({ error: 'not-found', nearest: ['shop'] });
         });
-    });
-
-    it('should give the old ui_outline text for an app of the old store with content', async () => {
-        // Arrange
-        const created = await call(harness.client, 'ui_app_create', { name: 'Customers', document: SAMPLE_FORM_AND_LIST_APP });
-        const appId = created.body['appId'] as string;
-
-        // Act
-        const tree = await call(harness.client, 'ui_tree', { appId, content: true });
-        const outline = await call(harness.client, 'ui_outline', { appId });
-
-        // Assert
-        expect(tree.body['text']).toBe(SAMPLE_FORM_AND_LIST_OUTLINE);
-        expect(tree.body['text']).toBe(outline.body['text']);
     });
 });

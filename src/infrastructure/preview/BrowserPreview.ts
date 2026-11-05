@@ -364,7 +364,7 @@ export class BrowserPreview {
         const element = handle.asElement() as ElementHandle<HTMLElement> | null;
         if (element === null) {
             await handle.dispose();
-            throw new InteractionError(`Nothing is rendered at ${statePath}. Check the path with ui_outline; a hidden or closed node has no element`);
+            throw new InteractionError(`Nothing is rendered at ${statePath}. Check the path with ui_tree; a hidden or closed node has no element`);
         }
         return element;
     }

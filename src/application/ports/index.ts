@@ -1,6 +1,5 @@
 export type * from './ComponentCatalog.js';
 export type * from './PatternCatalog.js';
-export type * from './UiAppRepository.js';
 export type * from './UiPartRepository.js';
 export type * from './UiInstanceRepository.js';
 export type * from './InstanceStates.js';
@@ -9,5 +8,4 @@ export type * from './UiFileRepository.js';
 export type * from './UiFileStore.js';
 export type * from './UiPreviewLog.js';
 export type * from './UseCaseReport.js';
-export type * from './LiveStateReader.js';
 export type * from './ToolCallLog.js';

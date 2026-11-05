@@ -57,7 +57,6 @@ async function main(): Promise<void> {
         stdio: options.stdio,
         report: reporter.report,
         ...(options.runtimeDir !== undefined && { runtimeDir: options.runtimeDir }),
-        ...(options.statenet !== undefined && { statenet: options.statenet }),
         ...(serverKey !== undefined && { serverKey }),
         ...(options.toolLog !== undefined && { toolLog: options.toolLog })
     });

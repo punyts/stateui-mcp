@@ -23,8 +23,8 @@ export const isPartId = isAppId;
  *
  * Each app also has a side folder named by its UUID (the app's part id once apps are parts):
  *
- *     <dataDir>/<appId>/app.json     id, name, revision, createdAt, updatedAt and the document (the old store)
- *     <dataDir>/<appId>/state.json   the revision and the state snapshot (the old store)
+ *     <dataDir>/<appId>/app.json     id, name, revision, createdAt, updatedAt and the document (the old store, which only `convert` reads)
+ *     <dataDir>/<appId>/state.json   the revision and the state snapshot (the old store, which only `convert` reads)
  *     <dataDir>/<appId>/errors.json  the bounded preview error log
  *     <dataDir>/<appId>/files.json   metadata of the uploaded files
  *     <dataDir>/<appId>/files/<id>   the bytes of one uploaded file

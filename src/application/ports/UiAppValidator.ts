@@ -30,11 +30,6 @@ export interface UiPartError extends UiBuildError {
 /** Checks documents against the component library. Errors and warnings share one list; see `isValid` */
 export interface UiAppValidator {
     /**
-     * Every error and warning of the document, each with its state path. Warnings include `SUI-LOCALE-MISSING`
-     * for each content path a language of the document's `locales` does not translate
-     */
-    validate(document: UiDocument): readonly UiBuildError[];
-    /**
      * The node at a document path merged with its component defaults, or `undefined` when there is none.
      * Runtime properties (the shape's `runtime` flag: `current`, `status`, `slots`) are left out: controllers own them
      */

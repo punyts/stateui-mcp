@@ -4,7 +4,6 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import { documentBytes } from '../../domain/limits.js';
 import { isNodeValue } from '../../domain/nodeDepth.js';
 import type { ComponentCatalog } from '../ports/ComponentCatalog.js';
-import type { UiAppRepository } from '../ports/UiAppRepository.js';
 import type { UiPreviewLog } from '../ports/UiPreviewLog.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 
@@ -117,7 +116,6 @@ function checkValue(shape: JsonObject, node: JsonObject, command: string, value:
  */
 export class RunCommand {
     constructor(
-        private readonly repository: UiAppRepository,
         private readonly catalog: ComponentCatalog,
         private readonly previewLog: UiPreviewLog,
         private readonly now: () => Date,
@@ -125,15 +123,9 @@ export class RunCommand {
         private readonly report: UseCaseReport
     ) {}
 
-    async execute(appId: string, input: RunCommandInput): Promise<RunCommandResult> {
-        const app = await this.repository.findById(appId);
-        if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
-        return this.runOn(appId, app.document, app.revision, input);
-    }
-
     /**
-     * Checks a command against a document the caller read, and issues it for the views of `appId`: an app of the old
-     * store, or the instance of an app part (`RunPartCommand`) with the assembled document and the part's revision
+     * Checks a command against the assembled document the instance of an app part runs (`RunPartCommand`) and issues it
+     * for the views of `appId`, the part's id, with the part's revision
      */
     async runOn(appId: string, document: JsonObject, revision: number, input: RunCommandInput): Promise<RunCommandResult> {
         if (input.command === NAVIGATE_COMMAND) return this.finish(appId, await this.navigate(appId, document, revision, input));

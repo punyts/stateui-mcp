@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../../application/IndexedUiPartRepository.js';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
 import type { InstanceShape } from '../../application/ports/InstanceStates.js';
-import type { GetUiApp } from '../../application/use-cases/GetUiApp.js';
 import type { UiPart, UiPartBodies } from '../../domain/UiPart.js';
 import { InMemoryUiPartRepository } from '../../testing/InMemoryUiPartRepository.js';
 import { InstanceViews } from './InstanceViews.js';
@@ -34,7 +33,6 @@ async function shapeOf(parts: IndexedUiPartRepository, part: UiPart<'apps'>): Pr
 }
 
 const CATALOG = Object.freeze({ get: () => undefined, iconPaths: (names: readonly string[]) => Object.fromEntries(names.map((name) => [name, `M0 0 ${name}`])) }) as unknown as ComponentCatalog;
-const NO_OLD_APP = Object.freeze({ execute: async (appId: string) => ({ kind: 'not-found', appId }) }) as unknown as GetUiApp;
 
 async function setUp() {
     const parts = new IndexedUiPartRepository(new InMemoryUiPartRepository());
@@ -49,7 +47,7 @@ async function setUp() {
     const states = { shape: vi.fn((part: UiPart<'apps'>) => shapeOf(parts, part)), authority: vi.fn() };
     const views = new InstanceViews(parts, parts, states as never, CATALOG, ['home'], OWNER);
     const hub = new PreviewHub();
-    const live = new LiveViews(NO_OLD_APP, hub, { closePage: async () => undefined }, views);
+    const live = new LiveViews(hub, { closePage: async () => undefined }, views);
     const shop = (await parts.findByName('apps', 'shop')) as UiPart<'apps'>;
     const kiosk = (await parts.findByName('apps', 'kiosk')) as UiPart<'apps'>;
     return { parts, views, hub, live, shop, kiosk };

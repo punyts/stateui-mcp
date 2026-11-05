@@ -3,7 +3,6 @@ import type { ComponentLibrary, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage, ServerWrite } from '@punyts/state-sync/authority';
-import { isJsonObject } from '../../domain/JsonValue.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
@@ -11,16 +10,11 @@ import { AppCalls } from './AppCalls.js';
 import type { AppProcedure } from './AppCalls.js';
 import type { DataGate } from './AppLogic.js';
 import { AppLogic } from './AppLogic.js';
-import { dataWrites } from './dataWrites.js';
-import type { DataWrite } from './dataWrites.js';
 import { appNamespace } from './FileNamespaceStorage.js';
 import type { InstanceStart } from './InstanceStart.js';
 
 /** A client emit, with the app and the id of the view that raised it */
 export type AppEmitHandler = (appId: string, name: string, value: JsonValue | undefined, viewId: string) => void;
-
-/** More data changes than this in one document write set `$.data` whole */
-const MAX_DATA_WRITES = 200;
 
 /** The `DataGate` of every namespace: checks and follows the server writes to the shared datasets an instance binds */
 export interface InstanceDataGate {
@@ -40,16 +34,12 @@ export interface AppLogicOptions {
 }
 
 /**
- * One state-sync authority per running app, made when its state is first needed (Full mode), keyed by its sync
- * namespace (`appNamespace`). It owns the order of the state changes: the views' changes over their sockets and the
- * tools' writes. `$.app` stays sparse (only the articulation a user or a tool changed), so changes create missing
- * parents. With `logic` options the app's `logic` runs on its authority (`AppLogic`).
- *
- * - An old app document (`apps.<appId>`): the state starts as the document's `data` and an empty `app`, kept by the
- *   storage given to the constructor.
- * - An instance of an owner app (`instances.<persona>.<ownerId>.<appId>`): the state is the assembled view with the
- *   persona's instance laid over it, kept by the instance's own storage (`InstanceNamespaceStorage`), and the logic is
- *   the assembled logic (the app's units and its bound modules)
+ * One state-sync authority per running instance of an owner app (`instances.<persona>.<ownerId>.<appId>`), made when
+ * its state is first needed, keyed by its sync namespace (`appNamespace`). It owns the order of the state changes: the
+ * views' changes over their sockets and the tools' writes. `$.app` stays sparse (only the articulation a user or a tool
+ * changed), so changes create missing parents. The state is the assembled view with the persona's instance laid over
+ * it, kept by the instance's own storage (`InstanceNamespaceStorage`), and with `logic` options the logic is the
+ * assembled logic (the app's units and its bound modules), run by `AppLogic`
  */
 export class AppAuthorities {
     /** By namespace */
@@ -62,7 +52,6 @@ export class AppAuthorities {
     readonly calls: AppCalls;
 
     constructor(
-        private readonly storage: NamespaceStorage,
         private readonly onEmit: AppEmitHandler,
         /** The key that encrypts `$.server` at rest; without it an app whose state has `$.server` is refused */
         private readonly serverKey?: Uint8Array,
@@ -73,18 +62,12 @@ export class AppAuthorities {
         this.calls = new AppCalls((appId, name, payload) => this.onEmit(appId.toLowerCase(), name, payload, LOGIC_VIEW_ID), logic?.procedures);
     }
 
-    /** The authority of an app; `document` gives the state at revision 0 when nothing is stored */
-    authority(appId: string, document: UiDocument): Promise<Authority> {
-        const data = document['data'];
-        return this.open(appNamespace(appId), appId.toLowerCase(), document, this.storage, { data: (isJsonObject(data) ? data : {}) as SyncValue, app: {} });
-    }
-
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
     instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
         return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {});
     }
 
-    /** A tool's write to a running instance, as `write` is for an old app */
+    /** A tool's write to a running instance: asked of the guards, written, and looked up by the logic. Returns the reason when a guard refused it */
     async writeInstance(start: InstanceStart, storage: NamespaceStorage, path: string, value: JsonValue | undefined, options: { logic?: boolean } = {}): Promise<string | undefined> {
         return this.writeTo(appNamespace(start.key), await this.instance(start, storage), path, value, options);
     }
@@ -153,41 +136,6 @@ export class AppAuthorities {
         }
     }
 
-    /**
-     * The app's document changed. When its authority runs, what changed in the document's `data` is written into the
-     * state at the paths that changed (no guard asks, no rule fires, as for a reset), so the open views show it; the
-     * rest of `$.data` keeps what users and tools changed. Then its logic is rebuilt
-     */
-    async documentChanged(appId: string, document: UiDocument, previous?: UiDocument): Promise<void> {
-        const key = appNamespace(appId);
-        const authority = this.authorities.get(key);
-        if (authority !== undefined && previous !== undefined) {
-            const writes: DataWrite[] = [];
-            const before = isJsonObject(previous['data']) ? previous['data'] : {};
-            const after = isJsonObject(document['data']) ? document['data'] : {};
-            dataWrites('$.data', before, after, writes);
-            const created = await authority.catch(() => undefined);
-            if (created !== undefined && writes.length > 0) {
-                created.writeAll(writes.length > MAX_DATA_WRITES ? [{ path: '$.data', op: 'set', value: after as SyncValue }] : writes);
-            }
-        }
-        const logic = this.logics.get(key);
-        if (logic === undefined) return;
-        try {
-            logic.setDocument(document);
-        } catch (error) {
-            this.logic?.report.info('App logic did not start', { app: appId, reason: error instanceof Error ? error.message : String(error) });
-        }
-    }
-
-    /**
-     * A tool's write to an app's state: asked of the guards, written, and looked up by the logic. Returns the reason
-     * when a guard refused it
-     */
-    async write(appId: string, document: UiDocument, path: string, value: JsonValue | undefined, options: { logic?: boolean } = {}): Promise<string | undefined> {
-        return this.writeTo(appNamespace(appId), await this.authority(appId, document), path, value, options);
-    }
-
     private writeTo(namespace: string, authority: Authority, path: string, value: JsonValue | undefined, options: { logic?: boolean }): string | undefined {
         const logic = this.logics.get(namespace);
         if (logic !== undefined) return logic.write(path, value, options.logic !== false);
@@ -205,37 +153,7 @@ export class AppAuthorities {
         return { check: (writes) => gate.check(namespace, writes), applied: (writes) => gate.applied(namespace, writes) };
     }
 
-    /**
-     * Puts the app's state back to the document: `$.data` becomes the document's data and `$.app` loses every
-     * articulation a user or a tool changed. No guard asks and no rule fires; then the logic starts again, so machines
-     * are in their initial states, timers re-arm and the trace is empty. `$.server` is kept
-     */
-    async reset(appId: string, document: UiDocument): Promise<void> {
-        const authority = await this.authority(appId, document);
-        const data = document['data'];
-        authority.writeAll([
-            { path: '$.data', op: 'set', value: (isJsonObject(data) ? data : {}) as SyncValue },
-            { path: '$.app', op: 'set', value: {} }
-        ]);
-        const logic = this.logics.get(appNamespace(appId));
-        if (logic === undefined) return;
-        try {
-            logic.setDocument(document);
-        } catch (error) {
-            this.logic?.report.info('App logic did not start', { app: appId, reason: error instanceof Error ? error.message : String(error) });
-        }
-    }
-
-    /** The app's logic trace, oldest run first; undefined when its logic does not run on the server */
-    trace(appId: string): LogicTraceRun[] | undefined {
-        return this.logics.get(appNamespace(appId))?.trace();
-    }
-
-    clearTrace(appId: string): void {
-        this.logics.get(appNamespace(appId))?.clearTrace();
-    }
-
-    /** The logic trace of the authority of a namespace (an instance's: `InstanceViews.namespace`); undefined when no logic runs there */
+    /** The logic trace of the authority of a namespace (an instance's: `InstanceViews.namespace`), oldest run first; undefined when no logic runs there */
     traceOf(namespace: string): LogicTraceRun[] | undefined {
         return this.logics.get(namespace)?.trace();
     }
@@ -251,17 +169,6 @@ export class AppAuthorities {
             return new Error(`App ${appId} keeps $.server state, which is encrypted: start the server with --secret-key-file or STATEUI_MCP_SECRET_KEY`, { cause: error });
         }
         return error instanceof Error ? error : new Error(message);
-    }
-
-    /** A copy of the app's state: `{ data, app }` */
-    async state(appId: string, document: UiDocument): Promise<JsonObject> {
-        const { server: _server, ...state } = (await this.authority(appId, document)).state() as JsonObject;
-        return state;
-    }
-
-    /** Closes the app's connections, waits for its saves and forgets it; for a deleted app */
-    async forget(appId: string): Promise<void> {
-        await this.forgetNamespace(appNamespace(appId));
     }
 
     private async forgetNamespace(namespace: string): Promise<void> {

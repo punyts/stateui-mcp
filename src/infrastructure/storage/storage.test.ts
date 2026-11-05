@@ -3,48 +3,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
-import type { UiDocument } from '../../domain/UiApp.js';
+import type { UiPartBodies } from '../../domain/UiPart.js';
 import { PartFolders } from './PartFolders.js';
 import { writeFileAtomic } from './atomicFile.js';
-import { FileUiAppRepository } from './FileUiAppRepository.js';
+import { FilePartRepository } from './FilePartRepository.js';
 import { FileUiErrorLog } from './FileUiErrorLog.js';
 import { FileUiFileRepository } from './FileUiFileRepository.js';
 import { FsUiFileStore } from './FsUiFileStore.js';
 import { KeyedLock } from './KeyedLock.js';
-import { AppAuthorities } from '../sync/AppAuthorities.js';
-import { FileNamespaceStorage } from '../sync/FileNamespaceStorage.js';
 
 let dir: string;
 let folders: PartFolders;
 let lock: KeyedLock;
-let apps: FileUiAppRepository;
-let authorities: AppAuthorities;
+let parts: FilePartRepository;
 
-function createAuthorities(): AppAuthorities {
-    return new AppAuthorities(new FileNamespaceStorage(folders), () => undefined);
-}
+const APP_BODY = Object.freeze({ shell: { component: 'page' }, start: 'home', screens: { home: { root: { component: 'panel' } } } }) as unknown as UiPartBodies['apps'];
 
-const ORDERED: UiDocument = {
-    app: { component: 'page', children: { zeta: { component: 'text' }, a: { component: 'text' }, mm: { component: 'text' } } },
-    data: { rows: { zz: { n: 1 }, aa: { n: 2 } } }
-};
-
-async function createApp(name = 'one', document: UiDocument = ORDERED): Promise<string> {
-    const created = await apps.create({ name, document, sync: 'full' });
+/** Stores an app part and returns its id, which names the side folder of its files and errors */
+async function createApp(name = 'one'): Promise<string> {
+    const created = await parts.create({ kind: 'apps', name, body: APP_BODY });
     if (created.kind !== 'created') throw new Error('not created');
-    return created.app.id;
+    return created.part.id;
 }
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-mcp-'));
     folders = new PartFolders(dir);
     lock = new KeyedLock();
-    authorities = createAuthorities();
-    apps = new FileUiAppRepository(folders, lock, authorities);
+    parts = new FilePartRepository(folders, lock);
 });
 
 afterEach(async () => {
-    await authorities.close();
     await rm(dir, { recursive: true, force: true });
 });
 
@@ -78,128 +67,6 @@ describe('PartFolders', () => {
     it('should refuse an id that is not a UUID', () => {
         expect(() => folders.dir('../escape')).toThrow('UUID');
         expect(() => folders.fileBytes('11111111-1111-4111-8111-111111111111', '..')).toThrow('UUID');
-    });
-});
-
-describe('FileUiAppRepository', () => {
-    it('should keep the key order of children and keyed data maps on disk and after a read', async () => {
-        const id = await createApp();
-
-        const text = await readFile(folders.appFile(id), 'utf8');
-        const found = await apps.findById(id);
-
-        expect(text.indexOf('"zeta"')).toBeLessThan(text.indexOf('"a"'));
-        expect(Object.keys((found?.document['app'] as { children: object }).children)).toEqual(['zeta', 'a', 'mm']);
-        expect(Object.keys((found?.document['data'] as { rows: object }).rows)).toEqual(['zz', 'aa']);
-    });
-
-    it('should keep the order through a document write and a state write', async () => {
-        const id = await createApp();
-        const next: UiDocument = { app: { component: 'page', children: { y: { component: 'text' }, b: { component: 'text' } } } };
-
-        await apps.writeDocument(id, next, 1);
-        await apps.writeState(id, ['data'], { z: 1, a: 2 }, 2);
-        const found = await apps.findById(id);
-
-        expect(Object.keys((found?.document['app'] as { children: object }).children)).toEqual(['y', 'b']);
-        expect(Object.keys(found?.stateSnapshot['data'] as object)).toEqual(['z', 'a']);
-    });
-
-    it('should start at revision 1 and raise it by one per document write but not per state write', async () => {
-        const id = await createApp();
-
-        const first = await apps.writeDocument(id, ORDERED, 1);
-        const second = await apps.writeState(id, ['data', 'total'], 3, 2);
-
-        expect(first).toEqual({ kind: 'written', revision: 2 });
-        expect(second).toEqual({ kind: 'written', revision: 2 });
-        expect((await apps.findById(id))?.revision).toBe(2);
-    });
-
-    it('should return a conflict with the current revision for a stale write and change nothing', async () => {
-        const id = await createApp();
-        await apps.writeDocument(id, ORDERED, 1);
-
-        const stale = await apps.writeDocument(id, { app: { component: 'page' } }, 1);
-
-        expect(stale).toEqual({ kind: 'conflict', currentRevision: 2 });
-        expect((await apps.findById(id))?.document).toEqual(ORDERED);
-    });
-
-    it('should let only one of two racing writes with the same expected revision commit', async () => {
-        const id = await createApp();
-
-        const results = await Promise.all([apps.writeDocument(id, ORDERED, 1), apps.writeDocument(id, ORDERED, 1)]);
-
-        expect(results.map((result) => result.kind).sort()).toEqual(['conflict', 'written']);
-    });
-
-    it('should start the state from the document data, keep state writes across a restart and refuse a stale one', async () => {
-        // Arrange
-        const id = await createApp();
-        await apps.writeDocument(id, ORDERED, 1);
-
-        // Act
-        const written = await apps.writeState(id, ['app', 'children', 'a', 'open'], true, 2);
-        const stale = await apps.writeState(id, ['data', 'typed'], 'old', 1);
-        await authorities.close();
-        authorities = createAuthorities();
-        const found = await new FileUiAppRepository(folders, lock, authorities).findById(id);
-
-        // Assert
-        expect(written).toEqual({ kind: 'written', revision: 2 });
-        expect(stale).toEqual({ kind: 'conflict', currentRevision: 2 });
-        expect(found?.stateSnapshot).toEqual({ data: ORDERED['data'], app: { children: { a: { open: true } } } });
-    });
-
-    it('should carry a change of the document data into the running state and keep the rest of the state', async () => {
-        // Arrange
-        const id = await createApp();
-        await apps.writeState(id, ['data', 'typed'], 'kept', 1);
-        await apps.writeState(id, ['data', 'rows', 'aa', 'n'], 7, 1);
-        const next: UiDocument = { ...ORDERED, data: { rows: { zz: { n: 5 } }, prices: { p1: 10 } } };
-
-        // Act
-        await apps.writeDocument(id, next, 1);
-        const found = await apps.findById(id);
-
-        // Assert
-        expect(found?.stateSnapshot['data']).toEqual({ rows: { zz: { n: 5 } }, typed: 'kept', prices: { p1: 10 } });
-    });
-
-    it('should refuse a duplicate name', async () => {
-        await createApp('same');
-
-        expect(await apps.create({ name: 'same', document: ORDERED, sync: 'full' })).toEqual({ kind: 'duplicate-name' });
-    });
-
-    it('should list the apps newest first and skip folders that are not apps', async () => {
-        const early = await createApp('early');
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        const late = await createApp('late');
-        await writeFile(join(dir, 'notes.txt'), 'x');
-
-        const list = await apps.list();
-
-        expect(list.map((app) => app.id)).toEqual([late, early]);
-    });
-
-    it('should delete only at the expected revision and remove the folder', async () => {
-        const id = await createApp();
-
-        expect(await apps.delete(id, 9)).toEqual({ kind: 'conflict', currentRevision: 1 });
-        await apps.writeState(id, ['data', 'typed'], 'x', 1);
-        expect(await apps.delete(id, 1)).toEqual({ kind: 'deleted' });
-        await authorities.close();
-
-        expect(await apps.findById(id)).toBeUndefined();
-        expect(await apps.delete(id, 1)).toEqual({ kind: 'not-found' });
-        expect(await readdir(dir)).toEqual([]);
-    });
-
-    it('should report a missing app and a malformed id as not found', async () => {
-        expect(await apps.findById('nope')).toBeUndefined();
-        expect(await apps.writeDocument('11111111-1111-4111-8111-111111111111', ORDERED, 1)).toEqual({ kind: 'not-found' });
     });
 });
 

@@ -93,9 +93,8 @@ export interface HttpHarness {
     readonly client: Client;
     close(): Promise<void>;
 }
-/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` adds a statenet or a key */
-/** The whole server on a free port (or ) with a real MCP client over streamable HTTP */
-export async function httpHarness(dataDir: string, browser?: PreviewBrowser, extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'statenet' | 'serverKey'>> = {}): Promise<HttpHarness> {
+/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` sets a port or a key */
+export async function httpHarness(dataDir: string, browser?: PreviewBrowser, extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'serverKey'>> = {}): Promise<HttpHarness> {
     const server = await startServer({
         dataDir,
         host: '127.0.0.1',
@@ -117,17 +116,36 @@ export async function httpHarness(dataDir: string, browser?: PreviewBrowser, ext
     };
 }
 
-export const FORM_DOCUMENT = {
-    app: {
-        component: 'page',
-        children: {
-            form: {
-                component: 'panel',
-                children: {
-                    email: { component: 'textField', _label: 'Email' },
-                    save: { component: 'button', _title: 'Save', on: { press: { command: 'emit', target: 'form.saved', value: 'ok' } } }
-                }
-            }
-        }
-    }
-};
+/** The shell of the form app: a form with an email field and a Save button that emits, and the outlet every shell needs */
+export const FORM_SHELL = Object.freeze({
+    component: 'page',
+    children: Object.freeze({
+        form: Object.freeze({
+            component: 'panel',
+            children: Object.freeze({
+                email: Object.freeze({ component: 'textField', _label: 'Email' }),
+                save: Object.freeze({ component: 'button', _title: 'Save', on: Object.freeze({ press: Object.freeze({ command: 'emit', target: 'form.saved', value: 'ok' }) }) })
+            })
+        }),
+        main: Object.freeze({ component: 'outlet' })
+    })
+});
+
+/** The shell of a test app from the nodes under its page: they come first and the outlet last */
+export function shellOf(children: Record<string, unknown>): Record<string, unknown> {
+    return { component: 'page', children: { ...children, main: { component: 'outlet' } } };
+}
+
+export interface CreatedApp {
+    /** The app's name, which the run-time tools take as `app` */
+    readonly name: string;
+    /** The part id, which names the view `/apps/<id>` */
+    readonly id: string;
+}
+
+/** Creates an app part with `ui_app_create`, or throws with the answer */
+export async function createApp(client: Client, name: string, shell: object = FORM_SHELL, extra: Record<string, unknown> = {}): Promise<CreatedApp> {
+    const created = await call(client, 'ui_app_create', { name, shell, ...extra });
+    if (created.isError) throw new Error(`ui_app_create ${name}: ${JSON.stringify(created.body)}`);
+    return { name, id: created.body['id'] as string };
+}

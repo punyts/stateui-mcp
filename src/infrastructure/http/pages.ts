@@ -1,4 +1,4 @@
-import type { UiAppSummary } from '../../application/ports/UiAppRepository.js';
+import type { UiPartSummary } from '../../application/ports/UiPartRepository.js';
 
 /** Everything that comes from an app (its name) is escaped before it reaches a page */
 export function escapeHtml(text: string): string {
@@ -19,7 +19,7 @@ body.view[data-status="failed"]::after { content: attr(data-note); position: fix
 `;
 
 /** `GET /`: the apps with a link to each live view */
-export function indexPage(apps: readonly UiAppSummary[]): string {
+export function indexPage(apps: readonly Pick<UiPartSummary, 'id' | 'name' | 'revision' | 'updatedAt'>[]): string {
     const rows = apps
         .map(
             (app) =>
@@ -52,10 +52,8 @@ export interface AppPageOptions {
     readonly runtimeUrl: string;
     /** `headless` for the page of Playwright, `browser` for a person */
     readonly viewKind: 'browser' | 'headless';
-    /** A Persisted app: the statenet's WebSocket URL, which the page's sync client connects to */
-    readonly statenetUrl?: string;
-    /** The sync namespace of the view's state; absent: the app's own, `apps.<appId>`. An owner app's view names its instance's */
-    readonly namespace?: string;
+    /** The sync namespace of the view's state: the app's instance */
+    readonly namespace: string;
 }
 
 /** `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame */
@@ -69,7 +67,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}"${options.statenetUrl === undefined ? '' : ` data-statenet-url="${escapeHtml(options.statenetUrl)}"`}${options.namespace === undefined ? '' : ` data-namespace="${escapeHtml(options.namespace)}"`} data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}" data-status="loading">`,
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',

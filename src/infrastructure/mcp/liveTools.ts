@@ -1,5 +1,5 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
-import type { RunCommandResult } from '../../application/use-cases/RunCommand.js';
+import type { RunCommandInput, RunCommandResult } from '../../application/use-cases/RunCommand.js';
 import { NO_PREVIEW_MESSAGE } from '../../application/use-cases/RunCommand.js';
 import { BrowserUnavailableError, INTERACT_ACTIONS, MAX_FULL_PAGE_HEIGHT, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
 import type { InteractStep, PreviewBrowser, PreviewScreen } from '../preview/BrowserPreview.js';
@@ -95,11 +95,10 @@ function browserUnavailable(error: BrowserUnavailableError): ToolOutcome {
 
 /**
  * Where a preview or screenshot opens: the screen and params given, checked against the instance's screens. undefined
- * when none is given; an error for a screen of an app of the old store or an unknown screen
+ * when none is given; an error for an unknown screen
  */
 function screenOf(target: RunTarget, screen: string | undefined, params: Readonly<Record<string, unknown>> | undefined): PreviewScreen | undefined | ToolOutcome {
     if (screen === undefined) return params === undefined ? undefined : fail('invalid-argument', 'params go with a screen', { argument: 'params' });
-    if (target.kind !== 'instance') return fail('invalid-argument', 'screen works with app, the name of an app part', { argument: 'screen' });
     if (!target.screens.includes(screen)) {
         const known = target.screens.length > 0 ? `its screens: ${target.screens.join(', ')}` : 'it has no screens';
         return fail('invalid-argument', `The app has no screen "${screen}"; ${known}`, { argument: 'screen', screens: target.screens });
@@ -112,15 +111,14 @@ function isOutcome(value: PreviewScreen | undefined | ToolOutcome): value is Too
 }
 
 export interface LiveToolDependencies {
-    readonly useCases: Pick<UiBuilderUseCases, 'getApp' | 'getState' | 'runCommand' | 'findPartApp' | 'getPartState' | 'runPartCommand'>;
+    readonly useCases: Pick<UiBuilderUseCases, 'findPartApp' | 'getPartState' | 'runPartCommand'>;
     readonly hub: PreviewHub;
     readonly liveViews: Pick<LiveViews, 'command'>;
     readonly browser: Pick<PreviewBrowser, 'open' | 'screenshot' | 'interact'>;
     readonly calls: Pick<AppCalls, 'answer'>;
     /** The trace of the logic that runs on the server; absent: ui_logic_trace answers that the logic does not run here */
-    readonly logic?: Pick<AppAuthorities, 'trace' | 'clearTrace' | 'traceOf' | 'clearTraceOf'>;
-    /** The views of app parts; absent, only appId works */
-    readonly instanceViews?: Pick<InstanceViews, 'view' | 'namespace'>;
+    readonly logic?: Pick<AppAuthorities, 'traceOf' | 'clearTraceOf'>;
+    readonly instanceViews: Pick<InstanceViews, 'view' | 'namespace'>;
     /** The URL a person opens for an app, such as `http://127.0.0.1:4100/apps/<id>` */
     readonly viewUrl: (appId: string) => string;
 }
@@ -128,40 +126,32 @@ export interface LiveToolDependencies {
 /** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and `emit` events */
 export function createLiveTools(dependencies: LiveToolDependencies): readonly UiToolDefinition[] {
     const { useCases, hub, liveViews, browser, viewUrl, calls, logic, instanceViews } = dependencies;
-    const resolve = runTargets({ useCases, ...(instanceViews !== undefined && { instanceViews }) });
+    const resolve = runTargets({ useCases, instanceViews });
 
     /** The runtime errors the views of the target reported */
     async function viewErrors(target: RunTarget): Promise<readonly unknown[]> {
-        if (target.kind === 'instance') return (await useCases.getPartState?.execute(target.part))?.preview.errors ?? [];
-        const state = await useCases.getState.execute(target.appId);
-        return state.kind === 'state' ? state.preview.errors : [];
+        return (await useCases.getPartState.execute(target.part)).preview.errors;
     }
 
     /** The trace of the logic the target runs on the server */
-    function traceOf(target: RunTarget, clear: boolean): ReturnType<AppAuthorities['trace']> {
+    function traceOf(target: RunTarget, clear: boolean): ReturnType<AppAuthorities['traceOf']> {
         if (logic === undefined) return undefined;
-        if (target.kind === 'stored') {
-            const runs = logic.trace(target.appId);
-            if (clear) logic.clearTrace(target.appId);
-            return runs;
-        }
-        const namespace = instanceViews!.namespace(target.part);
+        const namespace = instanceViews.namespace(target.part);
         const runs = logic.traceOf(namespace);
         if (clear) logic.clearTraceOf(namespace);
         return runs;
     }
 
-    /** A command on the target: checked against the document the instance runs, or the stored app's */
-    async function command(target: RunTarget, input: Parameters<UiBuilderUseCases['runCommand']['execute']>[1]): Promise<RunCommandResult> {
-        if (target.kind === 'instance' && useCases.runPartCommand !== undefined) return useCases.runPartCommand.execute(target.part, input);
-        return useCases.runCommand.execute(target.appId, input);
+    /** A command on the target: checked against the document the instance runs */
+    function command(target: RunTarget, input: RunCommandInput): Promise<RunCommandResult> {
+        return useCases.runPartCommand.execute(target.part, input);
     }
 
     return [
         {
             name: 'ui_preview',
             description:
-                'Run time: open the headless browser page of the app, or reload it when it is already open, and wait until it has rendered the current definition. With app it shows the instance of the app part (screen and params open a screen first, and the instance stays there); with appId an app of the old store. Nothing of the definition changes. Returns { app | appId, revision, url, rendered, errors }: url is the address a person opens in a browser to watch the same live app (it follows every later write), rendered says whether the headless page showed it within 10 seconds, and errors are the runtime errors the views reported. Validate first. If Chromium is not installed the url still works for a person and rendered is false with a note.',
+                'Run time: open the headless browser page of the app, or reload it when it is already open, and wait until it has rendered the current definition. It shows the instance of the app part (screen and params open a screen first, and the instance stays there). Nothing of the definition changes. Returns { app, revision, url, rendered, errors }: url is the address a person opens in a browser to watch the same live app (it follows every later write), rendered says whether the headless page showed it within 10 seconds, and errors are the runtime errors the views reported. Validate first. If Chromium is not installed the url still works for a person and rendered is false with a note.',
             inputSchema: PREVIEW.schema,
             annotations: SHOWS,
             run: async (args) => {
@@ -193,7 +183,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_screenshot',
             description:
-                'Run time: take a PNG screenshot of the app in the headless browser: the whole page, or one node when path is given. With app it shows the instance of the app part, and screen and params capture that screen (the instance stays on it); with appId an app of the old store. Optional width and height set the viewport, fullPage: true captures the whole scrolling height, mode switches the theme overlay (such as "dark") for the capture. Nothing of the definition changes. Returns the image and a short summary { app | appId, revision, target, width, height, mode?, screen? }. Use it to check what the user will see after a write.',
+                'Run time: take a PNG screenshot of the app in the headless browser: the whole page, or one node when path is given. With app it shows the instance of the app part, and screen and params capture that screen (the instance stays on it). Optional width and height set the viewport, fullPage: true captures the whole scrolling height, mode switches the theme overlay (such as "dark") for the capture. Nothing of the definition changes. Returns the image and a short summary { app, revision, target, width, height, mode?, screen? }. Use it to check what the user will see after a write.',
             inputSchema: SCREENSHOT.schema,
             annotations: SHOWS,
             run: async (args) => {
@@ -229,7 +219,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Run time: act on the running app in the headless page like a user, on the instance of an app part (app) or an app of the old store (appId): click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app | appId, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
+                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -259,7 +249,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Run time: read the events the running app raised, oldest first, for the instance of an app part (app) or an app of the old store (appId): emit events (a button with an emit action, a form submit), logic.failed, and logic.call (payload { id, name, payload }; answer it with ui_call_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app | appId, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Run time: read the events the running app raised, oldest first, for the instance of an app part: emit events (a button with an emit action, a form submit), logic.failed, and logic.call (payload { id, name, payload }; answer it with ui_call_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -275,7 +265,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_logic_trace',
             description:
-                'Run time: read the latest runs of the logic of the instance of an app part (app) or of an app of the old store (appId), newest last. A run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its chain step (depth) and outcome: fired (with the transition, table row and writes), failed (with the reason), refused (a guard), condition (is, was or if was false, or no table row matched), other-state (the machine was in another state), unchanged (the value did not change), parent-removed (removed with its record), already-fired (once per chain) or debounced. Use it when a rule did not fire or fired twice. Reading changes nothing; clear empties the trace only. Full-mode apps and instances only. Returns { app | appId, runs }.',
+                'Run time: read the latest runs of the logic of the instance of an app part, newest last. A run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its chain step (depth) and outcome: fired (with the transition, table row and writes), failed (with the reason), refused (a guard), condition (is, was or if was false, or no table row matched), other-state (the machine was in another state), unchanged (the value did not change), parent-removed (removed with its record), already-fired (once per chain) or debounced. Use it when a rule did not fire or fired twice. Reading changes nothing; clear empties the trace only. Returns { app, runs }.',
             inputSchema: LOGIC_TRACE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -286,7 +276,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if (!isRunTarget(target)) return target;
                 const runs = traceOf(target, clear === true);
                 if (runs === undefined) {
-                    return fail('no-logic', 'The logic of this app does not run on the server: it has no logic, its logic did not start (see ui_validate), nothing has used the instance yet, or the app is Persisted', runName(target));
+                    return fail('no-logic', 'The logic of this app does not run on the server: it has no logic, its logic did not start (see ui_validate), nothing has used the instance yet', runName(target));
                 }
                 return succeed({ ...runName(target), runs: runs.slice(-(limit ?? 10)) });
             }
@@ -294,7 +284,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_call_answer',
             description:
-                'Run time: answer a "call" command of the logic of the instance of an app part (app) or of an app of the old store (appId): the logic.call event from ui_events_read carries its id, the procedure name and the payload. The machine that called gets accepted with $result.value, or rejected with $result.reason, and moves on. The answer goes to the running logic only, never to the definition. Returns { app | appId, id, answered }; an id that is not waiting (answered already, or lost on a restart) is the error not-waiting.',
+                'Run time: answer a "call" command of the logic of the instance of an app part: the logic.call event from ui_events_read carries its id, the procedure name and the payload. The machine that called gets accepted with $result.value, or rejected with $result.reason, and moves on. The answer goes to the running logic only, never to the definition. Returns { app, id, answered }; an id that is not waiting (answered already, or lost on a restart) is the error not-waiting.',
             inputSchema: CALL_ANSWER.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -314,7 +304,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_command',
             description:
-                'Run time: run a component command in the open views of the instance of an app part (app) or of an app of the old store (appId), the headless page included: show a toast, focus a field, scroll to a record. In an app with screens, command "navigate" with a screen name as target and the params as value shows that screen. Nothing of the definition changes; a navigate moves the instance to the screen. Returns { app | appId, revision, command, previewAttached, message }; with no view open the message says the command was not delivered (open one with ui_preview).',
+                'Run time: run a component command in the open views of the instance of an app part, the headless page included: show a toast, focus a field, scroll to a record. In an app with screens, command "navigate" with a screen name as target and the params as value shows that screen. Nothing of the definition changes; a navigate moves the instance to the screen. Returns { app, revision, command, previewAttached, message }; with no view open the message says the command was not delivered (open one with ui_preview).',
             inputSchema: COMMAND.schema,
             annotations: WRITES,
             run: async (args) => {

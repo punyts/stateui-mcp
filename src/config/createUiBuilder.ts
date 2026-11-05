@@ -2,8 +2,6 @@ import type {
     ComponentCatalog,
     InstanceStates,
     PatternCatalog,
-    LiveStateReader,
-    UiAppRepository,
     UiAppValidator,
     UiFileRepository,
     UiFileStore,
@@ -14,36 +12,29 @@ import type {
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { OutlinePartApp } from '../application/use-cases/OutlinePartApp.js';
 import { ConfigureApp } from '../application/use-cases/ConfigureApp.js';
-import { CreateApp, CreatePartApp } from '../application/use-cases/CreateApp.js';
+import { CreatePartApp } from '../application/use-cases/CreateApp.js';
 import { CreateScreen } from '../application/use-cases/CreateScreen.js';
-import { DeleteApp } from '../application/use-cases/DeleteApp.js';
 import { DeletePart } from '../application/use-cases/DeletePart.js';
-import { GetApp } from '../application/use-cases/GetApp.js';
 import { GetComponent } from '../application/use-cases/GetComponent.js';
 import { GetPart } from '../application/use-cases/GetPart.js';
-import { GetState } from '../application/use-cases/GetState.js';
-import { GetUiApp } from '../application/use-cases/GetUiApp.js';
-import { ListApps } from '../application/use-cases/ListApps.js';
 import { SearchComponents } from '../application/use-cases/SearchComponents.js';
 import { ListParts } from '../application/use-cases/ListParts.js';
 import { ListIcons } from '../application/use-cases/ListIcons.js';
 import { ListTokens } from '../application/use-cases/ListTokens.js';
-import { OutlineApp } from '../application/use-cases/OutlineApp.js';
 import { ReadFile } from '../application/use-cases/ReadFile.js';
 import { ReadFileText } from '../application/use-cases/ReadFileText.js';
 import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewErrors.js';
 import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
-import { SetPartState, SetState } from '../application/use-cases/SetState.js';
-import { ResetInstance, ResetState } from '../application/use-cases/ResetState.js';
+import { SetPartState } from '../application/use-cases/SetState.js';
+import { ResetInstance } from '../application/use-cases/ResetState.js';
 import { FindPartApp, GetPartState, RunPartCommand } from '../application/use-cases/RunPartApp.js';
 import { WriteModel } from '../application/use-cases/WriteModel.js';
 import { WriteLogic } from '../application/use-cases/WriteLogic.js';
 import { WriteComposed } from '../application/use-cases/WriteComposed.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
-import { ValidateApp, ValidatePartApp } from '../application/use-cases/ValidateApp.js';
-import { WriteApp } from '../application/use-cases/WriteApp.js';
+import { ValidatePartApp } from '../application/use-cases/ValidateApp.js';
 import { QueryData } from '../application/use-cases/QueryData.js';
 import { RenamePart } from '../application/use-cases/RenamePart.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
@@ -56,17 +47,12 @@ import type { UsageSource } from '../application/UsageIndex.js';
 
 /** The adapters the use cases run on */
 export interface UiBuilderPorts {
-    /** The old one-document-per-app store, which the current tools use until epic 3 removes them */
-    readonly repository: UiAppRepository;
-    /**
-     * The owner's parts with their usage index, beside the app store (`IndexedUiPartRepository` over
-     * `FilePartRepository` in the server). With it, `writePart` and `validatePartApp` exist; no tool calls them yet
-     */
-    readonly parts?: UiPartRepository & UsageSource;
-    /** The default persona's instances of owner apps (`FileUiInstanceRepository`); with `parts`, `resetInstance` and `writePersonaData` exist */
-    readonly instances?: UiInstanceRepository;
-    /** The running instances of owner apps (`AuthorityInstanceStates`); with `parts`, `setPartState` exists */
-    readonly instanceStates?: InstanceStates;
+    /** The owner's parts with their usage index (`IndexedUiPartRepository` over `FilePartRepository` in the server) */
+    readonly parts: UiPartRepository & UsageSource;
+    /** The default persona's instances of owner apps (`FileUiInstanceRepository`) */
+    readonly instances: UiInstanceRepository;
+    /** The running instances of owner apps (`AuthorityInstanceStates`) */
+    readonly instanceStates: InstanceStates;
     readonly validator: UiAppValidator;
     readonly previewLog: UiPreviewLog;
     readonly catalog: ComponentCatalog;
@@ -74,153 +60,95 @@ export interface UiBuilderPorts {
     readonly patterns: PatternCatalog;
     readonly fileRepository: UiFileRepository;
     readonly fileStore: UiFileStore;
-    readonly liveState: LiveStateReader;
 }
 
-/** What the use cases need besides ports: the clock, ids, the reporter and the library's core icons */
+/** What the use cases need besides ports: the clock, ids and the reporter */
 export interface UiBuilderOptions {
     readonly now: () => Date;
     readonly newId: () => string;
     readonly report: UseCaseReport;
-    /** Icons the runtime page ships; the app message leaves their path data out */
-    readonly coreIconNames: readonly string[];
 }
 
 export interface UiBuilderUseCases {
-    readonly createApp: CreateApp;
-    readonly listApps: ListApps;
-    readonly deleteApp: DeleteApp;
     readonly searchComponents: SearchComponents;
     readonly getComponent: GetComponent;
     readonly listIcons: ListIcons;
     readonly listTokens: ListTokens;
-    readonly writeApp: WriteApp;
-    readonly getApp: GetApp;
-    readonly getUiApp: GetUiApp;
-    readonly outlineApp: OutlineApp;
-    readonly validateApp: ValidateApp;
-    readonly getState: GetState;
-    readonly setState: SetState;
-    readonly resetState: ResetState;
-    readonly runCommand: RunCommand;
     readonly recordPreviewErrors: RecordPreviewErrors;
     readonly recordPreviewLoad: RecordPreviewLoad;
     readonly uploadFile: UploadFile;
     readonly readFile: ReadFile;
     readonly readFileText: ReadFileText;
-    /** With `parts` only */
-    readonly createPartApp?: CreatePartApp;
-    /** With `parts` only */
-    readonly configureApp?: ConfigureApp;
-    /** With `parts` only */
-    readonly createScreen?: CreateScreen;
-    /** With `parts` only */
-    readonly createTheme?: CreateTheme;
-    /** With `parts` only */
-    readonly writeTheme?: WriteTheme;
-    /** With `parts` only */
-    readonly writeModel?: WriteModel;
-    /** With `parts` only */
-    readonly writeLogic?: WriteLogic;
-    /** With `parts` only */
-    readonly writeComposed?: WriteComposed;
-    /** With `parts` only */
-    readonly writeNodes?: WriteNodes;
-    /** With `parts` only */
-    readonly writeLocale?: WriteLocale;
-    /** With `parts` only */
-    readonly listParts?: ListParts;
-    /** With `parts` only */
-    readonly getPart?: GetPart;
-    /** With `parts` only; with `instances` too, deleting an app removes its instance */
-    readonly deletePart?: DeletePart;
-    /** With `parts` only */
-    readonly writePart?: WritePart;
-    /** With `parts` only */
-    readonly renamePart?: RenamePart;
-    /** With `parts` only */
-    readonly writeData?: WriteData;
-    /** With `parts` only */
-    readonly queryData?: QueryData;
-    /** With `parts` only */
-    readonly validatePartApp?: ValidatePartApp;
-    /** With `parts` and `instances` only */
-    readonly resetInstance?: ResetInstance;
-    /** With `parts` and `instances` only */
-    readonly writePersonaData?: WritePersonaData;
-    /** With `parts` and `instanceStates` only */
-    readonly setPartState?: SetPartState;
-    /** With `parts` only: the app part a run-time tool names */
-    readonly findPartApp?: FindPartApp;
-    /** With `parts` and `instanceStates` only */
-    readonly getPartState?: GetPartState;
-    /** With `parts` and `instanceStates` only */
-    readonly runPartCommand?: RunPartCommand;
-    /** With `parts` and `instanceStates` only */
-    readonly outlinePartApp?: OutlinePartApp;
+    readonly createPartApp: CreatePartApp;
+    readonly configureApp: ConfigureApp;
+    readonly createScreen: CreateScreen;
+    readonly createTheme: CreateTheme;
+    readonly writeTheme: WriteTheme;
+    readonly writeModel: WriteModel;
+    readonly writeLogic: WriteLogic;
+    readonly writeComposed: WriteComposed;
+    readonly writeNodes: WriteNodes;
+    readonly writeLocale: WriteLocale;
+    readonly listParts: ListParts;
+    readonly getPart: GetPart;
+    /** Deleting an app removes its instance */
+    readonly deletePart: DeletePart;
+    readonly writePart: WritePart;
+    readonly renamePart: RenamePart;
+    readonly writeData: WriteData;
+    readonly queryData: QueryData;
+    readonly validatePartApp: ValidatePartApp;
+    readonly resetInstance: ResetInstance;
+    readonly writePersonaData: WritePersonaData;
+    readonly setPartState: SetPartState;
+    /** The app part a run-time tool names */
+    readonly findPartApp: FindPartApp;
+    readonly getPartState: GetPartState;
+    readonly runPartCommand: RunPartCommand;
+    readonly outlinePartApp: OutlinePartApp;
 }
 
 /** The use cases over their ports. Plain factories, no container */
 export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilderOptions): UiBuilderUseCases {
-    const { repository, parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, liveState } = ports;
-    const { now, newId, report, coreIconNames } = options;
+    const { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore } = ports;
+    const { now, newId, report } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
-    const runCommand = new RunCommand(repository, catalog, previewLog, now, newId, report);
-    const writePart = parts === undefined ? undefined : new WritePart(parts, parts, validator, report);
+    const runCommand = new RunCommand(catalog, previewLog, now, newId, report);
+    const writePart = new WritePart(parts, parts, validator, report);
     return {
-        createApp: new CreateApp(repository, validator, report),
-        listApps: new ListApps(repository, report),
-        deleteApp: new DeleteApp(repository, report),
         searchComponents: new SearchComponents(catalog),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog),
         listTokens: new ListTokens(catalog),
-        writeApp: new WriteApp(repository, validator, report),
-        getApp: new GetApp(repository, validator, report),
-        getUiApp: new GetUiApp(repository, catalog, previewLog, coreIconNames, now, report),
-        outlineApp: new OutlineApp(repository, validator, report),
-        validateApp: new ValidateApp(repository, validator, previewLog, now, report),
-        getState: new GetState(repository, previewLog, liveState, now, report),
-        setState: new SetState(repository, validator, report),
-        resetState: new ResetState(repository, report),
-        runCommand,
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
-        uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, repository, now, report), newId, report),
+        uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, parts, instanceStates, now, report), newId, report),
         readFile,
         readFileText: new ReadFileText(readFile),
-        ...(parts !== undefined && writePart !== undefined && {
-            createTheme: new CreateTheme(parts, writePart, validator, patterns, report),
-            writeTheme: new WriteTheme(parts, writePart, validator, catalog, report),
-            writeModel: new WriteModel(parts, parts, writePart, report),
-            writeLogic: new WriteLogic(parts, validator, writePart, report),
-            writeComposed: new WriteComposed(parts, writePart, catalog, report),
-            createPartApp: new CreatePartApp(parts, validator, patterns, report),
-            configureApp: new ConfigureApp(parts, validator, report),
-            createScreen: new CreateScreen(parts, validator, patterns, report),
-            writeNodes: new WriteNodes(parts, validator, report),
-            writeLocale: new WriteLocale(parts, validator, report),
-            listParts: new ListParts(parts, report),
-            getPart: new GetPart(parts, validator, report),
-            deletePart: new DeletePart(parts, parts, report, instances),
-            writePart,
-            renamePart: new RenamePart(parts, parts, report),
-            writeData: new WriteData(parts, validator, newId, report),
-            queryData: new QueryData(parts, report),
-            validatePartApp: new ValidatePartApp(parts, parts, validator, report),
-            findPartApp: new FindPartApp(parts)
-        }),
-        ...(parts !== undefined &&
-            instances !== undefined && {
-                resetInstance: new ResetInstance(parts, instances, report, instanceStates),
-                writePersonaData: new WritePersonaData(parts, instances, validator, report)
-            }),
-        ...(parts !== undefined &&
-            instanceStates !== undefined && {
-                setPartState: new SetPartState(parts, instanceStates, validator, report),
-                getPartState: new GetPartState(instanceStates, previewLog, now, report),
-                runPartCommand: new RunPartCommand(instanceStates, runCommand),
-                outlinePartApp: new OutlinePartApp(instanceStates, validator, report)
-            })
+        createTheme: new CreateTheme(parts, writePart, validator, patterns, report),
+        writeTheme: new WriteTheme(parts, writePart, validator, catalog, report),
+        writeModel: new WriteModel(parts, parts, writePart, report),
+        writeLogic: new WriteLogic(parts, validator, writePart, report),
+        writeComposed: new WriteComposed(parts, writePart, catalog, report),
+        createPartApp: new CreatePartApp(parts, validator, patterns, report),
+        configureApp: new ConfigureApp(parts, validator, report),
+        createScreen: new CreateScreen(parts, validator, patterns, report),
+        writeNodes: new WriteNodes(parts, validator, report),
+        writeLocale: new WriteLocale(parts, validator, report),
+        listParts: new ListParts(parts, report),
+        getPart: new GetPart(parts, validator, report),
+        deletePart: new DeletePart(parts, parts, report, instances),
+        writePart,
+        renamePart: new RenamePart(parts, parts, report),
+        writeData: new WriteData(parts, validator, newId, report),
+        queryData: new QueryData(parts, report),
+        validatePartApp: new ValidatePartApp(parts, parts, validator, report),
+        findPartApp: new FindPartApp(parts),
+        resetInstance: new ResetInstance(parts, instances, report, instanceStates),
+        writePersonaData: new WritePersonaData(parts, instances, validator, report),
+        setPartState: new SetPartState(parts, instanceStates, validator, report),
+        getPartState: new GetPartState(instanceStates, previewLog, now, report),
+        runPartCommand: new RunPartCommand(instanceStates, runCommand),
+        outlinePartApp: new OutlinePartApp(instanceStates, validator, report)
     };
 }

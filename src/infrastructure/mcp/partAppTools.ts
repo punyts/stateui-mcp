@@ -18,18 +18,18 @@ const TREE_TEXT = 'a node tree ({ component, ...properties, children }) or { pat
 
 export const SHELL_ARGUMENT = {
     type: 'object',
-    description: `The frame around every screen (header, navigation, footer): ${TREE_TEXT}. A node tree needs exactly one { component: "outlet" } node, where the current screen shows. Giving shell makes an app of parts`
+    description: `The frame around every screen (header, navigation, footer): ${TREE_TEXT}. A node tree needs exactly one { component: "outlet" } node, where the current screen shows`
 } as const;
 
-/** The `ui_app_create` arguments of an app of parts, beside `name` and `sync` */
+/** The `ui_app_create` arguments of an app of parts, beside `name` */
 export const PART_APP_FIELDS = {
-    title: { type: 'string', description: 'App of parts: the title' },
-    themes: { type: 'json', description: 'App of parts: uses.themes, a list of owner theme names; the first is the default' },
+    title: { type: 'string', description: 'The title' },
+    themes: { type: 'json', description: 'uses.themes, a list of owner theme names; the first is the default' },
     data: {
         type: 'object',
-        description: 'App of parts: uses.data, each $.data name bound to { dataset: "dataset-name" } or { model: "model-name", scope: "persona" }'
+        description: 'uses.data, each $.data name bound to { dataset: "dataset-name" } or { model: "model-name", scope: "persona" }'
     },
-    logic: { type: 'object', description: 'App of parts: uses.logic, each owner logic module by name with { params: { ... } }' },
+    logic: { type: 'object', description: 'uses.logic, each owner logic module by name with { params: { ... } }' },
     shell: SHELL_ARGUMENT
 } as const;
 
@@ -104,8 +104,6 @@ function sharedOutcome(result: Exclude<CreatePartAppResult | CreateScreenResult,
             return fail('invalid-argument', `"${result.pattern}" is a ${result.patternKind} pattern`, { argument });
         case 'pattern-params':
             return fail('invalid-argument', `Pattern params are not applied yet; give "${result.pattern}" without params`, { argument });
-        case 'persisted-unsupported':
-            return fail('invalid-argument', 'An app of parts syncs through its instances: sync must be full', { argument: 'sync' });
         case 'not-found':
             return fail('not-found', `No app with this name${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : '; ui_list lists the apps'}`, {
                 argument: 'app',
@@ -120,7 +118,6 @@ function sharedOutcome(result: Exclude<CreatePartAppResult | CreateScreenResult,
 
 export interface PartAppCreateArguments {
     readonly name: string;
-    readonly sync?: 'full' | 'persisted';
     readonly title?: string;
     readonly themes?: unknown;
     readonly data?: JsonObject;
@@ -142,8 +139,7 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
         ...(args.title !== undefined && { title: args.title }),
         ...(themes !== undefined && { themes: themes as string[] }),
         ...(args.data !== undefined && { data: args.data }),
-        ...(args.logic !== undefined && { logic: args.logic }),
-        ...(args.sync !== undefined && { sync: args.sync })
+        ...(args.logic !== undefined && { logic: args.logic })
     });
     if (result.kind === 'created') return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', warnings: result.warnings });
     return sharedOutcome(result, 'shell', 'created');

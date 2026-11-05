@@ -15,7 +15,7 @@ import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
-import { FileNamespaceStorage, InstanceNamespaceStorage, appNamespace } from '../infrastructure/sync/FileNamespaceStorage.js';
+import { InstanceNamespaceStorage, appNamespace } from '../infrastructure/sync/FileNamespaceStorage.js';
 import type { InstanceStart } from '../infrastructure/sync/InstanceStart.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 
@@ -90,7 +90,7 @@ interface Running {
 /** A server's instance side over the data folder: a restart is a new one over the same folder */
 function server(): Running {
     const report = vi.fn();
-    const authorities = new AppAuthorities(new FileNamespaceStorage(folders), () => undefined, undefined, { library, report: QUIET });
+    const authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET });
     const states = new AuthorityInstanceStates(parts, instances, authorities, OWNER, report);
     return { authorities, states, setState: new SetPartState(parts, states, validator, QUIET), report };
 }

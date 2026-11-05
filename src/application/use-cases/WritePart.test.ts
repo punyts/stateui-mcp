@@ -28,7 +28,6 @@ function appUsing(theme: string): UiPartBodies['apps'] {
 
 function fakeValidator(): UiAppValidator {
     return {
-        validate: () => [],
         resolveNode: () => undefined,
         localeOverlay: () => undefined,
         assembleApp: () => ({}),

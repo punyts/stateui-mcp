@@ -7,7 +7,7 @@ import { FileToolCallLog } from './FileToolCallLog.js';
 
 const ENTRY: ToolCallEntry = Object.freeze({
     at: '2026-11-04T10:00:00.000Z',
-    tool: 'ui_app_write',
+    tool: 'ui_nodes_write',
     ok: false,
     errorCode: 'invalid-document',
     requestChars: 120,

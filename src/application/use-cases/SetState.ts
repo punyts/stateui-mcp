@@ -5,11 +5,9 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import { isNodeValue } from '../../domain/nodeDepth.js';
 import { orderedMapKeyErrors } from '../../domain/orderedMap.js';
 import { isRevisionCurrent } from '../../domain/revision.js';
-import { parseStatePath } from '../../domain/statePath.js';
-import type { UiApp, UiDocument, UiStateSnapshot } from '../../domain/UiApp.js';
+import type { UiDocument } from '../../domain/UiApp.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import type { InstanceShape, InstanceStates } from '../ports/InstanceStates.js';
-import type { UiAppRepository, UiStateWriteOptions } from '../ports/UiAppRepository.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
@@ -27,50 +25,25 @@ export interface SetStateInput {
     readonly logic?: boolean;
 }
 
-/** Why a path was refused. Each one names what the minion should do instead in `message` */
-export type SetStateRefusal =
+/** Why a write to an instance was refused. Each one names what the minion should do instead in `message` */
+export type SetPartStateRefusal =
     | 'invalid-path'
     | 'runtime-path'
     | 'unknown-path'
     | 'linked'
     | 'runtime-property'
     | 'exposed-property'
-    | 'content-locale-active'
-    | 'persisted-app'
     /** A guard rule of the app's logic refused the value */
-    | 'logic-guard';
-
-export type SetStateResult =
-    /** `statePath` is where the value was written in the state, such as `$.data.totals` or `$.app.children.name.value` */
-    | { readonly kind: 'written'; readonly appId: string; readonly revision: number; readonly path: string; readonly statePath: string }
-    | { readonly kind: 'refused'; readonly appId: string; readonly reason: SetStateRefusal; readonly message: string }
-    /** The value does not fit the property's shape, or a key in it is integer-like (`SUI-DOC-ORDER`) */
-    | { readonly kind: 'invalid'; readonly appId: string; readonly errors: readonly UiBuildError[] }
-    | { readonly kind: 'conflict'; readonly appId: string; readonly currentRevision: number }
-    | { readonly kind: 'not-found'; readonly appId: string };
-
-interface Target {
-    /** Where the value goes in the snapshot, from its root (`data...` or `app...`) */
-    readonly snapshotPath: readonly string[];
-}
-
-type Resolved =
-    | { readonly ok: true; readonly target: Target }
-    | { readonly ok: false; readonly result: SetStateResult };
-
-function refuse(appId: string, reason: SetStateRefusal, message: string): { ok: false; result: SetStateResult } {
-    return { ok: false, result: { kind: 'refused', appId, reason, message } };
-}
-
-/** A value a guard rule of the app's logic refused */
-function guardRefusal(appId: string, reason: string): SetStateResult {
-    return { kind: 'refused', appId, reason: 'logic-guard', message: `A guard rule of the app's logic refused the value: ${reason}` };
-}
+    | 'logic-guard'
+    /** A path of the definition, not of the state of using the app */
+    | 'definition-path'
+    /** A shared dataset's records are the dataset's */
+    | 'shared-dataset';
 
 /** A node property a path names, or why it cannot be written */
 type PropertyFound =
     | { readonly kind: 'ok'; readonly snapshotPath: readonly string[]; readonly content: boolean }
-    | { readonly kind: 'refused'; readonly reason: SetStateRefusal; readonly message: string }
+    | { readonly kind: 'refused'; readonly reason: SetPartStateRefusal; readonly message: string }
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] };
 
 /**
@@ -116,143 +89,6 @@ function findProperty(validator: UiAppValidator, root: JsonObject, rootPath: rea
             return { kind: 'ok', snapshotPath: [...rootPath, ...nodeSegments, property], content: check.content };
     }
 }
-
-/**
- * Writes one value into the app's synced state: a `$.data` path, or an articulation property of a node. It refuses
- * links, runtime and exposed properties, `$.runtime`, unknown paths and, while a language is active, `_` content,
- * and checks the value against the component's shape. The write is checked against the revision (it does not raise it)
- * and reaches every open view at once
- */
-export class SetState {
-    constructor(
-        private readonly repository: UiAppRepository,
-        private readonly validator: UiAppValidator,
-        private readonly report: UseCaseReport
-    ) {}
-
-    async execute(appId: string, input: SetStateInput): Promise<SetStateResult> {
-        const parsed = parseStatePath(input.path);
-        if (parsed.kind === 'invalid') return this.finish(appId, refuse(appId, 'invalid-path', parsed.reason).result);
-        if (parsed.kind === 'runtime') {
-            return this.finish(appId, refuse(appId, 'runtime-path', 'Tools cannot write $.runtime: controllers create it while the app runs').result);
-        }
-        if (parsed.kind === 'unknown') {
-            return this.finish(appId, refuse(appId, 'unknown-path', 'Only $.data paths and node properties under $.app can be set').result);
-        }
-
-        const app = await this.repository.findById(appId);
-        if (app === undefined) return this.finish(appId, { kind: 'not-found', appId });
-        if (app.sync === 'persisted') {
-            return this.finish(appId, refuse(appId, 'persisted-app', 'The app is Persisted: its state lives in the statenet and only its views change it').result);
-        }
-        if (!isRevisionCurrent(app.revision, input.expectedRevision)) {
-            return this.finish(appId, { kind: 'conflict', appId, currentRevision: app.revision });
-        }
-
-        const options = input.logic === false ? { logic: false } : {};
-        if (input.remove === true) return this.finish(appId, await this.remove(app, parsed, options));
-
-        const value = input.value ?? null;
-        let resolved: Resolved;
-        let snapshot: UiStateSnapshot = app.stateSnapshot;
-        if (parsed.kind === 'data') {
-            resolved = { ok: true, target: { snapshotPath: ['data', ...parsed.path] } };
-            snapshot = this.withData(app);
-        } else {
-            resolved = this.resolveProperty(app, appId, parsed.path, value);
-        }
-        if (!resolved.ok) return this.finish(appId, resolved.result);
-
-        const { snapshotPath } = resolved.target;
-        if (snapshotPath.length === 1 && !isJsonObject(value)) {
-            return this.finish(appId, {
-                kind: 'invalid',
-                appId,
-                errors: [{ code: 'SUI-DOC-OPERATION', message: '$.data must be an object', statePath: '$.data' }]
-            });
-        }
-        const applied = setCreatingParents(snapshot, snapshotPath, value);
-        if (!applied.ok) {
-            return this.finish(appId, refuse(appId, 'unknown-path', applied.error.message).result);
-        }
-
-        const statePath = `$.${snapshotPath.join('.')}`;
-        const orderErrors = orderedMapKeyErrors(applied.document).filter(
-            (error) => error.statePath === statePath || error.statePath?.startsWith(`${statePath}.`) === true
-        );
-        if (orderErrors.length > 0) return this.finish(appId, { kind: 'invalid', appId, errors: orderErrors });
-
-        const written = await this.repository.writeState(appId, snapshotPath, value, app.revision, options);
-        if (written.kind === 'conflict') {
-            return this.finish(appId, { kind: 'conflict', appId, currentRevision: written.currentRevision });
-        }
-        if (written.kind === 'not-found') return this.finish(appId, { kind: 'not-found', appId });
-        if (written.kind === 'refused') return this.finish(appId, guardRefusal(appId, written.reason));
-        return this.finish(appId, { kind: 'written', appId, revision: written.revision, path: input.path, statePath });
-    }
-
-    /** Removes an existing entry under `$.data`; `$.data` itself and node properties are refused */
-    private async remove(app: UiApp, parsed: ReturnType<typeof parseStatePath>, options: UiStateWriteOptions): Promise<SetStateResult> {
-        const appId = app.id;
-        if (parsed.kind !== 'data' || parsed.path.length === 0) {
-            return refuse(appId, 'unknown-path', 'remove takes a path under $.data, such as $.data.tasks.t2; set node properties with a value').result;
-        }
-        let current: JsonValue | undefined = this.withData(app)['data'];
-        for (const segment of parsed.path) {
-            current = isJsonObject(current) && Object.hasOwn(current, segment) ? current[segment] : undefined;
-        }
-        const statePath = `$.data.${parsed.path.join('.')}`;
-        if (current === undefined) return refuse(appId, 'unknown-path', `Nothing is at ${statePath} to remove`).result;
-
-        const written = await this.repository.writeState(appId, ['data', ...parsed.path], undefined, app.revision, options);
-        if (written.kind === 'conflict') return { kind: 'conflict', appId, currentRevision: written.currentRevision };
-        if (written.kind === 'not-found') return { kind: 'not-found', appId };
-        if (written.kind === 'refused') return guardRefusal(appId, written.reason);
-        return { kind: 'written', appId, revision: written.revision, path: statePath, statePath };
-    }
-
-    /** A snapshot with no data yet starts from the document's data, so the first write does not drop the rest of it */
-    private withData(app: UiApp): UiStateSnapshot {
-        if (Object.hasOwn(app.stateSnapshot, 'data') || app.document['data'] === undefined) return app.stateSnapshot;
-        return { ...app.stateSnapshot, data: app.document['data'] };
-    }
-
-    private languageActive(app: UiApp): boolean {
-        const locale = app.document['locale'];
-        return typeof locale === 'string' && locale !== '' && this.validator.localeOverlay(app.document, locale) !== undefined;
-    }
-
-    /** Finds the node and the property a `$.app` path names, and checks that the property may be written */
-    private resolveProperty(app: UiApp, appId: string, path: readonly string[], value: JsonValue): Resolved {
-        const root = this.validator.resolveNode(app.document, ['app']);
-        if (root === undefined) return refuse(appId, 'unknown-path', 'The app has no node to write to');
-        const found = findProperty(this.validator, root, ['app'], path, value);
-        switch (found.kind) {
-            case 'refused':
-                return refuse(appId, found.reason, found.message);
-            case 'invalid':
-                return { ok: false, result: { kind: 'invalid', appId, errors: found.errors } };
-            case 'ok':
-                if (found.content && this.languageActive(app)) {
-                    return refuse(appId, 'content-locale-active', 'Content is text for the active language: change it with ui_app_write on the document or its locale overlay');
-                }
-                return { ok: true, target: { snapshotPath: found.snapshotPath } };
-        }
-    }
-
-    private finish(appId: string, result: SetStateResult): SetStateResult {
-        this.report.info('App state write', {
-            appId,
-            outcome: result.kind,
-            ...(result.kind === 'refused' ? { reason: result.reason } : {}),
-            ...(result.kind === 'written' ? { revision: result.revision } : {})
-        });
-        return result;
-    }
-}
-
-/** Why a write to an instance was refused: the reasons of `SetState`, a path of the definition, or a shared dataset */
-export type SetPartStateRefusal = Exclude<SetStateRefusal, 'persisted-app' | 'content-locale-active'> | 'definition-path' | 'shared-dataset';
 
 export type SetPartStateResult =
     /** `revision` is the app part's: a state write does not raise it */
@@ -386,7 +222,7 @@ export class SetPartState {
         const found = findProperty(this.validator, node, rootPath, below, value);
         switch (found.kind) {
             case 'refused':
-                return partRefusal(app, found.reason as SetPartStateRefusal, found.message);
+                return partRefusal(app, found.reason, found.message);
             case 'invalid':
                 return { ok: false, result: { kind: 'invalid', app, errors: found.errors } };
             case 'ok':

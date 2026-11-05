@@ -16,7 +16,6 @@ import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
-import { FileNamespaceStorage } from '../infrastructure/sync/FileNamespaceStorage.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 
 function deepFreeze<T>(value: T): T {
@@ -130,7 +129,7 @@ beforeEach(async () => {
         (name: string, operations: readonly DataOperation[]) => (failWrites ? Promise.reject(new Error('EIO: disk error')) : writeData.execute({ name, operations })),
         { info: report }
     );
-    authorities = new AppAuthorities(new FileNamespaceStorage(folders), () => undefined, undefined, { library, report: QUIET }, hub);
+    authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET }, hub);
     states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, QUIET.info, hub);
     [shopA, shopB, shopC] = [await part('shop-a'), await part('shop-b'), await part('shop-c')];
 });

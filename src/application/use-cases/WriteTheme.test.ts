@@ -24,7 +24,6 @@ const PRESET = deepFreeze({ name: 'calm', tokens: { color: { accent: { base: '#3
 /** An app is broken while its theme has no `button.fill`, standing in for a component token the app relies on */
 function fakeValidator(): UiAppValidator {
     return {
-        validate: () => [],
         resolveNode: () => undefined,
         localeOverlay: () => undefined,
         assembleApp: () => ({}),

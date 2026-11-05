@@ -78,23 +78,19 @@ function conflict(named: Record<string, unknown>, currentRevision: number): Tool
 }
 
 export interface StateToolDependencies {
-    readonly useCases: Pick<
-        UiBuilderUseCases,
-        'getApp' | 'getState' | 'setState' | 'resetState' | 'findPartApp' | 'getPartState' | 'setPartState' | 'resetInstance'
-    >;
-    /** The views of app parts; absent, only appId works */
-    readonly instanceViews?: Pick<InstanceViews, 'view'>;
+    readonly useCases: Pick<UiBuilderUseCases, 'findPartApp' | 'getPartState' | 'setPartState' | 'resetInstance'>;
+    readonly instanceViews: Pick<InstanceViews, 'view'>;
 }
 
-/** The run-time state tools: read, set and reset the state of an app part's instance (`app`) or of an app of the old store (`appId`) */
+/** The run-time state tools: read, set and reset the state of an app part's instance */
 export function createStateTools(dependencies: StateToolDependencies): readonly UiToolDefinition[] {
     const { useCases, instanceViews } = dependencies;
-    const resolve = runTargets({ useCases, ...(instanceViews !== undefined && { instanceViews }) });
+    const resolve = runTargets({ useCases, instanceViews });
     return [
         {
             name: 'ui_state_get',
             description:
-                'Run time: read the app state as { data, app } (and screens and route for an app with screens): the data, and what users typed, picked or opened. With app it reads the instance of the app part from the server (source "instance"). With appId, an app of the old store: with a view open it asks that view (source "live"), else the stored copy (source "stored"). path reads one part. Long strings are shortened unless full is true. Reading changes nothing. Returns { app | appId, revision, source, state, preview }, or with path { app | appId, revision, source, path, value, preview }; revision is the definition\'s, preview says whether a view is open and lists its runtime errors.',
+                'Run time: read the app state as { data, app } (and screens and route for an app with screens): the data, and what users typed, picked or opened. It reads the instance of the app part from the server (source "instance"). path reads one part. Long strings are shortened unless full is true. Reading changes nothing. Returns { app, revision, source, state, preview }, or with path { app, revision, source, path, value, preview }; revision is the definition\'s, preview says whether a view is open and lists its runtime errors.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -103,14 +99,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
                 const { path, full } = parsed.value;
                 const target = await resolve(parsed.value);
                 if (!isRunTarget(target)) return target;
-                let read: { revision: number; source: string; state: unknown; preview: unknown };
-                if (target.kind === 'instance' && useCases.getPartState !== undefined) {
-                    read = await useCases.getPartState.execute(target.part);
-                } else {
-                    const result = await useCases.getState.execute(target.appId);
-                    if (result.kind === 'not-found') return fail('not-found', 'No application with this id', { appId: target.appId });
-                    read = result;
-                }
+                const read = await useCases.getPartState.execute(target.part);
                 const named = runName(target);
                 const shown = (value: unknown): unknown => (full === true ? value : elideLong(value));
                 if (path === undefined) return succeed({ ...named, revision: read.revision, source: read.source, state: shown(read.state), preview: read.preview });
@@ -122,7 +111,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
         {
             name: 'ui_state_set',
             description:
-                'Run time: set one value in the state of the instance of an app part (app) or of an app of the old store (appId): a data path or a node property a user can change. remove: true removes an entry under $.data, such as a record ($.data.tasks.t2); null would leave an empty record. The write counts as a change by the user: guards may refuse it and rules fire. logic: false skips both, to set up a test. Never the definition: content, links, runtime and exposed properties are refused with the reason, and with app so are $.theme and the other definition roots (change the part) and a shared dataset (ui_data_write). Open views follow at once. The revision counts definition writes only, so it does not change. Returns { app | appId, revision, path }.',
+                'Run time: set one value in the state of the instance of an app part: a data path or a node property a user can change. remove: true removes an entry under $.data, such as a record ($.data.tasks.t2); null would leave an empty record. The write counts as a change by the user: guards may refuse it and rules fire. logic: false skips both, to set up a test. Never the definition: content, links, runtime and exposed properties are refused with the reason, and $.theme and the other definition roots (change the part) and a shared dataset (ui_data_write). Open views follow at once. The revision counts definition writes only, so it does not change. Returns { app, revision, path }.',
             inputSchema: STATE_SET.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -140,10 +129,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
                     ...(expectedRevision !== undefined && { expectedRevision }),
                     ...(logic === false && { logic })
                 };
-                const result =
-                    target.kind === 'instance' && useCases.setPartState !== undefined
-                        ? await useCases.setPartState.execute(target.app, input)
-                        : await useCases.setState.execute(target.appId, input);
+                const result = await useCases.setPartState.execute(target.app, input);
                 switch (result.kind) {
                     case 'written':
                         return succeed({ ...named, revision: result.revision, path: result.path });
@@ -161,7 +147,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
         {
             name: 'ui_state_reset',
             description:
-                'Run time: put the state back to the definition. With app, the instance of the app part is dropped with the persona\'s own records: the running instance stops, its views reconnect to a fresh one, and its logic starts again. With appId, an app of the old store: $.data becomes the data of the document again and what users or tools changed under $.app is dropped; Full-mode apps only. No guard or rule runs; machines are in their initial states after it and the trace is empty. Open views follow at once. Use it between test runs. The definition and its revision do not change. Returns { app | appId, revision }.',
+                'Run time: put the state back to the definition. The instance of the app part is dropped with the persona\'s own records: the running instance stops, its views reconnect to a fresh one, and its logic starts again. No guard or rule runs; machines are in their initial states after it and the trace is empty. Open views follow at once. Use it between test runs. The definition and its revision do not change. Returns { app, revision }.',
             inputSchema: STATE_RESET.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -171,27 +157,14 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
                 const target = await resolve(parsed.value);
                 if (!isRunTarget(target)) return target;
                 const named = runName(target);
-                if (target.kind === 'instance' && useCases.resetInstance !== undefined) {
-                    const result = await useCases.resetInstance.execute(target.app, expectedRevision);
-                    switch (result.kind) {
-                        case 'reset':
-                            return succeed({ ...named, revision: result.revision });
-                        case 'conflict':
-                            return conflict(named, result.currentRevision);
-                        case 'not-found':
-                            return fail('not-found', `No app named "${target.app}"`, named);
-                    }
-                }
-                const result = await useCases.resetState.execute(target.appId, expectedRevision);
+                const result = await useCases.resetInstance.execute(target.app, expectedRevision);
                 switch (result.kind) {
                     case 'reset':
                         return succeed({ ...named, revision: result.revision });
-                    case 'persisted-app':
-                        return fail('persisted-app', 'The app is Persisted: its state lives in the statenet and only its views change it', named);
                     case 'conflict':
                         return conflict(named, result.currentRevision);
                     case 'not-found':
-                        return fail('not-found', 'No application with this id', named);
+                        return fail('not-found', `No app named "${target.app}"`, named);
                 }
             }
         }

@@ -151,7 +151,7 @@ function checkField(name: string, field: Field, value: unknown): string | TableP
             if (typeof value !== 'string') return `${name} must be a string`;
             if (field.required === true && field.allowEmpty !== true && value.trim() === '') return `${name} must not be empty`;
             if (field.enum !== undefined && !field.enum.includes(value)) return `${name} must be one of: ${field.enum.join(', ')}`;
-            if (field.uuid === true && !UUID_PATTERN.test(value)) return `${name} must be an application id (a UUID) from ui_app_create or ui_app_list`;
+            if (field.uuid === true && !UUID_PATTERN.test(value)) return `${name} must be an id (a UUID)`;
             return undefined;
         case 'integer':
             if (typeof value !== 'number' || !Number.isInteger(value)) return `${name} must be a whole number`;

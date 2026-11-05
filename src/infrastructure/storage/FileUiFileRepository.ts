@@ -30,7 +30,7 @@ function isFileEntry(value: unknown): value is FileEntry {
     );
 }
 
-/** The metadata of the files of an app, in `files.json` of the app folder. It shares the lock of the app with the app repository */
+/** The metadata of the files of an app part, in `files.json` of the app's side folder */
 export class FileUiFileRepository implements UiFileRepository {
     constructor(
         private readonly folders: PartFolders,
@@ -38,7 +38,7 @@ export class FileUiFileRepository implements UiFileRepository {
         private readonly now: () => Date = () => new Date()
     ) {}
 
-    /** An app of the old store or an app part */
+    /** True when an app part with this id is stored; its files live in the app's side folder */
     appExists(appId: string): Promise<boolean> {
         return appStored(this.folders, appId);
     }

@@ -1,14 +1,11 @@
 import {
     assembleApp,
     buildAppOverlay,
-    extractBaseOverlay,
     extractLinks,
-    findUntranslated,
     libraryFromCatalog,
     resolveNode,
     screenPath,
     validateAppLocale,
-    validateDocument,
     validateNode
 } from '@punyts/stateui-app/core';
 import type {
@@ -25,20 +22,16 @@ import type { ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '.
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
-import { checkDocumentLimits } from '../domain/limits.js';
 import type { PartKind } from '../domain/partName.js';
 import type { UiDocument } from '../domain/UiApp.js';
 import type { UiPartBodies } from '../domain/UiPart.js';
-import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
-import { nearestNames } from '../domain/nearestNames.js';
 import { themeContrast } from './contrast.js';
 import { assembledErrors, partErrors } from './partChecks.js';
 import { loadComponentOverlay } from './stateUiLibrary.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 
 const UNKNOWN_COMPONENT = 'SUI-NODE-UNKNOWN';
-const NO_COMPONENT = '(none)';
 
 /** The resolved application without linked properties, the paths of those properties and where composed names were expanded */
 interface AssembledApp {
@@ -93,17 +86,6 @@ export class StateUiAppValidator implements UiAppValidator {
     ) {
         // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
         this.library = libraryFromCatalog(catalog as unknown as CatalogSource);
-    }
-
-    validate(document: UiDocument): readonly UiBuildError[] {
-        const limitErrors = checkDocumentLimits(document);
-        if (limitErrors.length > 0) return limitErrors;
-
-        const { errors } = validateDocument(document, this.library, { isIconName: this.isIconName });
-        const known = [...Object.keys(this.library), ...Object.keys(composedOf(document))];
-        const reported = errors.map((error) => withNearestNames(error, known));
-        if (reported.some(isBlockingError)) return reported;
-        return [...reported, ...this.untranslated(document), ...viewportWarnings(document)];
     }
 
     resolveNode(document: UiDocument, path: readonly string[]): JsonObject | undefined {
@@ -244,50 +226,4 @@ export class StateUiAppValidator implements UiAppValidator {
             }
         ) as unknown as JsonObject;
     }
-
-    /** `SUI-LOCALE-MISSING` warnings for each language the document declares in `locales` */
-    private untranslated(document: UiDocument): UiBuildError[] {
-        const locales = document['locales'];
-        if (!isJsonObject(locales)) return [];
-        const assembled = this.assemble(document);
-        if (assembled === undefined) return [];
-        const base = extractBaseOverlay(assembled.tree as unknown as LibraryJsonObject, assembled.linkedPaths);
-        return Object.keys(locales).flatMap((code) =>
-            findUntranslated(code, base, this.overlayOf(document, code, assembled) as unknown as LibraryJsonObject)
-        );
-    }
-}
-
-/** The warning code of a layout that does not fit a phone */
-export const VIEWPORT_WARNING = 'SUI-VIEWPORT-NARROW';
-
-/**
- * Layouts that do not fit a phone: a page whose side nav never collapses (`navBreakpoint` 0 with the nav at the
- * start) keeps the nav beside the content at every width and squeezes the content
- */
-function viewportWarnings(document: UiDocument): UiBuildError[] {
-    const warnings: UiBuildError[] = [];
-    const visit = (value: unknown, path: string): void => {
-        if (!isJsonObject(value)) return;
-        if (value['component'] === 'page' && isJsonObject(value['nav']) && value['navBreakpoint'] === 0 && (value['navPosition'] ?? 'start') === 'start') {
-            warnings.push({
-                code: VIEWPORT_WARNING,
-                severity: 'warning',
-                statePath: path,
-                component: 'page',
-                message: `The page at ${path} has navBreakpoint 0, so its side nav stays beside the content on a phone; leave navBreakpoint out (768) so the nav moves behind a menu button on narrow screens`
-            });
-        }
-        for (const [key, item] of Object.entries(value)) if (isJsonObject(item)) visit(item, `${path}.${key}`);
-    };
-    visit(document['app'], '$.app');
-    return warnings;
-}
-
-/** An unknown component name gets the nearest known names appended, so a typo is a one-step fix */
-function withNearestNames(error: UiBuildError, known: readonly string[]): UiBuildError {
-    if (error.code !== UNKNOWN_COMPONENT || error.component === undefined || error.component === NO_COMPONENT) return error;
-    const nearest = nearestNames(error.component, known);
-    if (nearest.length === 0) return error;
-    return { ...error, message: `${error.message}. Nearest names: ${nearest.join(', ')}` };
 }

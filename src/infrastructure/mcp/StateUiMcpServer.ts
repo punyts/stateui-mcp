@@ -12,7 +12,6 @@ import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
-import { createDeleteTools } from './deleteTools.js';
 import { createFileTools } from './fileTools.js';
 import { buildServerInstructions, START_HERE } from './instructions.js';
 import { createLiveTools } from './liveTools.js';
@@ -27,7 +26,6 @@ import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
 import { fail } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
-import { createWriteTools } from './writeTools.js';
 
 export const STATEUI_MCP_SERVER_NAME = 'stateui-mcp';
 export const STATEUI_MCP_VERSION = '0.1.0';
@@ -43,9 +41,9 @@ export interface StateUiToolDependencies {
     /** The calls of Full-mode logic that wait for the agent's answer */
     readonly calls: Pick<AppCalls, 'answer'>;
     /** The apps' server-side logic, for ui_logic_trace */
-    readonly authorities?: Pick<AppAuthorities, 'trace' | 'clearTrace' | 'traceOf' | 'clearTraceOf'>;
-    /** The views of app parts: the run-time tools take app with them */
-    readonly instanceViews?: Pick<InstanceViews, 'view' | 'namespace'>;
+    readonly authorities?: Pick<AppAuthorities, 'traceOf' | 'clearTraceOf'>;
+    /** The views of app parts: the run-time tools run on their instances */
+    readonly instanceViews: Pick<InstanceViews, 'view' | 'namespace'>;
     /** The address a person opens for an app */
     readonly viewUrl: (appId: string) => string;
     readonly report: UseCaseReport;
@@ -53,12 +51,11 @@ export interface StateUiToolDependencies {
     readonly toolCallLog?: ToolCallLog;
 }
 
-const START_HERE_TOOLS = new Set(['ui_components_search', 'ui_app_create']);
+const START_HERE_TOOLS = new Set(['ui_list', 'ui_theme_create', 'ui_app_create', 'ui_components_search']);
 
-/** Every tool of the server: catalog, lifecycle and reads, the generic part tools, writes, the live tools, `ui_file_read` and `ui_app_delete` */
+/** Every tool of the server: the build-time tools (catalog, the generic part tools, one create and write tool per kind), the owner's data tools and the run-time tools */
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {
     const { useCases, hub, liveViews, browser, viewUrl, calls, authorities, instanceViews } = dependencies;
-    const views = instanceViews === undefined ? {} : { instanceViews };
     const tools = [
         ...createCatalogTools(useCases),
         ...createAppTools(useCases, browser, instanceViews),
@@ -70,21 +67,17 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createDataTools(useCases),
         ...createLogicTools(useCases),
         ...createComposedTools(useCases),
-        ...createWriteTools(useCases, liveViews),
-        ...createStateTools({ useCases, ...views }),
-        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...views, ...(authorities !== undefined && { logic: authorities }) }),
-        ...createFileTools({ useCases, ...views }),
-        ...createDeleteTools(useCases, liveViews)
+        ...createStateTools({ useCases, instanceViews }),
+        ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, instanceViews, ...(authorities !== undefined && { logic: authorities }) }),
+        ...createFileTools({ useCases, instanceViews })
     ];
     return tools.map((tool) => (START_HERE_TOOLS.has(tool.name) ? { ...tool, description: `${tool.description} ${START_HERE}` } : tool));
 }
 
 const MAX_TARGET = 80;
 
-/** The app a call is about: `appId`, or `app` with `/` and `screen` */
+/** The app a call is about: `app`, with `/` and `screen` when the call names one */
 function targetOf(args: Readonly<Record<string, unknown>>): string | undefined {
-    const appId = args['appId'];
-    if (typeof appId === 'string') return appId.slice(0, MAX_TARGET);
     const app = args['app'];
     if (typeof app !== 'string') return undefined;
     const screen = args['screen'];

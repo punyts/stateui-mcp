@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 
@@ -21,8 +20,6 @@ export type ViewMessage =
     | { readonly type: 'command'; readonly id: string; readonly target: string; readonly command: string; readonly value?: JsonValue; readonly expiresAt: string }
     | { readonly type: 'locale'; readonly locale: string }
     | { readonly type: 'theme'; readonly kind: string; readonly name: string }
-    /** Asks the view for the synced state it holds now; it answers with a `state` report carrying the same id */
-    | { readonly type: 'state'; readonly id: string }
     | { readonly type: 'deleted' };
 
 /** One open view of an app: a browser tab of the human, or the headless page of Playwright */
@@ -62,20 +59,12 @@ interface AppChannel {
     waiters: Set<() => void>;
 }
 
-/** A state read in flight: it ends with the first state a view sends, or when every asked view has said it has none */
-interface StateRequest {
-    readonly appId: string;
-    pending: number;
-    readonly finish: (state: JsonObject | undefined) => void;
-}
-
 /**
  * The in-memory side of the live views: who has an app open, what they rendered, the `emit` events they raised and
  * the messages the server pushes to them. Nothing here is stored: a restart empties it and the views reconnect
  */
 export class PreviewHub {
     private readonly channels = new Map<string, AppChannel>();
-    private readonly stateRequests = new Map<string, StateRequest>();
 
     constructor(private readonly now: () => Date = () => new Date()) {}
 
@@ -105,38 +94,6 @@ export class PreviewHub {
             delivered++;
         }
         return delivered;
-    }
-
-    /**
-     * Asks the open views for the synced state they hold and returns the first answer, or `undefined` when no view is
-     * open, none has a state, or none answers within `timeoutMs`
-     */
-    requestState(appId: string, timeoutMs: number): Promise<JsonObject | undefined> {
-        const id = randomUUID();
-        return new Promise<JsonObject | undefined>((resolve) => {
-            const finish = (state: JsonObject | undefined): void => {
-                clearTimeout(timer);
-                this.stateRequests.delete(id);
-                resolve(state);
-            };
-            const timer = setTimeout(() => finish(undefined), timeoutMs);
-            const request: StateRequest = { appId, pending: 0, finish };
-            this.stateRequests.set(id, request);
-            request.pending = this.publish(appId, { type: 'state', id });
-            if (request.pending === 0) finish(undefined);
-        });
-    }
-
-    /** A view answers a state request; `state` is null when it has none yet. An unknown id is ignored */
-    resolveState(appId: string, requestId: string, state: JsonObject | null): void {
-        const request = this.stateRequests.get(requestId);
-        if (request === undefined || request.appId !== appId) return;
-        if (state !== null) {
-            request.finish(state);
-            return;
-        }
-        request.pending -= 1;
-        if (request.pending <= 0) request.finish(undefined);
     }
 
     /**

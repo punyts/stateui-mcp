@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreviewBrowser } from '../src/infrastructure/preview/BrowserPreview.js';
 import { BrowserUnavailableError } from '../src/infrastructure/preview/BrowserPreview.js';
 import type { ViewMessage } from '../src/infrastructure/preview/PreviewHub.js';
-import { FORM_DOCUMENT, call, inMemoryHarness, noBrowser, tempData } from './helpers.js';
-import type { InMemoryHarness, TempData } from './helpers.js';
+import { call, createApp, inMemoryHarness, noBrowser, shellOf, tempData } from './helpers.js';
+import type { CreatedApp, InMemoryHarness, TempData } from './helpers.js';
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+const EMAIL = '$.app.children.form.children.email.value';
 
 let data: TempData;
 let harness: InMemoryHarness;
@@ -18,27 +19,14 @@ function createBrowser(): typeof browser {
         open: vi.fn(async () => ({ rendered: true })),
         screenshot: vi.fn(async () => ({ png: PNG, width: 1280, height: 800, target: 'page' })),
         interact: vi.fn(async () => ({ results: [{ index: 0, action: 'click', path: '$.app', ok: true }], errors: [], events: [], cursor: 0 })),
-        rendered: vi.fn(async () => [
-            { path: '$.app', component: 'page', visible: true },
-            { path: '$.app.children.board', component: 'board', visible: true },
-            { path: '$.app.children.board.cols.k_open.body.main', component: 'recordList', visible: true },
-            { path: '$.app.children.board.cols.k_open.body.main.slots.0', component: 'card', visible: true },
-            { path: '$.app.children.board.cols.k_open.body.main.slots.0.children.total', component: 'text', visible: true },
-            { path: '$.app.children.board.cols.k_open.body.main.slots.1', component: 'card', visible: false },
-            { path: '$.app.children.board.cols.k_open.body.main.slots.1.children.total', component: 'text', visible: false },
-            { path: '$.app.children.board.cols.k_open.body.main.slots.2', component: 'card', visible: false },
-            { path: '$.app.children.drawer', component: 'drawer', visible: false },
-            { path: '$.app.children.drawer.body', component: 'panel', visible: false },
-            { path: '$.app.children.drawer.body.children.name', component: 'text', visible: false }
-        ]),
+        rendered: vi.fn(async () => []),
         closePage: vi.fn(async () => undefined),
         close: vi.fn(async () => undefined)
     };
 }
 
-async function createForm(name = 'form'): Promise<string> {
-    const created = await call(harness.client, 'ui_app_create', { name, document: FORM_DOCUMENT });
-    return created.body['appId'] as string;
+async function createForm(name = 'form'): Promise<CreatedApp> {
+    return createApp(harness.client, name);
 }
 
 /** A view that is open: it records what the server sends */
@@ -55,13 +43,15 @@ function openView(appId: string, kind: 'browser' | 'headless' = 'browser'): View
     return received;
 }
 
-/** A sync connection to the app's authority, as a view's socket makes one: it says hello and records what comes back */
-async function syncView(appId: string): Promise<{ readonly received: Record<string, unknown>[]; send(message: object): void }> {
-    const authority = await harness.services.authorities.authority(appId, FORM_DOCUMENT);
+/** A sync connection to the app's instance, as a view's socket makes one: it says hello and records what comes back */
+async function syncView(app: CreatedApp): Promise<{ readonly received: Record<string, unknown>[]; send(message: object): void }> {
+    const found = await harness.services.useCases.findPartApp.execute(app.name);
+    if (found.kind !== 'found') throw new Error('the app is stored');
+    const authority = await harness.services.instanceViews.authority(found.part);
     const received: Record<string, unknown>[] = [];
     const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Record<string, unknown>), close: () => undefined });
     const send = (message: object): void => session.receive(JSON.stringify(message));
-    send({ type: 'hello', namespace: `apps.${appId}`, revision: 0, clientId: 'view-1', protocol: 1 });
+    send({ type: 'hello', namespace: harness.services.instanceViews.namespace(found.part), revision: 0, clientId: 'view-1', protocol: 1 });
     return { received, send };
 }
 
@@ -74,99 +64,6 @@ beforeEach(async () => {
 afterEach(async () => {
     await harness.close();
     await data.cleanup();
-});
-
-describe('tool list', () => {
-    it('should list the ui-builder tools', async () => {
-        const { tools } = await harness.client.listTools();
-
-        expect(tools.map((tool) => tool.name).sort()).toEqual(
-            [
-                'ui_components_search',
-                'ui_component_get',
-                'ui_icons_list',
-                'ui_tokens_list',
-                'ui_app_create',
-                'ui_app_list',
-                'ui_app_get',
-                'ui_validate',
-                'ui_outline',
-                'ui_state_get',
-                'ui_app_write',
-                'ui_state_set',
-                'ui_preview',
-                'ui_command',
-                'ui_file_read',
-                'ui_app_delete',
-                'ui_screenshot',
-                'ui_interact',
-                'ui_events_read',
-                'ui_call_answer',
-                'ui_tree',
-                'ui_state_reset',
-                'ui_logic_trace',
-                'ui_list',
-                'ui_get',
-                'ui_delete',
-                'ui_rename',
-                'ui_app_configure',
-                'ui_screen_create',
-                'ui_nodes_write',
-                'ui_locale_write',
-                'ui_theme_create',
-                'ui_theme_write',
-                'ui_model_write',
-                'ui_data_write',
-                'ui_data_query',
-                'ui_logic_write',
-                'ui_composed_write'
-            ].sort()
-        );
-    });
-
-    it('should mark the read tools read-only and only the delete and rename tools destructive, for the client to ask the user', async () => {
-        const { tools } = await harness.client.listTools();
-        const byName = new Map(tools.map((tool) => [tool.name, tool]));
-
-        const readOnly = tools.filter((tool) => tool.annotations?.readOnlyHint === true).map((tool) => tool.name);
-        const destructive = tools.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
-
-        expect(readOnly.sort()).toEqual(
-            ['ui_components_search', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_app_list', 'ui_app_get', 'ui_validate', 'ui_outline', 'ui_tree', 'ui_state_get', 'ui_file_read', 'ui_events_read', 'ui_logic_trace', 'ui_list', 'ui_get', 'ui_data_query'].sort()
-        );
-        expect(destructive.sort()).toEqual(['ui_app_delete', 'ui_delete', 'ui_rename']);
-        expect(byName.get('ui_delete')?.annotations).toEqual(byName.get('ui_app_delete')?.annotations);
-        expect(byName.get('ui_rename')?.annotations).toEqual(byName.get('ui_delete')?.annotations);
-        expect(byName.get('ui_app_create')?.annotations?.readOnlyHint).toBe(false);
-    });
-
-    it('should carry the working loop in the server instructions and the first tool descriptions', async () => {
-        const instructions = harness.client.getInstructions() ?? '';
-        const { tools } = await harness.client.listTools();
-
-        expect(instructions).toContain('Write loop');
-        expect(instructions).toContain('Icon names come from ui_icons_list');
-        expect(instructions).toContain('no preview is open; the command was not delivered');
-        expect(instructions).toContain('ui_events_read');
-        expect(tools.find((tool) => tool.name === 'ui_app_create')?.description).toContain('Start of the working loop');
-        expect(tools.find((tool) => tool.name === 'ui_components_search')?.description).toContain('Start of the working loop');
-        expect(tools.some((tool) => tool.name === 'ui_components_list')).toBe(false);
-    });
-
-    it('should name only registered tools in the instructions and list every category of the catalog', async () => {
-        const instructions = harness.client.getInstructions() ?? '';
-        const { tools } = await harness.client.listTools();
-        const registered = new Set(tools.map((tool) => tool.name));
-        const named = new Set(instructions.match(/ui_[a-z_]+/g) ?? []);
-        const index = harness.services.categoryIndex;
-
-        expect([...named].filter((name) => !registered.has(name))).toEqual([]);
-        expect(index.length).toBeGreaterThan(0);
-        for (const entry of index) expect(instructions).toContain(`- ${entry.category} (${entry.count}): `);
-        expect(index.some((entry) => entry.category === 'graphics')).toBe(false);
-        expect(instructions.indexOf('ui_components_search')).toBeLessThan(instructions.indexOf('ui_component_get'));
-        expect(instructions.indexOf('ui_component_get')).toBeLessThan(instructions.indexOf('ui_app_create'));
-    });
 });
 
 describe('catalog tools', () => {
@@ -212,11 +109,6 @@ describe('catalog tools', () => {
         expect(tier.body['allowed']).toEqual(['composed', 'root']);
     });
 
-    it('should not register ui_components_list', async () => {
-        const result = await call(harness.client, 'ui_components_list', { query: 'button' });
-
-        expect(result.isError).toBe(true);
-    });
 
     it('should return the full entry of a component', async () => {
         const result = await call(harness.client, 'ui_component_get', { name: 'button' });
@@ -254,436 +146,48 @@ describe('catalog tools', () => {
     });
 });
 
-describe('app tools', () => {
-    it('should create an app, list it and read it', async () => {
-        const appId = await createForm();
-
-        const list = await call(harness.client, 'ui_app_list');
-        const get = await call(harness.client, 'ui_app_get', { appId, path: 'app.children.form.children.save' });
-
-        expect(list.body['count']).toBe(1);
-        expect((list.body['apps'] as { name: string; ownerId?: unknown }[])[0]).toMatchObject({ name: 'form', revision: 1 });
-        expect((list.body['apps'] as Record<string, unknown>[])[0]).not.toHaveProperty('ownerId');
-        expect(get.body['revision']).toBe(1);
-        expect(get.body['value']).toMatchObject({ component: 'button', _title: 'Save' });
-    });
-
-    it('should take a path with or without the leading $. in every path argument', async () => {
-        // Arrange
-        const appId = await createForm();
-
-        // Act
-        const get = await call(harness.client, 'ui_app_get', { appId, path: '$.app.children.form.children.save' });
-        const outline = await call(harness.client, 'ui_outline', { appId, path: '$.app.children.form' });
-        const write = await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: '$.app.children.form.children.save._title', value: 'Send' }] });
-        const set = await call(harness.client, 'ui_state_set', { appId, path: 'data.name', value: 'Ada' });
-        const command = await call(harness.client, 'ui_command', { appId, target: '$.app.children.form', command: 'nope' });
-
-        // Assert
-        expect(get.body['value']).toMatchObject({ component: 'button', _title: 'Save' });
-        expect(outline.isError).toBe(false);
-        expect(write.body['revision']).toBe(2);
-        expect(set.body).toMatchObject({ path: '$.data.name' });
-        expect(command.body['error']).not.toBe('invalid-target');
-    });
-
-    it('should refuse an invalid document with the state path, a blank name and a duplicate name', async () => {
-        await createForm();
-
-        const invalid = await call(harness.client, 'ui_app_create', { name: 'bad', document: { app: { component: 'nope' } } });
-        const blank = await call(harness.client, 'ui_app_create', { name: '  ' });
-        const duplicate = await call(harness.client, 'ui_app_create', { name: 'form' });
-
-        expect(invalid.body['error']).toBe('invalid-document');
-        expect(JSON.stringify(invalid.body['errors'])).toContain('$.app');
-        expect(blank.body['error']).toBe('invalid-argument');
-        expect(duplicate.body['error']).toBe('duplicate-name');
-    });
-
-    it('should report where a path stops existing', async () => {
-        const appId = await createForm();
-
-        const missing = await call(harness.client, 'ui_app_get', { appId, path: 'app.children.form.children.nope.children.x' });
-
-        expect(missing.body['error']).toBe('missing-path');
-        expect(missing.body['missingAt']).toBe('app.children.form.children.nope');
-    });
-
-    it('should validate and outline the stored app', async () => {
-        const appId = await createForm();
-
-        const validated = await call(harness.client, 'ui_validate', { appId });
-        const outline = await call(harness.client, 'ui_outline', { appId });
-
-        expect(validated.body['valid']).toBe(true);
-        expect((validated.body['preview'] as { attached: boolean }).attached).toBe(false);
-        expect(String(outline.body['text'])).toContain('textField email');
-        expect(String(outline.body['text'])).toContain('button save "Save"');
-    });
-
-    it('should answer an unknown app with not-found and a non-UUID id with invalid-argument', async () => {
-        const unknown = await call(harness.client, 'ui_validate', { appId: '11111111-1111-4111-8111-111111111111' });
-        const malformed = await call(harness.client, 'ui_validate', { appId: '../etc' });
-        const extra = await call(harness.client, 'ui_app_list', { workspaceId: 'w' });
-
-        expect(unknown.body['error']).toBe('not-found');
-        expect(malformed.body['error']).toBe('invalid-argument');
-        expect(extra.body['error']).toBe('invalid-argument');
-    });
-});
-
-describe('write tools', () => {
-    it('should write, raise the revision and keep the key order', async () => {
-        const appId = await createForm();
-
-        const written = await call(harness.client, 'ui_app_write', {
-            appId,
-            operations: [{ op: 'set', path: 'app.children.footer', value: { component: 'toolbar' } }],
-            expectedRevision: 1
-        });
-        const get = await call(harness.client, 'ui_app_get', { appId, path: 'app.children' });
-
-        expect(written.body).toMatchObject({ appId, revision: 2, warnings: [] });
-        expect(Object.keys(get.body['value'] as object)).toEqual(['form', 'footer']);
-    });
-
-    it('should return a conflict with the current revision for a stale write', async () => {
-        const appId = await createForm();
-        await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'app._title', value: 'A' }], expectedRevision: 1 });
-
-        const stale = await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'app._title', value: 'B' }], expectedRevision: 1 });
-
-        expect(stale.body['error']).toBe('conflict');
-        expect(stale.body['currentRevision']).toBe(2);
-    });
-
-    it('should reject an operation through a missing parent with its index, and a result with blocking errors in full', async () => {
-        const appId = await createForm();
-
-        const operation = await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'composed.x', value: {} }] });
-        const document = await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'app.children.form.component', value: 'nope' }] });
-        const stored = await call(harness.client, 'ui_app_get', { appId, path: 'app.children.form.component' });
-
-        expect(operation.body['error']).toBe('invalid-operation');
-        expect(operation.body['index']).toBe(0);
-        expect(document.body['error']).toBe('invalid-document');
-        expect(JSON.stringify(document.body['errors'])).toContain('SUI-NODE-UNKNOWN');
-        expect(stored.body['value']).toBe('panel');
-    });
-
-    it('should move a keyed entry with its key', async () => {
-        const appId = await createForm();
-
-        const moved = await call(harness.client, 'ui_app_write', {
-            appId,
-            operations: [{ op: 'move', path: 'app.children.form.children.save', before: 'email' }]
-        });
-        const get = await call(harness.client, 'ui_app_get', { appId, path: 'app.children.form.children' });
-
-        expect(moved.isError).toBe(false);
-        expect(Object.keys(get.body['value'] as object)).toEqual(['save', 'email']);
-    });
-
-    it('should set a data path in the state without raising the revision and refuse $.runtime and a stale revision', async () => {
-        const appId = await createForm();
-
-        const set = await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'Ada' });
-        const runtime = await call(harness.client, 'ui_state_set', { appId, path: '$.runtime.x', value: 1 });
-        const stale = await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'B', expectedRevision: 2 });
-        const state = await call(harness.client, 'ui_state_get', { appId });
-
-        expect(set.body).toMatchObject({ revision: 1, path: '$.data.name' });
-        expect(runtime.body['error']).toBe('runtime-path');
-        expect(stale.body['error']).toBe('conflict');
-        expect(state.body['state']).toEqual({ data: { name: 'Ada' }, app: {} });
-    });
-
-    it('should refuse a value a guard rule of the logic refuses, and run the other rules', async () => {
-        // Arrange
-        const document = {
-            data: { tasks: {}, stats: { tasks: 0 } },
-            app: { component: 'page' },
-            logic: {
-                rules: {
-                    count: { when: { path: '$.data.tasks' }, do: [{ command: 'set', target: '$.data.stats.tasks', value: '{{ size($.data.tasks) }}' }] },
-                    titled: { when: { path: '$.data.tasks.{id}', if: "$trigger.title == ''" }, do: [{ command: 'reject', reason: 'A task needs a title' }] }
-                }
-            }
-        };
-        const created = await call(harness.client, 'ui_app_create', { name: 'Guarded tasks', document });
-        const appId = created.body['appId'] as string;
-
-        // Act
-        const accepted = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', value: { title: 'first' } });
-        const refused = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', value: { title: '' } });
-        const state = await call(harness.client, 'ui_state_get', { appId });
-
-        // Assert
-        expect(accepted.isError).toBe(false);
-        expect(refused.body).toMatchObject({ error: 'logic-guard', message: `A guard rule of the app's logic refused the value: A task needs a title` });
-        expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t1: { title: 'first' } }, stats: { tasks: 1 } });
-    });
-
-    it('should write past the guards and rules with logic false, and trace what the logic did', async () => {
-        // Arrange
-        const document = {
-            data: { tasks: {}, stats: { tasks: 0 } },
-            app: { component: 'page' },
-            logic: {
-                rules: {
-                    count: { when: { path: '$.data.tasks' }, do: [{ command: 'set', target: '$.data.stats.tasks', value: '{{ size($.data.tasks) }}' }] },
-                    titled: { when: { path: '$.data.tasks.{id}', if: "$trigger.title == ''" }, do: [{ command: 'reject', reason: 'A task needs a title' }] }
-                }
-            }
-        };
-        const created = await call(harness.client, 'ui_app_create', { name: 'Traced tasks', document });
-        const appId = created.body['appId'] as string;
-
-        // Act
-        const raw = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', value: { title: '' }, logic: false });
-        const afterRaw = await call(harness.client, 'ui_state_get', { appId, path: '$.data' });
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', value: { title: 'second' } });
-        const trace = await call(harness.client, 'ui_logic_trace', { appId, clear: true });
-        const cleared = await call(harness.client, 'ui_logic_trace', { appId });
-
-        // Assert
-        expect(raw.isError).toBe(false);
-        expect(afterRaw.body['value']).toEqual({ tasks: { t1: { title: '' } }, stats: { tasks: 0 } });
-        const runs = trace.body['runs'] as { cause: string; changes: string[]; events: { name: string; outcome: string }[] }[];
-        const last = runs[runs.length - 1];
-        expect(last?.cause).toBe('change');
-        expect(last?.events).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'count', outcome: 'fired' })]));
-        expect(cleared.body['runs']).toEqual([]);
-    });
-
-    it('should put the state back to the document with ui_state_reset', async () => {
-        // Arrange
-        const appId = await createForm();
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.name', value: 'Ada' });
-
-        // Act
-        const reset = await call(harness.client, 'ui_state_reset', { appId });
-        const state = await call(harness.client, 'ui_state_get', { appId });
-
-        // Assert
-        expect(reset.body).toMatchObject({ appId, revision: 1 });
-        expect((state.body['state'] as { data: unknown; app: unknown }).data).toEqual({});
-        expect((state.body['state'] as { app: unknown }).app).toEqual({});
-    });
-
-    it('should read one part of the state and shorten data URIs unless full is set', async () => {
-        // Arrange
-        const appId = await createForm();
-        const image = `data:image/png;base64,${'A'.repeat(2000)}`;
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.avatar', value: image });
-
-        // Act
-        const short = await call(harness.client, 'ui_state_get', { appId, path: '$.data.avatar' });
-        const full = await call(harness.client, 'ui_state_get', { appId, path: '$.data.avatar', full: true });
-        const missing = await call(harness.client, 'ui_state_get', { appId, path: '$.data.nothing.here' });
-
-        // Assert
-        expect(short.body['value']).toBe('data:image/png;base64,… (2022 chars; full: true returns it)');
-        expect(full.body['value']).toBe(image);
-        expect(missing.body).toMatchObject({ error: 'unknown-path', closest: '$.data' });
-    });
-
-    it('should accept cursor as the since of ui_events_read', async () => {
-        // Arrange
-        const appId = await createForm();
-        openView(appId);
-        harness.services.hub.recordEvent(appId, 'browser-view', 'one', undefined);
-        const first = await call(harness.client, 'ui_events_read', { appId });
-        harness.services.hub.recordEvent(appId, 'browser-view', 'two', undefined);
-
-        // Act
-        const second = await call(harness.client, 'ui_events_read', { appId, cursor: first.body['cursor'] });
-
-        // Assert
-        expect((second.body['events'] as { name: string }[]).map((event) => event.name)).toEqual(['two']);
-    });
-
-    it('should list the structure as a nested list with alternating bullets and state paths', async () => {
-        // Arrange
-        const document = {
-            app: {
-                component: 'page',
-                children: {
-                    main: { component: 'panel', children: { name: { component: 'textField' }, save: { component: 'button' } } },
-                    side: { component: 'toolbar' }
-                }
-            }
-        };
-        const created = await call(harness.client, 'ui_app_create', { name: 'Tree', document });
-        const appId = created.body['appId'] as string;
-
-        // Act
-        const tree = await call(harness.client, 'ui_tree', { appId });
-        const branch = await call(harness.client, 'ui_tree', { appId, path: '$.app.children.main', paths: false });
-        const shallow = await call(harness.client, 'ui_tree', { appId, depth: 0, paths: false });
-
-        // Assert
-        expect(tree.body['text']).toBe(
-            [
-                '- app (page) $.app',
-                '  * toasts (toastRegion) [slot] $.app.toasts',
-                '  * main (panel) $.app.children.main',
-                '    - name (textField) $.app.children.main.children.name',
-                '    - save (button) $.app.children.main.children.save',
-                '  * side (toolbar) $.app.children.side'
-            ].join('\n')
-        );
-        expect(branch.body['text']).toBe(['- main (panel)', '  * name (textField)', '  * save (button)'].join('\n'));
-        expect(shallow.body['text']).toBe(['- app (page)', '  * toasts (toastRegion) [slot]', '  * main (panel) (+2 children)', '  * side (toolbar)'].join('\n'));
-        expect(tree.body['nodeCount']).toBe(6);
-    });
-
-    it('should list what the page draws with rendered true, nesting rows by path and counting hidden subtrees', async () => {
-        // Arrange
-        const appId = await createForm();
-
-        // Act
-        const tree = await call(harness.client, 'ui_tree', { appId, rendered: true, paths: false });
-        const shallow = await call(harness.client, 'ui_tree', { appId, rendered: true, depth: 1, paths: false });
-
-        // Assert
-        expect(tree.body['text']).toBe(
-            [
-                '- app (page)',
-                '  * board (board)',
-                '    - cols.k_open.body.main (recordList)',
-                '      * slots.0 (card)',
-                '        - total (text)',
-                '      * slots.1 … slots.2 (card) (2 hidden, +1 below)',
-                '  * drawer (drawer) (hidden) (+2 below)'
-            ].join('\n')
-        );
-        expect(shallow.body['text']).toBe(['- app (page)', '  * board (board) (+6 below)', '  * drawer (drawer) (hidden) (+2 below)'].join('\n'));
-        expect(browser['rendered']).toHaveBeenCalledWith(appId, 1, '$.app');
-    });
-
-    it('should queue a logic call for the agent and give the machine the answer from ui_call_answer', async () => {
-        // Arrange
-        const document = {
-            data: { phase: 'idle' },
-            app: { component: 'page' },
-            logic: {
-                machines: {
-                    lookup: {
-                        state: '$.data.phase',
-                        initial: 'idle',
-                        transitions: [
-                            { from: 'idle', when: { path: '$.data.query' }, do: [{ command: 'call', target: 'findCompany', value: { name: '$trigger' }, as: 'found' }], to: 'waiting' },
-                            { from: 'waiting', when: { result: 'found', is: 'accepted' }, do: [{ command: 'set', target: '$.data.company', value: '$result.value' }], to: 'idle' }
-                        ]
-                    }
-                }
-            }
-        };
-        const created = await call(harness.client, 'ui_app_create', { name: 'Company lookup', document });
-        const appId = created.body['appId'] as string;
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.query', value: 'Acme' });
-
-        // Act
-        const read = await call(harness.client, 'ui_events_read', { appId });
-        const event = (read.body['events'] as { name: string; payload: { id: string; name: string; payload: unknown } }[]).find((item) => item.name === 'logic.call');
-        const answered = await call(harness.client, 'ui_call_answer', { appId, id: event?.payload.id, status: 'accepted', value: { id: 'k1', name: 'Acme BV' } });
-        const again = await call(harness.client, 'ui_call_answer', { appId, id: event?.payload.id, status: 'accepted' });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const state = await call(harness.client, 'ui_state_get', { appId });
-
-        // Assert
-        expect(event?.payload).toMatchObject({ name: 'findCompany', payload: { name: 'Acme' } });
-        expect(answered.body).toEqual({ appId, id: event?.payload.id, answered: true });
-        expect(again.body['error']).toBe('not-waiting');
-        expect((state.body['state'] as { data: unknown }).data).toMatchObject({ phase: 'idle', company: { id: 'k1', name: 'Acme BV' } });
-    });
-
-    it('should remove a record under $.data with remove and refuse a missing entry, $.data itself and value with remove', async () => {
-        // Arrange
-        const appId = await createForm();
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks', value: { t1: { title: 'first' }, t2: { title: 'second' } } });
-
-        // Act
-        const removed = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t1', remove: true });
-        const missing = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t9', remove: true });
-        const root = await call(harness.client, 'ui_state_set', { appId, path: '$.data', remove: true });
-        const both = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2', remove: true, value: 1 });
-        const neither = await call(harness.client, 'ui_state_set', { appId, path: '$.data.tasks.t2' });
-        const state = await call(harness.client, 'ui_state_get', { appId });
-
-        // Assert
-        expect(removed.isError).toBe(false);
-        expect(removed.body).toMatchObject({ revision: 1, path: '$.data.tasks.t1' });
-        expect(missing.body['error']).toBe('unknown-path');
-        expect(root.body['error']).toBe('unknown-path');
-        expect(both.body['error']).toBe('invalid-argument');
-        expect(neither.body['error']).toBe('invalid-argument');
-        expect((state.body['state'] as { data: unknown }).data).toEqual({ tasks: { t2: { title: 'second' } } });
-    });
-
-    it('should push a document write to the open views and a state write to the synced views', async () => {
-        // Arrange
-        const appId = await createForm();
-        const received = openView(appId);
-        const synced = await syncView(appId);
-
-        // Act
-        await call(harness.client, 'ui_app_write', { appId, operations: [{ op: 'set', path: 'app._title', value: 'Hi' }] });
-        await call(harness.client, 'ui_state_set', { appId, path: '$.app.children.form.children.email.value', value: 'a@b.c' });
-
-        // Assert
-        const apps = received.filter((message) => message.type === 'app');
-        expect(apps.map((message) => (message.type === 'app' ? [message.reason, message.revision] : []))).toEqual([['document', 2]]);
-        expect(synced.received.at(-1)).toMatchObject({
-            type: 'changes',
-            changes: [{ path: '$.app.children.form.children.email.value', op: 'set', value: 'a@b.c', revision: 1 }]
-        });
-    });
-});
-
 describe('live tools', () => {
     it('should read the state a view changed over its sync connection, below a parent the state did not have', async () => {
         // Arrange
-        const appId = await createForm();
-        openView(appId);
-        const synced = await syncView(appId);
+        const app = await createForm();
+        openView(app.id);
+        const synced = await syncView(app);
 
         // Act
-        synced.send({ type: 'change', change: { id: 'c1', path: '$.app.children.form.children.email.value', op: 'set', value: 'typed', base: 0 } });
-        const state = await call(harness.client, 'ui_state_get', { appId });
+        synced.send({ type: 'change', change: { id: 'c1', path: EMAIL, op: 'set', value: 'typed', base: 0 } });
+        const state = await call(harness.client, 'ui_state_get', { app: app.name, path: '$.app.children.form' });
 
         // Assert
-        expect(synced.received.at(-1)).toEqual({ type: 'ack', id: 'c1', result: 'applied', revision: 1 });
-        expect(state.body['state']).toEqual({ data: {}, app: { children: { form: { children: { email: { value: 'typed' } } } } } });
+        expect(synced.received.at(-1)).toMatchObject({ type: 'ack', id: 'c1', result: 'applied' });
+        expect(state.body).toMatchObject({ source: 'instance', value: { children: { email: { value: 'typed' } } } });
         expect((state.body['preview'] as { attached: boolean }).attached).toBe(true);
     });
 
     it('should queue the emits of a synced view for ui_events_read', async () => {
-        const appId = await createForm();
-        openView(appId);
-        const synced = await syncView(appId);
+        const app = await createForm();
+        openView(app.id);
+        const synced = await syncView(app);
 
         synced.send({ type: 'emit', name: 'form.saved', value: 'ok' });
-        const events = await call(harness.client, 'ui_events_read', { appId });
+        const events = await call(harness.client, 'ui_events_read', { app: app.name });
 
         expect((events.body['events'] as { name: string; payload: unknown }[]).map((event) => [event.name, event.payload])).toEqual([['form.saved', 'ok']]);
     });
 
     it('should open the headless page and return the url a person can open', async () => {
-        const appId = await createForm();
+        const app = await createForm();
 
-        const preview = await call(harness.client, 'ui_preview', { appId });
+        const preview = await call(harness.client, 'ui_preview', { app: app.name });
 
-        expect(browser['open']).toHaveBeenCalledWith(appId, 1, undefined);
-        expect(preview.body).toMatchObject({ appId, revision: 1, url: `http://127.0.0.1:4100/apps/${appId}`, rendered: true, errors: [] });
+        expect(browser['open']).toHaveBeenCalledWith(app.id, 1, undefined);
+        expect(preview.body).toMatchObject({ app: app.name, revision: 1, url: `http://127.0.0.1:4100/apps/${app.id}`, rendered: true, errors: [] });
     });
 
     it('should still return the url, with a note, when Chromium is not installed', async () => {
-        const appId = await createForm();
+        const app = await createForm();
         browser['open']?.mockRejectedValueOnce(new BrowserUnavailableError('missing'));
 
-        const preview = await call(harness.client, 'ui_preview', { appId });
+        const preview = await call(harness.client, 'ui_preview', { app: app.name });
 
         expect(preview.isError).toBe(false);
         expect(preview.body['rendered']).toBe(false);
@@ -691,36 +195,36 @@ describe('live tools', () => {
     });
 
     it('should include the runtime errors the views reported in the preview result', async () => {
-        const appId = await createForm();
-        await harness.services.useCases.recordPreviewErrors.execute(appId, [{ code: 'SUI-RUN-BINDING', message: 'boom' }]);
+        const app = await createForm();
+        await harness.services.useCases.recordPreviewErrors.execute(app.id, [{ code: 'SUI-RUN-BINDING', message: 'boom' }]);
 
-        const preview = await call(harness.client, 'ui_preview', { appId });
+        const preview = await call(harness.client, 'ui_preview', { app: app.name });
 
         expect(preview.body['errors']).toEqual([{ code: 'SUI-RUN-BINDING', message: 'boom' }]);
     });
 
     it('should return the screenshot as an MCP image next to a short summary', async () => {
-        const appId = await createForm();
+        const app = await createForm();
 
-        const shot = await call(harness.client, 'ui_screenshot', { appId, path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
+        const shot = await call(harness.client, 'ui_screenshot', { app: app.name, path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
 
-        expect(browser['screenshot']).toHaveBeenCalledWith(appId, 1, { path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
+        expect(browser['screenshot']).toHaveBeenCalledWith(app.id, 1, { path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
         expect(shot.images).toEqual([{ data: PNG.toString('base64'), mimeType: 'image/png' }]);
-        expect(shot.body).toMatchObject({ appId, revision: 1, target: 'page', mode: 'dark' });
+        expect(shot.body).toMatchObject({ app: app.name, revision: 1, target: 'page', mode: 'dark' });
     });
 
     it('should say how to install Chromium when a screenshot cannot be taken', async () => {
-        const appId = await createForm();
+        const app = await createForm();
         browser['screenshot']?.mockRejectedValueOnce(new BrowserUnavailableError('missing'));
 
-        const shot = await call(harness.client, 'ui_screenshot', { appId });
+        const shot = await call(harness.client, 'ui_screenshot', { app: app.name });
 
         expect(shot.isError).toBe(true);
         expect(shot.body['error']).toBe('browser-unavailable');
     });
 
     it('should run the actions and return the results, errors and emits', async () => {
-        const appId = await createForm();
+        const app = await createForm();
         browser['interact']?.mockResolvedValueOnce({
             results: [{ index: 0, action: 'click', path: '$.app.children.form.children.save', ok: true }],
             errors: [],
@@ -728,15 +232,15 @@ describe('live tools', () => {
             cursor: 1
         });
 
-        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'click', path: '$.app.children.form.children.save' }] });
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app.children.form.children.save' }] });
 
-        expect(browser['interact']).toHaveBeenCalledWith(appId, 1, [{ action: 'click', path: '$.app.children.form.children.save' }]);
+        expect(browser['interact']).toHaveBeenCalledWith(app.id, 1, [{ action: 'click', path: '$.app.children.form.children.save' }]);
         expect(result.isError).toBe(false);
         expect(result.body['emits']).toEqual([{ cursor: 1, name: 'form.saved', payload: 'ok', at: 'now', view: 'headless' }]);
     });
 
     it('should mark the call as an error when an action failed and keep the results', async () => {
-        const appId = await createForm();
+        const app = await createForm();
         browser['interact']?.mockResolvedValueOnce({
             results: [{ index: 0, action: 'click', path: '$.app.x', ok: false, error: 'Nothing is rendered' }],
             errors: [],
@@ -744,7 +248,7 @@ describe('live tools', () => {
             cursor: 0
         });
 
-        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'click', path: '$.app.x' }] });
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app.x' }] });
 
         expect(result.isError).toBe(true);
         expect(result.body['error']).toBe('action-failed');
@@ -752,42 +256,53 @@ describe('live tools', () => {
     });
 
     it('should refuse an action it does not know', async () => {
-        const appId = await createForm();
+        const app = await createForm();
 
-        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'swipe', path: '$.app' }] });
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'swipe', path: '$.app' }] });
 
         expect(result.body['error']).toBe('invalid-argument');
         expect(browser['interact']).not.toHaveBeenCalled();
     });
 
     it('should refuse an action other than key that has no path', async () => {
-        const appId = await createForm();
+        const app = await createForm();
 
-        const result = await call(harness.client, 'ui_interact', { appId, actions: [{ action: 'key', value: 'Space' }, { action: 'click' }] });
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'key', value: 'Space' }, { action: 'click' }] });
 
         expect(result.body['error']).toBe('invalid-argument');
         expect(browser['interact']).not.toHaveBeenCalled();
     });
 
     it('should read the queued emit events after a cursor', async () => {
-        const appId = await createForm();
-        openView(appId);
-        harness.services.hub.recordEvent(appId, 'browser-view', 'one', { n: 1 });
-        const first = await call(harness.client, 'ui_events_read', { appId });
-        harness.services.hub.recordEvent(appId, 'browser-view', 'two', undefined);
+        const app = await createForm();
+        openView(app.id);
+        harness.services.hub.recordEvent(app.id, 'browser-view', 'one', { n: 1 });
+        const first = await call(harness.client, 'ui_events_read', { app: app.name });
+        harness.services.hub.recordEvent(app.id, 'browser-view', 'two', undefined);
 
-        const next = await call(harness.client, 'ui_events_read', { appId, since: first.body['cursor'] });
+        const next = await call(harness.client, 'ui_events_read', { app: app.name, since: first.body['cursor'] });
 
         expect((first.body['events'] as { name: string }[]).map((event) => event.name)).toEqual(['one']);
         expect((next.body['events'] as { name: string }[]).map((event) => event.name)).toEqual(['two']);
         expect(next.body['cursor']).toBe(2);
     });
 
-    it('should keep at most 500 events per app', async () => {
-        const appId = await createForm();
-        for (let n = 0; n < 510; n++) harness.services.hub.recordEvent(appId, 'v', `e${n}`, n);
+    it('should accept cursor as the since of ui_events_read', async () => {
+        const app = await createForm();
+        openView(app.id);
+        harness.services.hub.recordEvent(app.id, 'browser-view', 'one', 1);
+        harness.services.hub.recordEvent(app.id, 'browser-view', 'two', 2);
 
-        const result = await call(harness.client, 'ui_events_read', { appId });
+        const result = await call(harness.client, 'ui_events_read', { app: app.name, cursor: 1 });
+
+        expect((result.body['events'] as { name: string }[]).map((event) => event.name)).toEqual(['two']);
+    });
+
+    it('should keep at most 500 events per app', async () => {
+        const app = await createForm();
+        for (let n = 0; n < 510; n++) harness.services.hub.recordEvent(app.id, 'v', `e${n}`, n);
+
+        const result = await call(harness.client, 'ui_events_read', { app: app.name });
 
         const events = result.body['events'] as { name: string }[];
         expect(events).toHaveLength(500);
@@ -795,26 +310,20 @@ describe('live tools', () => {
     });
 
     it('should say no preview is open when a command has no view to go to', async () => {
-        const appId = await call(harness.client, 'ui_app_create', {
-            name: 'toasts',
-            document: { app: { component: 'page', children: { toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } } } }
-        }).then((created) => created.body['appId'] as string);
+        const app = await createApp(harness.client, 'toasts', shellOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
 
-        const result = await call(harness.client, 'ui_command', { appId, target: 'app.children.toasts', command: 'show', value: 'saved' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.toasts', command: 'show', value: 'saved' });
 
         expect(result.isError).toBe(false);
         expect(result.body).toMatchObject({ previewAttached: false, message: 'no preview is open; the command was not delivered' });
     });
 
     it('should deliver a command to every open view, the headless page included', async () => {
-        const appId = await call(harness.client, 'ui_app_create', {
-            name: 'toasts',
-            document: { app: { component: 'page', children: { toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } } } }
-        }).then((created) => created.body['appId'] as string);
-        const person = openView(appId, 'browser');
-        const headless = openView(appId, 'headless');
+        const app = await createApp(harness.client, 'toasts', shellOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
+        const person = openView(app.id, 'browser');
+        const headless = openView(app.id, 'headless');
 
-        const result = await call(harness.client, 'ui_command', { appId, target: 'app.children.toasts', command: 'show', value: 'saved' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.toasts', command: 'show', value: 'saved' });
 
         expect(result.body).toMatchObject({ previewAttached: true, message: 'delivered to 2 open views' });
         for (const received of [person, headless]) {
@@ -822,59 +331,25 @@ describe('live tools', () => {
         }
     });
 
-    it('should issue navigate with a screen name and refuse a screen the app does not have', async () => {
-        // Arrange
-        const appId = await call(harness.client, 'ui_app_create', {
-            name: 'shop',
-            document: {
-                app: { component: 'page', children: { header: { component: 'text', _text: 'Shop' }, main: { component: 'outlet' } } },
-                screens: {
-                    home: { title: 'Home', root: { component: 'page', children: { toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } } } },
-                    product: { title: 'Product', params: { id: { type: 'string', required: true } }, root: { component: 'page' } }
-                },
-                start: 'home'
-            }
-        }).then((created) => created.body['appId'] as string);
-        const view = openView(appId, 'browser');
-
-        // Act
-        const moved = await call(harness.client, 'ui_command', { appId, target: 'product', command: 'navigate', value: { id: 'p1' } });
-        const unknown = await call(harness.client, 'ui_command', { appId, target: 'cart', command: 'navigate' });
-        const notObject = await call(harness.client, 'ui_command', { appId, target: 'product', command: 'navigate', value: 'p1' });
-        const inScreen = await call(harness.client, 'ui_command', { appId, target: 'screens.home.children.toasts', command: 'show', value: 'saved' });
-        const missing = await call(harness.client, 'ui_command', { appId, target: 'screens.home.children.nope', command: 'show' });
-
-        // Assert
-        expect(moved.isError).toBe(false);
-        expect(view.filter((message) => message.type === 'command')).toMatchObject([
-            { target: 'product', command: 'navigate', value: { id: 'p1' } },
-            { target: 'screens.home.children.toasts', command: 'show', value: 'saved' }
-        ]);
-        expect(unknown.body).toMatchObject({ error: 'unknown-screen', screens: ['home', 'product'] });
-        expect(notObject.body['error']).toBe('invalid-value');
-        expect(inScreen.isError).toBe(false);
-        expect(missing.body).toMatchObject({ error: 'missing-path', missingAt: 'screens.home.children.nope' });
-    });
-
     it('should refuse an undeclared command with the declared ones', async () => {
-        const appId = await createForm();
+        const app = await createForm();
 
-        const result = await call(harness.client, 'ui_command', { appId, target: 'app.children.form.children.save', command: 'explode' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.form.children.save', command: 'explode' });
 
         expect(result.body['error']).toBe('unknown-command');
         expect(result.body['declared']).toEqual(['focus']);
     });
 });
 
-describe('file and delete tools', () => {
+describe('file tool', () => {
     async function* bytes(text: string): AsyncIterable<Uint8Array> {
         yield Buffer.from(text);
     }
 
     it('should read an uploaded text file and return null text for an image', async () => {
-        const appId = await createForm();
-        const text = await harness.services.useCases.uploadFile.execute(appId, { name: 'notes.txt', content: bytes('hello') });
-        const image = await harness.services.useCases.uploadFile.execute(appId, {
+        const app = await createForm();
+        const text = await harness.services.useCases.uploadFile.execute(app.id, { name: 'notes.txt', content: bytes('hello') });
+        const image = await harness.services.useCases.uploadFile.execute(app.id, {
             name: 'pic.png',
             content: (async function* () {
                 yield Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(16)]);
@@ -882,47 +357,13 @@ describe('file and delete tools', () => {
         });
         if (text.kind !== 'uploaded' || image.kind !== 'uploaded') throw new Error('upload failed');
 
-        const readText = await call(harness.client, 'ui_file_read', { appId, fileId: text.file.id });
-        const readImage = await call(harness.client, 'ui_file_read', { appId, fileId: image.file.id });
-        const missing = await call(harness.client, 'ui_file_read', { appId, fileId: '11111111-1111-4111-8111-111111111111' });
+        const readText = await call(harness.client, 'ui_file_read', { app: app.name, fileId: text.file.id });
+        const readImage = await call(harness.client, 'ui_file_read', { app: app.name, fileId: image.file.id });
+        const missing = await call(harness.client, 'ui_file_read', { app: app.name, fileId: '11111111-1111-4111-8111-111111111111' });
 
         expect(readText.body).toMatchObject({ file: { name: 'notes.txt', type: 'text/plain', size: 5 }, text: 'hello', truncated: false });
         expect(readImage.body).toMatchObject({ file: { type: 'image/png' }, text: null });
         expect(missing.body['error']).toBe('not-found');
-    });
-
-    it('should delete only at the expected revision, close the views and forget the app', async () => {
-        const appId = await createForm();
-        const received = openView(appId);
-
-        const stale = await call(harness.client, 'ui_app_delete', { appId, expectedRevision: 9 });
-        const deleted = await call(harness.client, 'ui_app_delete', { appId, expectedRevision: 1 });
-        const again = await call(harness.client, 'ui_app_delete', { appId, expectedRevision: 1 });
-
-        expect(stale.body).toMatchObject({ error: 'conflict', currentRevision: 1 });
-        expect(deleted.body).toEqual({ appId, revision: 1 });
-        expect(again.body['error']).toBe('not-found');
-        expect(received.some((message) => message.type === 'deleted')).toBe(true);
-        expect(browser['closePage']).toHaveBeenCalledWith(appId);
-        expect((await call(harness.client, 'ui_app_list')).body['count']).toBe(0);
-    });
-
-    it('should require expectedRevision for a delete', async () => {
-        const appId = await createForm();
-
-        const result = await call(harness.client, 'ui_app_delete', { appId });
-
-        expect(result.body['error']).toBe('invalid-argument');
-    });
-});
-
-describe('unknown tool', () => {
-    it('should answer an unknown tool name with a typed error', async () => {
-        const result = await call(harness.client, 'ui_nothing');
-
-        expect(result.isError).toBe(true);
-        expect(result.body['error']).toBe('unknown-tool');
-        expect(noBrowser).toBeDefined();
     });
 });
 
@@ -938,7 +379,7 @@ describe('tool-call log', () => {
             // Act
             await call(logged.client, 'ui_component_get', { name: 'buton' });
             await call(logged.client, 'ui_component_get', { name: 'button' });
-            await call(logged.client, 'ui_nothing', { appId: 'a1' });
+            await call(logged.client, 'ui_nothing', { app: 'a1' });
 
             // Assert
             await vi.waitFor(async () => expect(await read()).toHaveLength(3));
@@ -954,25 +395,24 @@ describe('tool-call log', () => {
         }
     });
 
-    it('should log the app as the target and count errors and warnings of a write', async () => {
+    it('should log the app as the target and count the errors and warnings of a validation', async () => {
         // Arrange
         const file = join(data.dir, 'calls.jsonl');
         const logged = await inMemoryHarness(data.dir, noBrowser, file);
         try {
-            const created = await call(logged.client, 'ui_app_create', { name: 'Logged' });
-            const appId = created.body['appId'] as string;
+            const created = await createApp(logged.client, 'logged');
 
             // Act
-            const validated = await call(logged.client, 'ui_validate', { appId });
+            const validated = await call(logged.client, 'ui_validate', { app: created.name });
 
             // Assert
             await vi.waitFor(async () => expect((await readFile(file, 'utf8')).trim().split('\n')).toHaveLength(2));
             const lines = (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
             expect(lines[0]).toMatchObject({ tool: 'ui_app_create', ok: true });
             expect(lines[0]).not.toHaveProperty('target');
-            expect(lines[1]).toMatchObject({ tool: 'ui_validate', target: appId });
-            if (Array.isArray(validated.body['errors'])) expect(lines[1]?.['errorCount']).toBe((validated.body['errors'] as unknown[]).length);
-            if (Array.isArray(validated.body['warnings'])) expect(lines[1]?.['warningCount']).toBe((validated.body['warnings'] as unknown[]).length);
+            expect(lines[1]).toMatchObject({ tool: 'ui_validate', target: created.name });
+            expect(lines[1]?.['errorCount']).toBe((validated.body['errors'] as unknown[]).length);
+            expect(lines[1]?.['warningCount']).toBe((validated.body['warnings'] as unknown[]).length);
         } finally {
             await logged.close();
         }

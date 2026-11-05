@@ -2,7 +2,7 @@ import type { Authority } from '@punyts/state-sync/authority';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
 import type { UiPartRepository, UiPartSummary } from '../../application/ports/UiPartRepository.js';
 import type { UsageSource } from '../../application/UsageIndex.js';
-import { collectIconNames } from '../../application/use-cases/GetUiApp.js';
+import { collectIconNames } from '../../application/collectIconNames.js';
 import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
 import type { PartKind } from '../../domain/partName.js';
 import type { UiPart } from '../../domain/UiPart.js';

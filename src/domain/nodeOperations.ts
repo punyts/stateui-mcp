@@ -22,7 +22,7 @@ export interface AddOperation {
     readonly after?: string;
 }
 
-/** One change to a tree: the operations of `ui_app_write`, on paths that start with `root`, and `add` */
+/** One change to a tree: the operations `set`, `remove`, `merge` and `move`, on paths that start with `root`, and `add` */
 export type NodeOperation = WriteOperation | AddOperation;
 
 export type NodeOperationResult =

@@ -8,8 +8,6 @@ export interface CliOptions {
     readonly runtimePort: number | undefined;
     readonly stdio: boolean;
     readonly runtimeDir: string | undefined;
-    /** The statenet's WebSocket URL (`ws://127.0.0.1:4200/sync`); `undefined`: the state stays in the data folder */
-    readonly statenet: string | undefined;
     /** A file holding the key that encrypts `$.server` */
     readonly secretKeyFile: string | undefined;
     /** The key itself, from the environment only (hex or base64) */
@@ -37,9 +35,6 @@ Options:
                        so the browser view works. Logs go to stderr only
   --runtime-dir <dir>  Folder of the built StateUI runtime bundle
                        (env STATEUI_MCP_RUNTIME_DIR, default: the one in @punyts/stateui-app)
-  --statenet <url>     Keep the app state in a statenet, such as ws://127.0.0.1:4200/sync
-                       (env STATEUI_MCP_STATENET). Start the statenet with
-                       --allow-origin http://<host>:<port> so Persisted apps can reach it
   --secret-key-file <file>
                        The key that encrypts $.server at rest: 32 raw bytes, 64 hex
                        characters or base64 (env STATEUI_MCP_SECRET_KEY_FILE, or the key
@@ -128,7 +123,6 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
     let port = env['STATEUI_MCP_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_PORT']) : 4100;
     let runtimePort = env['STATEUI_MCP_RUNTIME_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_RUNTIME_PORT']) : undefined;
     let runtimeDir = env['STATEUI_MCP_RUNTIME_DIR'];
-    let statenet = env['STATEUI_MCP_STATENET'];
     let secretKeyFile = env['STATEUI_MCP_SECRET_KEY_FILE'];
     let toolLog = env['STATEUI_MCP_TOOL_LOG'];
     let stdio = false;
@@ -159,9 +153,6 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
             case '--runtime-dir':
                 runtimeDir = value();
                 break;
-            case '--statenet':
-                statenet = value();
-                break;
             case '--secret-key-file':
                 secretKeyFile = value();
                 break;
@@ -179,7 +170,6 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
                 throw new UsageError(`Unknown option: ${argument}`);
         }
     }
-    if (statenet !== undefined && statenet !== '' && !/^wss?:\/\//.test(statenet)) throw new UsageError(`The statenet URL must start with ws:// or wss://: ${statenet}`);
     return {
         dataDir: resolve(dataDir),
         host,
@@ -187,7 +177,6 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
         runtimePort,
         stdio,
         runtimeDir: runtimeDir === undefined ? undefined : resolve(runtimeDir),
-        statenet: statenet === '' ? undefined : statenet,
         secretKeyFile: secretKeyFile === undefined || secretKeyFile === '' ? undefined : resolve(secretKeyFile),
         secretKey: env['STATEUI_MCP_SECRET_KEY'],
         toolLog: toolLog === undefined || toolLog === '' ? undefined : resolve(toolLog),

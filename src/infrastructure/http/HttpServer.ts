@@ -5,7 +5,6 @@ import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { UiAppRepository } from '../../application/ports/UiAppRepository.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
@@ -16,7 +15,6 @@ import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { Authority } from '@punyts/state-sync/authority';
-import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle } from './runtimeBundle.js';
@@ -35,15 +33,10 @@ export interface HttpServerOptions {
     /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
     readonly runtimePort: number;
     readonly useCases: UiBuilderUseCases;
-    readonly repository: UiAppRepository;
     readonly hub: PreviewHub;
-    /** The sync authority of each app, which the views' sockets connect to */
-    readonly authorities: AppAuthorities;
-    /** The statenet's WebSocket URL, which the views of Persisted apps connect to */
-    readonly statenet?: string;
     readonly liveViews: LiveViews;
-    /** The views of the owner's apps (parts): an app id that is not an app document's is looked up here */
-    readonly instances?: InstanceViews;
+    /** The views of the owner's apps (parts): what a view is sent and the authority its socket talks to */
+    readonly instances: InstanceViews;
     readonly mcp: McpEndpoint;
     readonly runtime: RuntimeBundle;
     /** The compiled host script, served as `/assets/host.js` */
@@ -139,8 +132,8 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  *
  * | Route | What |
  * |---|---|
- * | `GET /` | the apps (documents and app parts), with a link to each |
- * | `GET /apps/:appId` | the live view of an app: an app document, or an owner app (a part) assembled, with the default persona's instance |
+ * | `GET /` | the app parts, with a link to each |
+ * | `GET /apps/:appId` | the live view of an app part: assembled, with the default persona's instance |
  * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
@@ -157,7 +150,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
-    const { useCases, repository, hub, authorities, liveViews, runtime, report } = options;
+    const { useCases, hub, liveViews, instances, runtime, report } = options;
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
     // Both known after listen, so a port of 0 works
@@ -200,8 +193,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             return;
         }
         if (method === 'GET' && path === '/') {
-            // The app documents and the owner's app parts, the most recently changed first
-            const apps = [...(await repository.list()), ...((await options.instances?.list()) ?? [])].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+            // The owner's app parts, the most recently changed first
+            const apps = [...(await instances.list())].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
             send(response, 200, 'text/html; charset=utf-8', indexPage(apps), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
             return;
         }
@@ -228,26 +221,22 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     }
 
     async function appRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
-        const app = await repository.findById(appId);
-        const part = app === undefined ? await options.instances?.find(appId) : undefined;
-        if (app === undefined && part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
+        const part = await instances.find(appId);
+        if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
-        const persistedUrl = app?.sync === 'persisted' ? options.statenet : undefined;
         const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
-        const namespace = part === undefined ? undefined : options.instances?.namespace(part);
         send(
             response,
             200,
             'text/html; charset=utf-8',
             appPage({
                 appId,
-                name: app?.name ?? part?.name ?? '',
+                name: part.name,
                 runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
                 viewKind: headless ? 'headless' : 'browser',
-                ...(persistedUrl !== undefined && { statenetUrl: persistedUrl }),
-                ...(namespace !== undefined && { namespace })
+                namespace: instances.namespace(part)
             }),
-            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin, persistedUrl), 'Cache-Control': 'no-store' }
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
         );
     }
 
@@ -272,18 +261,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
                 hub.recordErrors(appId, errors);
                 const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision, source);
-                // An owner app's errors are kept by the hub only, until its preview log moves to the parts (epic 3)
-                if (recorded.kind === 'not-found' && (await options.instances?.find(appId)) === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-                hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            case 'state': {
-                const state = body['state'];
-                if (typeof body['requestId'] !== 'string' || (state !== null && !isJsonObject(state))) {
-                    throw new HttpError(400, 'A state report has a requestId and a state object or null', 'invalid_report');
-                }
-                hub.resolveState(appId, body['requestId'], state);
+                if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
                 hub.touch(appId, viewId);
                 sendJson(response, 200, { ok: true });
                 return;
@@ -377,7 +355,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     /**
      * `GET /apps/:appId/sync`: the WebSocket of one view. The view joins the hub (document, commands, locale, theme and
-     * deletion reach it as `{ type: 'view', message }` frames, the attach message first) and connects to the app's
+     * deletion reach it as `{ type: 'view', message }` frames, the attach message first) and connects to the instance's
      * sync authority, which gets every other text frame. Closing the socket leaves both
      */
     async function syncUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
@@ -390,15 +368,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const viewId = url.searchParams.get('view');
         if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
         if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
-        const app = await repository.findById(appId);
-        const part = app === undefined ? await options.instances?.find(appId) : undefined;
-        const first = app === undefined && part === undefined ? undefined : await liveViews.attachMessage(appId);
+        const part = await instances.find(appId);
+        if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
+        const first = await liveViews.attachMessage(appId);
         if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        // A Persisted app's views sync with the statenet; this socket carries only their view frames. An owner app's
-        // views sync with the default persona's instance
-        let authority: Authority | undefined;
-        if (part !== undefined) authority = await options.instances?.authority(part);
-        else if (app !== undefined && app.sync !== 'persisted') authority = await authorities.authority(appId, app.document);
+        // The view syncs with the default persona's instance of the app
+        const authority: Authority = await instances.authority(part);
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
                 if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
@@ -406,7 +381,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
             const detach = hub.attach(appId, connection);
             sendView(first);
-            const session = authority?.connect({
+            const session = authority.connect({
                 send: (text) => {
                     if (ws.readyState === ws.OPEN) ws.send(text);
                 },
@@ -419,12 +394,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     return;
                 }
                 hub.touch(appId, viewId);
-                session?.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
+                session.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
             });
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {
                 clearInterval(timer);
-                session?.close();
+                session.close();
                 detach();
             });
         });

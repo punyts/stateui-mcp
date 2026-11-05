@@ -81,17 +81,17 @@ describe('the run-time tools', () => {
         for (const name of RUN_TIME_TOOLS) expect(described.get(name), name).toMatch(/^Run time: /);
     });
 
-    it('should need exactly one of app and appId, refuse other personas and name the nearest apps', async () => {
+    it('should need an app, refuse other personas and name the nearest apps', async () => {
         // Act
         const neither = await call(harness.client, 'ui_state_get', {});
-        const both = await call(harness.client, 'ui_state_get', { app: 'shop', appId: '00000000-0000-4000-8000-0000000000aa' });
+        const byId = await call(harness.client, 'ui_state_get', { appId: '00000000-0000-4000-8000-0000000000aa' });
         const persona = await call(harness.client, 'ui_events_read', { app: 'shop', persona: 'guest' });
         const missing = await call(harness.client, 'ui_events_read', { app: 'shp' });
         const events = await call(harness.client, 'ui_events_read', { app: 'shop', persona: 'default' });
 
         // Assert
         expect(neither.body).toMatchObject({ error: 'invalid-argument' });
-        expect(both.body).toMatchObject({ error: 'invalid-argument' });
+        expect(byId.body).toMatchObject({ error: 'invalid-argument' });
         expect(persona.body).toMatchObject({ error: 'invalid-argument', argument: 'persona', personas: ['default'] });
         expect(missing.body).toMatchObject({ error: 'not-found', nearest: ['shop'] });
         expect(events.body).toEqual({ app: 'shop', events: [], cursor: 0 });
@@ -166,14 +166,12 @@ describe('ui_preview and ui_command on an instance', () => {
         // Act
         const shown = await call(harness.client, 'ui_preview', { app: 'shop', screen: 'about', params: { from: 'test' } });
         const unknown = await call(harness.client, 'ui_preview', { app: 'shop', screen: 'abuot' });
-        const stored = await call(harness.client, 'ui_screenshot', { appId: '00000000-0000-4000-8000-0000000000aa', screen: 'about' });
         const loose = await call(harness.client, 'ui_preview', { app: 'shop', params: {} });
 
         // Assert
         expect(shown.body).toMatchObject({ app: 'shop', revision: 1, rendered: true, url: `http://127.0.0.1:4100/apps/${appId}` });
         expect(open).toHaveBeenCalledWith(appId, expect.any(Number), { screen: 'about', params: { from: 'test' } });
         expect(unknown.body).toMatchObject({ error: 'invalid-argument', argument: 'screen', screens: ['home', 'about'] });
-        expect(stored.body).toMatchObject({ error: 'not-found' });
         expect(loose.body).toMatchObject({ error: 'invalid-argument', argument: 'params' });
     });
 

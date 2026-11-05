@@ -104,60 +104,6 @@ describe('PreviewHub', () => {
         expect(hub.errorsSince(APP, cursor).map((error) => error.code)).toEqual(['B']);
     });
 
-    it('should send a state request to every view and return the first state a view answers', async () => {
-        const hub = new PreviewHub();
-        const first = connect(hub, 'a');
-        const second = connect(hub, 'b', 'headless');
-
-        const reading = hub.requestState(APP, 1000);
-        const request = first.messages[0];
-        const id = request?.type === 'state' ? request.id : '';
-        hub.resolveState(APP, id, null);
-        hub.resolveState(APP, id, { data: { n: 1 }, app: {} });
-
-        expect(await reading).toEqual({ data: { n: 1 }, app: {} });
-        expect(second.messages).toEqual([{ type: 'state', id }]);
-    });
-
-    it('should return no state at once when no view is open', async () => {
-        const hub = new PreviewHub();
-
-        expect(await hub.requestState(APP, 1000)).toBeUndefined();
-    });
-
-    it('should return no state when every view says it has none', async () => {
-        const hub = new PreviewHub();
-        const view = connect(hub, 'a');
-        const other = connect(hub, 'b');
-
-        const reading = hub.requestState(APP, 1000);
-        const id = (view.messages[0] as { id: string }).id;
-        hub.resolveState(APP, id, null);
-        hub.resolveState(APP, id, null);
-
-        expect(await reading).toBeUndefined();
-        expect(other.messages).toHaveLength(1);
-    });
-
-    it('should give up on a state request no view answers', async () => {
-        const hub = new PreviewHub();
-        connect(hub, 'a');
-
-        expect(await hub.requestState(APP, 20)).toBeUndefined();
-    });
-
-    it('should ignore an answer with an unknown id or from another app', async () => {
-        const hub = new PreviewHub();
-        const view = connect(hub, 'a');
-
-        const reading = hub.requestState(APP, 30);
-        const id = (view.messages[0] as { id: string }).id;
-        hub.resolveState(APP, 'unknown', { data: {}, app: {} });
-        hub.resolveState('22222222-2222-4222-8222-222222222222', id, { data: {}, app: {} });
-
-        expect(await reading).toBeUndefined();
-    });
-
     it('should mark the views of a kind as not rendered until they report again', async () => {
         const hub = new PreviewHub();
         connect(hub, 'a', 'headless');

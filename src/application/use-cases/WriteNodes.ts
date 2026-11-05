@@ -50,7 +50,7 @@ function withTree(body: UiPartBodies['apps'], target: TreeTarget, tree: JsonObje
 }
 
 /**
- * Writes the nodes of one tree of an app, the shell or one screen, with the node language of `ui_app_write` plus
+ * Writes the nodes of one tree of an app, the shell or one screen, with the operations of `set`, `remove`, `merge` and `move` plus
  * `add`: the operations apply in order to a copy of the tree, then the app is checked as a whole (assembled with its
  * parts) and stored only when nothing blocks, as one write of the app that raises its revision once
  */
