@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { ToolCallEntry, ToolCallLog } from '../../application/ports/ToolCallLog.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
@@ -13,7 +14,7 @@ import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
 import { createDeleteTools } from './deleteTools.js';
 import { createFileTools } from './fileTools.js';
-import { SERVER_INSTRUCTIONS, START_HERE } from './instructions.js';
+import { buildServerInstructions, START_HERE } from './instructions.js';
 import { createLiveTools } from './liveTools.js';
 import { createNodeTools } from './nodeTools.js';
 import { createThemeTools } from './themeTools.js';
@@ -34,6 +35,8 @@ export const STATEUI_MCP_VERSION = '0.1.0';
 /** What the tools run on: the use cases, the live views and the headless browser */
 export interface StateUiToolDependencies {
     readonly useCases: UiBuilderUseCases;
+    /** The catalog's category index, which the server instructions list */
+    readonly categoryIndex: readonly CategoryIndexEntry[];
     readonly hub: PreviewHub;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
@@ -134,7 +137,7 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
 
     const server = new Server(
         { name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION },
-        { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
+        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex) }
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({

@@ -475,7 +475,7 @@ describe('/mcp session flow', () => {
         const afterClose = await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' }) });
 
         expect(sessionId).not.toBe('');
-        expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Working loop'));
+        expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Plan before you search'));
         expect((list.result?.['tools'] as unknown[]).length).toBe(38);
         expect(closed.status).toBe(200);
         expect(afterClose.status).toBe(404);

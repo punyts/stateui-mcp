@@ -4,8 +4,28 @@
  * starts with, in their descriptions
  */
 
+import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
+
+/**
+ * Plan first, then search the catalog by need, then build and check; with the generated category index. Its own
+ * function so the owner-tree instructions (O3.12) can rewrite the other sections without touching it
+ */
+export function searchWorkflowSection(index: readonly CategoryIndexEntry[]): string {
+    return [
+        'Plan before you search. Decide the sections of the app, their layout, the mood of its theme (colors, type and shape that suit the subject), the data it holds and how it behaves. Make no catalog call yet.',
+        'Then, for each part of the plan: ui_components_search with the need in plain words ("pick a date range", "show totals by month"), ui_component_get for the component you choose, then ui_app_create, ui_app_write, ui_validate, ui_preview and ui_screenshot to see the result. A weak result means nothing fitted well: say the need another way, or narrow it with a category from the index below.',
+        'A large app (more than three screens, or one that writes to an owner dataset other apps use): show the plan to the user and wait for their OK before you build. A small app: go straight to building. This order is guidance, not a rule.',
+        categoryIndexText(index)
+    ].join('\n\n');
+}
+
+/** One header line, then one line per category that has members: its count and three typical members */
+function categoryIndexText(index: readonly CategoryIndexEntry[]): string {
+    return ['Component categories (count, typical members):', ...index.map((entry) => `- ${entry.category} (${entry.count}): ${entry.typical.join(', ')}`)].join('\n');
+}
+
 const WORKING_LOOP = [
-    'Working loop: ui_components_search with each need in plain words to find components, ui_component_get for the shape of each one you use, ui_app_create, then ui_app_write, ui_validate, ui_preview and ui_screenshot to see the result. ui_tree shows the structure with the path of every node, ui_outline the content; ui_interact clicks, types and drags in the running app.',
+    'ui_tree shows the structure with the path of every node, ui_outline the content; ui_interact clicks, types and drags in the running app.',
     'Paths: "$.app.children.main" and "app.children.main" name the same node, and every tool takes either form. Rows of a list and cards of a board get their own paths while the app runs (...body.main.slots.0); ui_tree with rendered: true lists them, for ui_interact and ui_screenshot.',
     'Write loop: read the part you will change with ui_app_get and a path, call ui_app_write with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat.',
     'Icon names come from ui_icons_list. Never guess an icon name.',
@@ -32,8 +52,17 @@ const SAFETY = [
     'ui_app_delete and ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.'
 ];
 
-/** The `instructions` field of the server, shown by the client to the model */
-export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LOGIC, ...LIVE_VIEW, ...SAFETY].join('\n\n');
+/** The `instructions` field of the server, shown by the client to the model, with the catalog's category index */
+export function buildServerInstructions(index: readonly CategoryIndexEntry[]): string {
+    return [
+        'StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.',
+        searchWorkflowSection(index),
+        ...WORKING_LOOP,
+        ...LOGIC,
+        ...LIVE_VIEW,
+        ...SAFETY
+    ].join('\n\n');
+}
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
 export const START_HERE = 'Start of the working loop: ui_components_search, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';

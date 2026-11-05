@@ -152,6 +152,21 @@ describe('tool list', () => {
         expect(tools.find((tool) => tool.name === 'ui_components_search')?.description).toContain('Start of the working loop');
         expect(tools.some((tool) => tool.name === 'ui_components_list')).toBe(false);
     });
+
+    it('should name only registered tools in the instructions and list every category of the catalog', async () => {
+        const instructions = harness.client.getInstructions() ?? '';
+        const { tools } = await harness.client.listTools();
+        const registered = new Set(tools.map((tool) => tool.name));
+        const named = new Set(instructions.match(/ui_[a-z_]+/g) ?? []);
+        const index = harness.services.categoryIndex;
+
+        expect([...named].filter((name) => !registered.has(name))).toEqual([]);
+        expect(index.length).toBeGreaterThan(0);
+        for (const entry of index) expect(instructions).toContain(`- ${entry.category} (${entry.count}): `);
+        expect(index.some((entry) => entry.category === 'graphics')).toBe(false);
+        expect(instructions.indexOf('ui_components_search')).toBeLessThan(instructions.indexOf('ui_component_get'));
+        expect(instructions.indexOf('ui_component_get')).toBeLessThan(instructions.indexOf('ui_app_create'));
+    });
 });
 
 describe('catalog tools', () => {

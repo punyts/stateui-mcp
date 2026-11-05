@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
+import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
@@ -66,6 +67,8 @@ export interface Services {
     readonly liveViews: LiveViews;
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
+    /** The catalog's category index, for the server instructions */
+    readonly categoryIndex: readonly CategoryIndexEntry[];
     /** Finishes a part rename that a crash stopped halfway (`rename.pending.json`); true when there was one */
     readonly recoverParts: () => Promise<boolean>;
     readonly browser: PreviewBrowser;
@@ -129,6 +132,7 @@ export function createServices(options: ServicesOptions): Services {
         calls: authorities.calls,
         liveViews,
         instanceViews,
+        categoryIndex: catalog.categoryIndex(),
         recoverParts: () => partFiles.recover(),
         browser,
         report: options.report,

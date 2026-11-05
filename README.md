@@ -72,7 +72,7 @@ A `.mcp.json`:
 }
 ```
 
-The server sends instructions with the working loop (components, create, write with `expectedRevision`, validate, preview, screenshot), the rules that cost a failed call (icon names from `ui_icons_list`, no integer-like record keys, no set through a missing parent), and how to read events. The tool descriptions carry the same guidance.
+The server sends instructions that start with the search workflow (plan the app first, then `ui_components_search` for each need in plain words, `ui_component_get`, create, write, validate, preview, screenshot; a large app waits for the user's OK on the plan) and a category index generated from the catalog (each category with its count and three typical members), then the working loop (write with `expectedRevision`), the rules that cost a failed call (icon names from `ui_icons_list`, no integer-like record keys, no set through a missing parent), and how to read events. The tool descriptions carry the same guidance.
 
 ## Tools
 
