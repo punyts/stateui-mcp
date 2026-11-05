@@ -5,6 +5,11 @@ import type { UiPartBodies } from '../../domain/UiPart.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 
+/** One text-on-surface pair of a theme in one mode; `unresolved` when either side is not an opaque colour */
+export type ContrastPair =
+    | { readonly mode: string; readonly text: string; readonly surface: string; readonly ratio: number; readonly passesAA: boolean }
+    | { readonly mode: string; readonly text: string; readonly surface: string; readonly ratio: 'unresolved' };
+
 /**
  * Whether a value may be written to one property of a component through `ui_state_set`. `exposed` and `runtime`
  * properties belong to controllers; `content` is a `_` property (`ok` with `content: true`)
@@ -60,6 +65,8 @@ export interface UiAppValidator {
      * `SUI-LOCALE-MISSING` warning for each content path the language does not translate. Empty when the tree does not resolve
      */
     validateLocale(document: UiDocument, code: string, screen?: string): readonly UiBuildError[];
+    /** The contrast of each text token on its surface in each mode of a theme (the shipped modes and its own) */
+    themeContrast(theme: UiPartBodies['themes']): readonly ContrastPair[];
     /**
      * The errors and warnings of one part on its own, by the reader of its kind: an app's blueprint and the errors of
      * the assembled app that the app itself holds, a theme's tokens and overlays, a module, a model, a dataset's shape and

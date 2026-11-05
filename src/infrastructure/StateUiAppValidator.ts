@@ -21,7 +21,7 @@ import type {
     Node,
     PartSource
 } from '@punyts/stateui-app/core';
-import type { PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
+import type { ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
@@ -32,6 +32,7 @@ import type { UiPartBodies } from '../domain/UiPart.js';
 import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
 import { nearestNames } from '../domain/nearestNames.js';
+import { themeContrast } from './contrast.js';
 import { assembledErrors, partErrors } from './partChecks.js';
 import { loadComponentOverlay } from './stateUiLibrary.js';
 import type { CatalogFile } from './stateUiLibrary.js';
@@ -166,6 +167,10 @@ export class StateUiAppValidator implements UiAppValidator {
             linkedPaths: extracted.linkedPaths,
             path
         });
+    }
+
+    themeContrast(theme: UiPartBodies['themes']): readonly ContrastPair[] {
+        return themeContrast(theme);
     }
 
     localeOverlay(document: UiDocument, code: string): JsonObject | undefined {

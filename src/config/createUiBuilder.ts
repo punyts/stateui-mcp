@@ -42,6 +42,7 @@ import { WriteApp } from '../application/use-cases/WriteApp.js';
 import { QueryData } from '../application/use-cases/QueryData.js';
 import { RenamePart } from '../application/use-cases/RenamePart.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
+import { CreateTheme, WriteTheme } from '../application/use-cases/WriteTheme.js';
 import { WriteLocale } from '../application/use-cases/WriteLocale.js';
 import { WriteNodes } from '../application/use-cases/WriteNodes.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
@@ -109,6 +110,10 @@ export interface UiBuilderUseCases {
     /** With `parts` only */
     readonly createScreen?: CreateScreen;
     /** With `parts` only */
+    readonly createTheme?: CreateTheme;
+    /** With `parts` only */
+    readonly writeTheme?: WriteTheme;
+    /** With `parts` only */
     readonly writeNodes?: WriteNodes;
     /** With `parts` only */
     readonly writeLocale?: WriteLocale;
@@ -141,6 +146,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const { repository, parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, liveState } = ports;
     const { now, newId, report, coreIconNames } = options;
     const readFile = new ReadFile(fileRepository, fileStore, report);
+    const writePart = parts === undefined ? undefined : new WritePart(parts, parts, validator, report);
     return {
         createApp: new CreateApp(repository, validator, report),
         listApps: new ListApps(repository, report),
@@ -163,7 +169,9 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, repository, now, report), newId, report),
         readFile,
         readFileText: new ReadFileText(readFile),
-        ...(parts !== undefined && {
+        ...(parts !== undefined && writePart !== undefined && {
+            createTheme: new CreateTheme(parts, writePart, validator, patterns, report),
+            writeTheme: new WriteTheme(parts, writePart, validator, catalog, report),
             createPartApp: new CreatePartApp(parts, validator, patterns, report),
             configureApp: new ConfigureApp(parts, validator, report),
             createScreen: new CreateScreen(parts, validator, patterns, report),
@@ -172,7 +180,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
             listParts: new ListParts(parts, report),
             getPart: new GetPart(parts, validator, report),
             deletePart: new DeletePart(parts, parts, report, instances),
-            writePart: new WritePart(parts, parts, validator, report),
+            writePart,
             renamePart: new RenamePart(parts, parts, report),
             writeData: new WriteData(parts, validator, newId, report),
             queryData: new QueryData(parts, report),

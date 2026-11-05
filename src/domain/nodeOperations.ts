@@ -106,12 +106,12 @@ export function applyNodeOperation(holder: JsonObject, operation: NodeOperation)
     return applied.ok ? { ok: true, tree: applied.document } : applied;
 }
 
-/** Removes the value at `path` below `root` and every object on the way that it leaves empty */
-export function removePruning(root: JsonObject, path: readonly string[]): NodeOperationResult {
+/** Removes the value at `path` below `root` and every object on the way that it leaves empty, keeping the first `keep` segments */
+export function removePruning(root: JsonObject, path: readonly string[], keep = 0): NodeOperationResult {
     const removed = applyOperation(root as UiDocument, { op: 'remove', path: path.join('.') });
     if (!removed.ok) return removed;
     let result: JsonObject = removed.document;
-    for (let depth = path.length - 1; depth > 0; depth -= 1) {
+    for (let depth = path.length - 1; depth > keep; depth -= 1) {
         const parent = path.slice(0, depth);
         const found = resolveDocumentPath(result, parent);
         if (!found.found || !isJsonObject(found.value) || Object.keys(found.value).length > 0) break;

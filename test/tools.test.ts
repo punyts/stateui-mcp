@@ -112,7 +112,9 @@ describe('tool list', () => {
                 'ui_app_configure',
                 'ui_screen_create',
                 'ui_nodes_write',
-                'ui_locale_write'
+                'ui_locale_write',
+                'ui_theme_create',
+                'ui_theme_write'
             ].sort()
         );
     });
