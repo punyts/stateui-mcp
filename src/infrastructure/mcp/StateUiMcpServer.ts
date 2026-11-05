@@ -20,6 +20,7 @@ import { createThemeTools } from './themeTools.js';
 import { createModelTools } from './modelTools.js';
 import { createDataTools } from './dataTools.js';
 import { createLogicTools } from './logicTools.js';
+import { createComposedTools } from './composedTools.js';
 import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
@@ -65,6 +66,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createModelTools(useCases),
         ...createDataTools(useCases),
         ...createLogicTools(useCases),
+        ...createComposedTools(useCases),
         ...createWriteTools(useCases, liveViews),
         ...createStateTools({ useCases, ...views }),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...views, ...(authorities !== undefined && { logic: authorities }) }),

@@ -462,7 +462,7 @@ describe('/mcp session flow', () => {
 
         expect(sessionId).not.toBe('');
         expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Working loop'));
-        expect((list.result?.['tools'] as unknown[]).length).toBe(37);
+        expect((list.result?.['tools'] as unknown[]).length).toBe(38);
         expect(closed.status).toBe(200);
         expect(afterClose.status).toBe(404);
     });
