@@ -3,7 +3,7 @@ import type { JsonObject } from '../../domain/JsonValue.js';
 import { partNameProblem } from '../../domain/UiPart.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
 import { checkPartApp, treeOf } from '../partAppCheck.js';
-import type { MissingPart, TreeChoice, TreeOutcome } from '../partAppCheck.js';
+import type { MissingPart, PatternSlot, TreeChoice, TreeOutcome } from '../partAppCheck.js';
 import type { PatternCatalog } from '../ports/PatternCatalog.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
@@ -26,7 +26,15 @@ export interface CreatePartAppInput {
 }
 
 export type CreatePartAppResult =
-    | { readonly kind: 'created'; readonly name: string; readonly id: string; readonly revision: number; readonly warnings: readonly UiBuildError[] }
+    /** `slots`: the slots of the shell pattern, empty for a node tree */
+    | {
+          readonly kind: 'created';
+          readonly name: string;
+          readonly id: string;
+          readonly revision: number;
+          readonly warnings: readonly UiBuildError[];
+          readonly slots: readonly PatternSlot[];
+      }
     | { readonly kind: 'missing-parts'; readonly missing: readonly MissingPart[] }
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] }
     | { readonly kind: 'invalid-name'; readonly reason: string }
@@ -55,7 +63,7 @@ export class CreatePartApp {
     private async create(input: CreatePartAppInput): Promise<CreatePartAppResult> {
         const problem = partNameProblem(input.name);
         if (problem !== undefined) return { kind: 'invalid-name', reason: problem };
-        const shell = treeOf(input.shell, 'shell', this.patterns);
+        const shell = treeOf(input.shell, 'shell', this.patterns, '$.app');
         if (shell.kind !== 'tree') return shell;
         const uses = {
             ...(input.themes !== undefined && { themes: [...input.themes] }),
@@ -74,6 +82,6 @@ export class CreatePartApp {
         const created = await this.parts.create({ kind: 'apps', name: input.name, body });
         if (created.kind === 'invalid') return { kind: 'invalid-name', reason: created.reason };
         if (created.kind === 'duplicate-name') return created;
-        return { kind: 'created', name: input.name, id: created.part.id, revision: created.part.revision, warnings: check.warnings };
+        return { kind: 'created', name: input.name, id: created.part.id, revision: created.part.revision, warnings: check.warnings, slots: shell.slots };
     }
 }

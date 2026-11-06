@@ -246,7 +246,7 @@ describe('ui_screen_create', () => {
         const validated = await call(harness.client, 'ui_validate', { app: 'shop' });
 
         // Assert
-        expect(product.body).toEqual({ app: 'shop', name: 'product', revision: 2, warnings: [] });
+        expect(product.body).toEqual({ app: 'shop', name: 'product', revision: 2, slots: [], warnings: [] });
         expect(list.body).toMatchObject({ revision: 3 });
         expect(screens.body).toMatchObject({ revision: 3, items: [{ name: 'home', start: true }, { name: 'product', title: 'Product' }, { name: 'list' }] });
         expect(validated.body).toMatchObject({ valid: true, errors: [] });

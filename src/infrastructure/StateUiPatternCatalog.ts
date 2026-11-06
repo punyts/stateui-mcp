@@ -71,6 +71,10 @@ export class StateUiPatternCatalog implements PatternCatalog {
         return this.patterns.get(name);
     }
 
+    names(): readonly string[] {
+        return [...this.patterns.keys()];
+    }
+
     search(query: PatternSearchQuery): PatternSearchResult {
         const { kind } = query;
         if (kind !== undefined && !(PATTERN_KINDS as readonly string[]).includes(kind)) throw new InvalidSearchArgumentError('kind', PATTERN_KINDS);

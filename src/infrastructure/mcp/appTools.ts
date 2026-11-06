@@ -59,7 +59,7 @@ export function createAppTools(
         {
             name: 'ui_app_create',
             description:
-                `Build time: create an app of the owner's parts, with a title, the parts it uses and a shell. It starts with one screen, home, its start screen, and ui_screen_create adds more. ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, warnings }.`,
+                `Build time: create an app of the owner's parts, with a title, the parts it uses and a shell. It starts with one screen, home, its start screen, and ui_screen_create adds more. ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, slots, warnings }: slots are the shell pattern's places to fill, each { name, path, description } with the node path for ui_nodes_write (none for a node tree).`,
             inputSchema: APP_CREATE.schema,
             annotations: CREATES,
             run: async (args) => {

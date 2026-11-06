@@ -1,3 +1,4 @@
+import { applyPattern } from '@punyts/stateui-app/core';
 import type { PartSource } from '@punyts/stateui-app/core';
 import type { JsonObject } from '../domain/JsonValue.js';
 import { nearestNames } from '../domain/nearestNames.js';
@@ -51,21 +52,53 @@ export async function checkPartApp(parts: UiPartRepository, validator: UiAppVali
 /** A shell or a screen root: a library pattern with its params, or a node tree */
 export type TreeChoice = { readonly pattern: string; readonly params?: JsonObject } | { readonly node: JsonObject };
 
+/** A slot of a copied pattern: where in the new shell or screen the agent fills it, and what goes there */
+export interface PatternSlot {
+    readonly name: string;
+    /** The node path in the app, such as `$.screens.cart.children` */
+    readonly path: string;
+    readonly description: string;
+}
+
+/** A param value a pattern refused: unknown, missing while required, or of the wrong type */
+export interface PatternParamProblem {
+    readonly param: string;
+    readonly message: string;
+}
+
 export type TreeOutcome =
-    | { readonly kind: 'tree'; readonly tree: JsonObject }
-    /** No pattern of that name in the library */
-    | { readonly kind: 'unknown-pattern'; readonly pattern: string }
+    /** `slots` is empty for a node tree */
+    | { readonly kind: 'tree'; readonly tree: JsonObject; readonly slots: readonly PatternSlot[] }
+    /** No pattern of that name in the library; `nearest` are pattern names */
+    | { readonly kind: 'unknown-pattern'; readonly pattern: string; readonly nearest: readonly string[] }
     /** A screen pattern given as a shell, or a shell pattern as a screen */
     | { readonly kind: 'wrong-pattern-kind'; readonly pattern: string; readonly patternKind: 'shell' | 'screen' }
-    /** Pattern params are applied by search epic 2 S2.6; until then a pattern with params is refused */
-    | { readonly kind: 'pattern-params'; readonly pattern: string };
+    /** Param values the pattern refused, each naming its param */
+    | { readonly kind: 'pattern-params'; readonly pattern: string; readonly problems: readonly PatternParamProblem[] };
 
-/** The tree a choice gives: the node as given, or a copy of the pattern's tree */
-export function treeOf(choice: TreeChoice, want: 'shell' | 'screen', patterns: PatternCatalog): TreeOutcome {
-    if ('node' in choice) return { kind: 'tree', tree: choice.node };
+/**
+ * The tree a choice gives: the node as given, or a copy of the pattern's tree with each param value (or its default)
+ * written at its paths. The copy is ordinary nodes: nothing refers to the pattern afterwards. `base` is the node path
+ * of the tree in the app (`$.app` for a shell, `$.screens.<name>` for a screen), which the slot paths start from
+ */
+export function treeOf(choice: TreeChoice, want: 'shell' | 'screen', patterns: PatternCatalog, base: string): TreeOutcome {
+    if ('node' in choice) return { kind: 'tree', tree: choice.node, slots: [] };
     const pattern = patterns.get(choice.pattern);
-    if (pattern === undefined) return { kind: 'unknown-pattern', pattern: choice.pattern };
+    if (pattern === undefined) return { kind: 'unknown-pattern', pattern: choice.pattern, nearest: nearestNames(choice.pattern, patterns.names()) };
     if (pattern.kind !== want) return { kind: 'wrong-pattern-kind', pattern: choice.pattern, patternKind: pattern.kind };
-    if (choice.params !== undefined && Object.keys(choice.params).length > 0) return { kind: 'pattern-params', pattern: choice.pattern };
-    return { kind: 'tree', tree: structuredClone(pattern.tree) as unknown as JsonObject };
+    const applied = applyPattern(pattern, (choice.params ?? {}) as Parameters<typeof applyPattern>[1]);
+    if (applied.tree === undefined || applied.errors.length > 0) {
+        return {
+            kind: 'pattern-params',
+            pattern: choice.pattern,
+            problems: applied.errors.map((error) => ({ param: paramOf(error.message), message: error.message }))
+        };
+    }
+    const slots = applied.slots.map((slot) => ({ name: slot.name, path: slot.path === '' ? base : `${base}.${slot.path}`, description: slot.description }));
+    return { kind: 'tree', tree: applied.tree as unknown as JsonObject, slots };
+}
+
+/** The param a `SUI-PATTERN-PARAM` message names: its first quoted name */
+function paramOf(message: string): string {
+    return /"([^"]+)"/.exec(message)?.[1] ?? '';
 }

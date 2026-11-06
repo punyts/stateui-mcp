@@ -5,7 +5,7 @@ import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { PART_SHAPE_CODE, partNameProblem } from '../../domain/UiPart.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
 import { checkPartApp, treeOf } from '../partAppCheck.js';
-import type { MissingPart, TreeChoice, TreeOutcome } from '../partAppCheck.js';
+import type { MissingPart, PatternSlot, TreeChoice, TreeOutcome } from '../partAppCheck.js';
 import type { PatternCatalog } from '../ports/PatternCatalog.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
@@ -23,7 +23,8 @@ export interface CreateScreenInput {
 }
 
 export type CreateScreenResult =
-    | { readonly kind: 'created'; readonly revision: number; readonly warnings: readonly UiBuildError[] }
+    /** `slots`: the slots of the screen pattern, empty for a node tree */
+    | { readonly kind: 'created'; readonly revision: number; readonly warnings: readonly UiBuildError[]; readonly slots: readonly PatternSlot[] }
     /** The app does not exist; `nearest` are app names */
     | { readonly kind: 'not-found'; readonly nearest: readonly string[] }
     | { readonly kind: 'conflict'; readonly currentRevision: number }
@@ -58,7 +59,7 @@ export class CreateScreen {
         if (app === undefined) return { kind: 'not-found', nearest: nearestNames(input.app, (await this.parts.list('apps')).map((summary) => summary.name)) };
         if (app.revision !== input.expectedRevision) return { kind: 'conflict', currentRevision: app.revision };
         if (hasScreen(app.body, input.name)) return { kind: 'duplicate-name' };
-        const root = treeOf(input.root, 'screen', this.patterns);
+        const root = treeOf(input.root, 'screen', this.patterns, `$.screens.${input.name}`);
         if (root.kind !== 'tree') return root;
         const screen = {
             ...(input.title !== undefined && { title: input.title }),
@@ -71,7 +72,7 @@ export class CreateScreen {
         const written = await this.parts.write('apps', input.app, body, input.expectedRevision);
         switch (written.kind) {
             case 'written':
-                return { kind: 'created', revision: written.revision, warnings: check.warnings };
+                return { kind: 'created', revision: written.revision, warnings: check.warnings, slots: root.slots };
             case 'conflict':
                 return written;
             case 'not-found':

@@ -61,6 +61,8 @@ export interface PatternSearchResult {
  */
 export interface PatternCatalog {
     get(name: string): PatternEntry | undefined;
+    /** Every pattern name, of both kinds, in catalog order */
+    names(): readonly string[];
     search(query: PatternSearchQuery): PatternSearchResult;
     preset(name: string): ThemePresetEntry | undefined;
 }

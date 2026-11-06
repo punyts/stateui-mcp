@@ -14,7 +14,8 @@ export const USES_TEXT =
     'uses: { themes: ["theme-name", ...] (the first is the default; a person can switch between them), data: { name: { dataset: "dataset-name" } or { model: "model-name", scope: "persona" } } (each $.data.name the app reads, bound to an owner dataset, or a dataset of that model each person gets their own copy of), logic: { "module-name": { params: { ... } } } (owner logic modules, each with values for the params it declares; every data name a module needs must be bound under data) }';
 
 /** What the descriptions teach about a node tree or a pattern */
-const TREE_TEXT = 'a node tree ({ component, ...properties, children }) or { pattern, params? } naming a library pattern';
+const TREE_TEXT =
+    'a node tree ({ component, ...properties, children }) or { pattern, params? }: a library shell pattern from ui_patterns_search, copied once with the params you give (each one left out takes its default) as ordinary nodes';
 
 export const SHELL_ARGUMENT = {
     type: 'object',
@@ -83,8 +84,13 @@ function missingParts(missing: readonly MissingPart[], what: string): ToolOutcom
     });
 }
 
+/** Said when a link points under `$.data` at nothing: what to bind or create first */
+const DATA_LINK_HINT =
+    ' A link to $.data.<name>... needs <name> bound in uses.data (ui_app_create data, or ui_app_configure) to a dataset that holds the record the path names: create or bind it first, or give the pattern another path param.';
+
 function invalidApp(errors: readonly UiBuildError[], what: string): ToolOutcome {
-    return fail('invalid-app', `The app would have blocking errors; nothing was ${what}. Each error names its part and path`, { errors });
+    const dataLink = errors.some((error) => error.code === 'SUI-LINK-MISSING' && error.message.includes('$.data.'));
+    return fail('invalid-app', `The app would have blocking errors; nothing was ${what}. Each error names its part and path.${dataLink ? DATA_LINK_HINT : ''}`, { errors });
 }
 
 /** The outcomes `ui_app_create` and `ui_screen_create` share */
@@ -98,12 +104,24 @@ function sharedOutcome(result: Exclude<CreatePartAppResult | CreateScreenResult,
             return fail('invalid-name', `${result.reason}; nothing was ${what}`, { argument: 'name' });
         case 'duplicate-name':
             return fail('duplicate-name', `The name is taken; nothing was ${what}`, { argument: 'name' });
-        case 'unknown-pattern':
-            return fail('invalid-argument', `No such pattern: "${result.pattern}". Give a node tree instead`, { argument });
-        case 'wrong-pattern-kind':
-            return fail('invalid-argument', `"${result.pattern}" is a ${result.patternKind} pattern`, { argument });
-        case 'pattern-params':
-            return fail('invalid-argument', `Pattern params are not applied yet; give "${result.pattern}" without params`, { argument });
+        case 'unknown-pattern': {
+            const near = result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : '; ui_patterns_search finds one';
+            return fail('invalid-argument', `No such pattern: "${result.pattern}"${near}. Or give a node tree; nothing was ${what}`, {
+                argument,
+                nearest: result.nearest
+            });
+        }
+        case 'wrong-pattern-kind': {
+            const tool = result.patternKind === 'shell' ? 'ui_app_create (shell)' : 'ui_screen_create (pattern)';
+            return fail('invalid-argument', `"${result.pattern}" is a ${result.patternKind} pattern, which ${tool} takes; nothing was ${what}`, { argument });
+        }
+        case 'pattern-params': {
+            const params = argument === 'shell' ? 'shell.params' : 'patternParams';
+            return fail('invalid-argument', `${result.problems.map((problem) => problem.message).join('; ')}; nothing was ${what}`, {
+                argument: params,
+                params: result.problems.map((problem) => problem.param)
+            });
+        }
         case 'not-found':
             return fail('not-found', `No app with this name${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : '; ui_list lists the apps'}`, {
                 argument: 'app',
@@ -141,7 +159,9 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
         ...(args.data !== undefined && { data: args.data }),
         ...(args.logic !== undefined && { logic: args.logic })
     });
-    if (result.kind === 'created') return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', warnings: result.warnings });
+    if (result.kind === 'created') {
+        return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', slots: result.slots, warnings: result.warnings });
+    }
     return sharedOutcome(result, 'shell', 'created');
 }
 
@@ -183,7 +203,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
         {
             name: 'ui_screen_create',
             description:
-                'Build time: add a screen to an app: a title, typed params and a root, either a node tree (root) or a library screen pattern (pattern with patternParams). The screen shows in the shell\'s outlet when the app navigates to it: a navigate command names the screen as its target and passes the params as its value. Adding a screen writes the app: expectedRevision is the app\'s, and the result has the app\'s new revision. The app is checked as a whole first. Returns { app, name, revision, warnings }.',
+                'Build time: add a screen to an app: a title, typed params and a root, either a node tree (root) or a library screen pattern from ui_patterns_search (pattern, with patternParams for its params; each one left out takes its default), copied once as ordinary nodes. The screen shows in the shell\'s outlet when the app navigates to it: a navigate command names the screen as its target and passes the params as its value. Adding a screen writes the app: expectedRevision is the app\'s, and the result has the app\'s new revision. The app is checked as a whole first. Returns { app, name, revision, slots, warnings }: slots are the places of the pattern to fill, each { name, path, description } with the node path for ui_nodes_write (none for a root).',
             inputSchema: SCREEN.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -207,7 +227,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
                     ...(title !== undefined && { title }),
                     ...(params !== undefined && { params })
                 });
-                if (result.kind === 'created') return succeed({ app, name, revision: result.revision, warnings: result.warnings });
+                if (result.kind === 'created') return succeed({ app, name, revision: result.revision, slots: result.slots, warnings: result.warnings });
                 return sharedOutcome(result, pattern !== undefined ? 'pattern' : 'root', 'created');
             }
         }
