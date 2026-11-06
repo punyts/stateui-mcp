@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toComponentView } from './componentView.js';
-import type { ComposedComponentEntry, RootComponentEntry } from './ports/ComponentCatalog.js';
+import type { ComposedComponentEntry, RootComponentEntry, ShapeComponentEntry } from './ports/ComponentCatalog.js';
 
 const FILLER = Object.freeze({ required: false, validators: Object.freeze({}), runtime: false, reflect: false, row: false, exposed: false });
 
@@ -93,6 +93,53 @@ describe('toComponentView', () => {
         expect(view['properties']).toEqual({
             columns: { type: 'map', items: { _title: { type: 'string', kind: 'content' }, align: { type: 'string', default: 'start', values: ['start', 'end'] } } },
             _errors: { type: 'map', items: 'string' }
+        });
+    });
+
+    it('should keep the options of the graphics validators whole, so a fields object shows the keys it takes', () => {
+        // Arrange
+        const viewBox = Object.freeze({
+            x: Object.freeze({ type: 'number', required: true }),
+            y: Object.freeze({ type: 'number', required: true }),
+            width: Object.freeze({ type: 'number', required: true, validators: Object.freeze({ range: Object.freeze({ min: 0 }) }) }),
+            height: Object.freeze({ type: 'number', required: true, validators: Object.freeze({ range: Object.freeze({ min: 0 }) }) })
+        });
+        const fileRef = Object.freeze({ types: Object.freeze(['image/png']), dataUrl: true });
+        const figure: ShapeComponentEntry = Object.freeze({
+            name: 'figure',
+            tier: 'shape',
+            size: 'atom',
+            summary: 'A test figure',
+            category: 'graphics',
+            purposes: Object.freeze(['draw a figure']),
+            example: Object.freeze({ component: 'figure' }),
+            locales: Object.freeze([]),
+            tokens: Object.freeze([]),
+            shape: Object.freeze({
+                summary: 'A test figure',
+                properties: Object.freeze({
+                    viewBox: Object.freeze({ ...FILLER, type: 'object', validators: Object.freeze({ fields: viewBox }) }),
+                    fill: Object.freeze({ ...FILLER, type: 'string', validators: Object.freeze({ color: true }) }),
+                    origin: Object.freeze({ ...FILLER, type: 'array', validators: Object.freeze({ vector: 2 }) }),
+                    src: Object.freeze({ ...FILLER, type: Object.freeze(['string', 'object']), validators: Object.freeze({ fileRef }) })
+                }),
+                shared: Object.freeze([]),
+                events: Object.freeze(['press']),
+                commands: Object.freeze([]),
+                layout: false
+            }),
+            events: Object.freeze(['press'])
+        });
+
+        // Act
+        const view = toComponentView(figure);
+
+        // Assert
+        expect(view['properties']).toEqual({
+            viewBox: { type: 'object', validators: { fields: viewBox } },
+            fill: { type: 'string', validators: { color: true } },
+            origin: { type: 'array', validators: { vector: 2 } },
+            src: { type: ['string', 'object'], validators: { fileRef } }
         });
     });
 

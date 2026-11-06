@@ -1,6 +1,7 @@
 import {
     assembleApp,
     buildAppOverlay,
+    entryShape,
     extractLinks,
     libraryFromCatalog,
     resolveNode,
@@ -139,7 +140,7 @@ export class StateUiAppValidator implements UiAppValidator {
         const component = value['component'];
         const entry =
             typeof component === 'string' && Object.hasOwn(this.library, component) ? this.library[component] : undefined;
-        const properties = entry?.tier === 'root' ? entry.shape.properties : undefined;
+        const properties = entryShape(entry)?.properties;
         const kept = Object.entries(value).filter(([key]) => {
             const declared = properties !== undefined && Object.hasOwn(properties, key) ? properties[key] : undefined;
             return declared?.runtime !== true;
@@ -184,8 +185,9 @@ export class StateUiAppValidator implements UiAppValidator {
 
     checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string): PropertyCheck {
         const entry = Object.hasOwn(this.library, component) ? this.library[component] : undefined;
-        if (entry?.tier !== 'root') return { kind: 'unknown-component' };
-        const shape = entry.shape;
+        // A root or a shape component (graphics) holds its own properties; a composed one has none until expanded
+        const shape = entryShape(entry);
+        if (shape === undefined) return { kind: 'unknown-component' };
         const declared = Object.hasOwn(shape.properties, property) ? shape.properties[property] : undefined;
         if (declared === undefined) return { kind: 'unknown-property' };
         if (declared.exposed) return { kind: 'exposed' };

@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { AppBlueprint, PartSource } from '@punyts/stateui-app/core';
 import { createStateUiAdapters } from '../config/createStateUiAdapters.js';
+import { parseShape } from '@punyts/stateui-app/core';
+import { StateUiAppValidator } from './StateUiAppValidator.js';
+import type { CatalogFile } from './stateUiLibrary.js';
 import { MAX_DOCUMENT_BYTES, documentBytes } from '../domain/limits.js';
 import type { UiDocument } from '../domain/UiApp.js';
 import { isValid } from '../domain/UiBuildError.js';
@@ -174,6 +177,23 @@ describe('StateUiAppValidator', () => {
             expect(validator.resolveNode(document, ['app', 'nope'])).toBeUndefined();
             expect(validator.resolveNode(document, ['app', 'children'])).toBeUndefined();
             expect(validator.resolveNode(document, ['app', 'children', 'ghost'])).toBeUndefined();
+        });
+    });
+
+    describe('shape components', () => {
+        // A fixture catalog: a shape component (graphics) has a shape and no tag
+        const dot = parseShape({ summary: 'A dot', properties: { r: { type: 'number', default: 4 } } }, 'dot.state.json').shape;
+        const catalog = {
+            components: [{ name: 'dot', tier: 'shape', shape: dot }],
+            theme: { tokens: [], overlays: {} },
+            patterns: []
+        } as unknown as CatalogFile;
+        const shapes = new StateUiAppValidator(catalog, () => true);
+
+        it('should check a property of a shape node against its shape', () => {
+            expect(shapes.checkProperty('dot', 'r', 2, '$.app.mark')).toEqual({ kind: 'ok', content: false });
+            expect(shapes.checkProperty('dot', 'r', 'big', '$.app.mark').kind).toBe('invalid');
+            expect(shapes.checkProperty('dot', 'nope', 1, '$.app.mark')).toEqual({ kind: 'unknown-property' });
         });
     });
 
