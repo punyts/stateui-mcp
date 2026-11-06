@@ -18,7 +18,7 @@ const SHELLS = CATALOG_PATTERNS.filter((pattern) => pattern.kind === 'shell');
 const STUB_SHELL = Object.freeze({ component: 'page', children: Object.freeze({ body: Object.freeze({ component: 'outlet' }) }) });
 
 /** A model loose enough for the records every pattern's fixture datasets hold */
-const ITEM = { fields: { title: { type: 'string' }, price: { type: 'number' }, description: { type: 'string' } } } as unknown as UiPartBodies['models'];
+const ITEM = { fields: { title: { type: 'string' }, price: { type: 'number' }, description: { type: 'string' }, image: { type: 'string' } } } as unknown as UiPartBodies['models'];
 
 let data: TempData;
 let harness: InMemoryHarness;
@@ -67,7 +67,7 @@ async function bindAll(names: Readonly<Record<string, readonly string[]>>): Prom
     const bindings: Record<string, { dataset: string }> = {};
     for (const [name, keys] of Object.entries(names)) {
         const dataset = `${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-set`;
-        const records = Object.fromEntries(['r1', ...keys].map((key) => [key, { title: 'One', price: 1, description: 'The first' }]));
+        const records = Object.fromEntries(['r1', ...keys].map((key) => [key, { title: 'One', price: 1, description: 'The first', image: '' }]));
         await write('data', dataset, { model: 'item', records } as unknown as UiPartBodies['data']);
         bindings[name] = { dataset };
     }

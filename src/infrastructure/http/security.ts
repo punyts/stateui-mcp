@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 
 /**
  * The policy of the runtime page, which the app iframe loads from the runtime origin (its own port). Scripts and styles
- * only from that origin, no network, images and fonts only as `data:`, no forms, and only the host page of this server
+ * only from that origin, no network but `https:` images (an `image` or `avatar` src), fonts only as `data:`, no forms, and only the host page of this server
  * (`hostOrigin`) may frame it.
  *
  * `script-src` has one source beyond `'self'`: `'unsafe-eval'`. `@punyts/expression` turns the literal parts of a
@@ -15,7 +15,7 @@ export function runtimeCsp(hostOrigin: string): string {
         "default-src 'none'",
         "script-src 'self' 'unsafe-eval'",
         "style-src 'self'",
-        'img-src data:',
+        'img-src data: https:',
         'font-src data:',
         "connect-src 'none'",
         "form-action 'none'",
