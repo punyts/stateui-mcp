@@ -2,6 +2,7 @@ import type { Browser, ElementHandle, Frame, Page } from 'playwright';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
 import type { PreviewHub, UiEvent } from './PreviewHub.js';
+import { INTERACTIVE_SHAPE_SELECTOR, isAtOrBelow, shapeActionError, shapeSelector } from './shapeTargets.js';
 
 /** Chromium could not be started: not installed, or the sandbox refused. The message says what to run */
 export class BrowserUnavailableError extends Error {
@@ -51,6 +52,8 @@ export interface InteractResult {
     readonly errors: readonly UiBuildError[];
     readonly events: readonly UiEvent[];
     readonly cursor: number;
+    /** The drawings and scenes (by state path) still marked `data-render="pending"` when the wait for them ran out */
+    readonly pending?: readonly string[];
 }
 
 export interface ScreenshotOptions {
@@ -68,6 +71,8 @@ export interface ScreenshotResult {
     readonly width: number;
     readonly height: number;
     readonly target: string;
+    /** The drawings and scenes (by state path) still marked `data-render="pending"` when the wait for them ran out; the capture was taken anyway */
+    readonly pending?: readonly string[];
 }
 
 export interface PreviewOpenResult {
@@ -133,6 +138,17 @@ export interface RenderedNode {
     readonly visible: boolean;
 }
 
+/** What the page code reports of an element it found: a node's host, or the element or proxy of an interactive shape */
+export interface FoundNode extends RenderedNode {
+    readonly shape: boolean;
+}
+
+/**
+ * How a shape is reached: `svg` for an SVG element (clicked with a real pointer, so hit testing runs), `proxy` for the
+ * hidden button of a canvas shape (`pointer-events: none`, so clicked at element level)
+ */
+type ShapeTarget = { readonly kind: string; readonly via: 'svg' | 'proxy' };
+
 /**
  * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
  * for. A page loads the same `/apps/:appId` URL a human opens, so what it renders and reports is what a person
@@ -191,11 +207,13 @@ export class BrowserPreview {
                 if (options.mode !== undefined) {
                     this.hub.publish(appId, { type: 'theme', kind: 'mode', name: options.mode }, 'headless');
                 }
+                // The resize and the mode switch both start a redraw of every drawing: wait for them, then settle
+                let pending = await this.waitDrawn(page);
                 await this.settle(page);
                 if (options.path === undefined) {
-                    if (options.fullPage === true) await this.growToContent(page, viewport);
+                    if (options.fullPage === true) pending = await this.growToContent(page, viewport, pending);
                     const png = await page.screenshot({ type: 'png' });
-                    return { png, ...viewport, target: 'page' };
+                    return { png, ...viewport, target: 'page', ...pendingOf(pending) };
                 }
                 const statePath = toStatePath(options.path);
                 const handle = await this.boxOf(await this.elementAt(page, statePath));
@@ -214,7 +232,7 @@ export class BrowserPreview {
                         }
                         throw error;
                     });
-                    return { png, width: Math.round(box.width), height: Math.round(box.height), target: statePath };
+                    return { png, width: Math.round(box.width), height: Math.round(box.height), target: statePath, ...pendingOf(pending) };
                 } finally {
                     await handle.dispose();
                 }
@@ -225,39 +243,48 @@ export class BrowserPreview {
     }
 
     /**
-     * The nodes the headless page draws at or below `under` (a state path), in page order: the nodes of the document
-     * and the ones a component renders from a template (the rows of a list, the cards of a board), whose state paths
-     * exist only while the app runs
+     * The nodes the headless page draws at or below `under` (a state path), in page order: the nodes of the document,
+     * the ones a component renders from a template (the rows of a list, the cards of a board), whose state paths
+     * exist only while the app runs, and the interactive shapes of drawings (`component` from `data-shape-kind`,
+     * `…rows.<recordKey>` for a repeat copy)
      */
     async rendered(appId: string, revision: number, under: string): Promise<RenderedNode[]> {
         return this.lock.run(appId, async () => {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            await this.waitDrawn(page);
             await this.settle(page);
             const frame = this.runtimeFrame(page);
-            return frame.evaluate((root: string) => {
-                const found: { path: string; component: string; visible: boolean }[] = [];
-                const seen = new Set<string>();
+            const all = await frame.evaluate((shapes: string) => {
+                const found: FoundNode[] = [];
                 const hasBox = (element: Element): boolean => {
                     if (element.getClientRects().length > 0 && (element as HTMLElement).offsetParent !== null) return true;
                     // A host drawn with display: contents (a modal, a drawer) has its box in its shadow root
                     const shadow = (element as HTMLElement).shadowRoot;
                     return shadow !== null && Array.from(shadow.children).some((child) => child.getClientRects().length > 0 && (child as HTMLElement).offsetParent !== null);
                 };
+                // An SVG element has no offsetParent: a shape is visible when its box has an extent (a level line has no height)
+                const shapeHasBox = (element: Element): boolean => {
+                    const box = element.getBoundingClientRect();
+                    return element.getClientRects().length > 0 && (box.width > 0 || box.height > 0);
+                };
                 const walk = (scope: ParentNode): void => {
-                    for (const element of Array.from(scope.querySelectorAll('*')) as (HTMLElement & { scope?: { basePath?: string } })[]) {
+                    for (const element of Array.from(scope.querySelectorAll('*')) as ScopedElement[]) {
                         const path = element.scope?.basePath;
-                        if (element.localName.startsWith('ui-') && typeof path === 'string' && !seen.has(path) && (path === root || path.startsWith(`${root}.`))) {
-                            seen.add(path);
+                        if (element.localName.startsWith('ui-') && typeof path === 'string') {
                             const component = element.localName.slice(3).replace(/-([a-z])/g, (_match: string, letter: string) => letter.toUpperCase());
-                            found.push({ path, component, visible: hasBox(element) });
+                            found.push({ path, component, visible: hasBox(element), shape: false });
+                        } else if (element.matches(shapes) && element.closest('defs') === null) {
+                            const component = element.getAttribute('data-shape-kind') ?? 'shape';
+                            found.push({ path: element.getAttribute('data-shape-path') ?? '', component, visible: shapeHasBox(element), shape: true });
                         }
                         if (element.shadowRoot) walk(element.shadowRoot);
                     }
                 };
                 walk(document);
                 return found;
-            }, under);
+            }, INTERACTIVE_SHAPE_SELECTOR);
+            return renderedUnder(all, under);
         });
     }
 
@@ -265,6 +292,7 @@ export class BrowserPreview {
         return this.lock.run(appId, async () => {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            await this.waitDrawn(page);
             const errorCursor = this.hub.errorCursor(appId);
             const eventCursor = this.hub.readEvents(appId, undefined).cursor;
             const results: InteractStepResult[] = [];
@@ -279,9 +307,11 @@ export class BrowserPreview {
                     break;
                 }
             }
+            // An action may change what a drawing shows (a press that moves a shape): wait for it to draw, then settle
+            const pending = await this.waitDrawn(page);
             await this.settle(page);
             const { events, cursor } = this.hub.readEvents(appId, eventCursor);
-            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor };
+            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor, ...pendingOf(pending) };
         });
     }
 
@@ -345,22 +375,39 @@ export class BrowserPreview {
         return frame;
     }
 
-    /** The element a root component rendered for the node at `statePath`, searching open shadow roots */
+    /**
+     * The element a root component rendered for the node at `statePath`, searching open shadow roots. When no `ui-*`
+     * element has that scope, the element that draws the shape at that path (`data-shape-path`): an SVG shape, or the
+     * proxy button of a canvas shape (a clip shape in `defs` is not it)
+     */
     private async elementAt(page: Page, statePath: string): Promise<ElementHandle<HTMLElement>> {
         const frame = this.runtimeFrame(page);
-        const handle = await frame.evaluateHandle((wanted: string) => {
-            const find = (root: ParentNode): HTMLElement | undefined => {
-                for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
-                    if (element.scope?.basePath === wanted && element.localName.startsWith('ui-')) return element;
-                    if (element.shadowRoot) {
-                        const inner = find(element.shadowRoot);
+        const handle = await frame.evaluateHandle(
+            ({ wanted, shape }: { wanted: string; shape: string }) => {
+                const find = (root: ParentNode): HTMLElement | undefined => {
+                    for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
+                        if (element.scope?.basePath === wanted && element.localName.startsWith('ui-')) return element;
+                        if (element.shadowRoot) {
+                            const inner = find(element.shadowRoot);
+                            if (inner) return inner;
+                        }
+                    }
+                    return undefined;
+                };
+                const findShape = (root: ParentNode): HTMLElement | undefined => {
+                    const own = Array.from(root.querySelectorAll<HTMLElement>(shape)).find((element) => element.closest('defs') === null);
+                    if (own) return own;
+                    for (const element of Array.from(root.querySelectorAll('*'))) {
+                        if (!element.shadowRoot) continue;
+                        const inner = findShape(element.shadowRoot);
                         if (inner) return inner;
                     }
-                }
-                return undefined;
-            };
-            return find(document) ?? null;
-        }, statePath);
+                    return undefined;
+                };
+                return find(document) ?? findShape(document) ?? null;
+            },
+            { wanted: statePath, shape: shapeSelector(statePath) }
+        );
         const element = handle.asElement() as ElementHandle<HTMLElement> | null;
         if (element === null) {
             await handle.dispose();
@@ -481,8 +528,61 @@ export class BrowserPreview {
         await page.mouse.up();
     }
 
+    /** How the element is reached when it draws a shape; undefined for the host of a node */
+    private async shapeOf(element: ElementHandle<HTMLElement>): Promise<ShapeTarget | undefined> {
+        return element.evaluate((node: HTMLElement) => {
+            const kind = node.getAttribute('data-shape-path') === null ? null : (node.getAttribute('data-shape-kind') ?? 'shape');
+            if (kind === null || node.localName.startsWith('ui-')) return undefined;
+            return { kind, via: node instanceof SVGElement ? ('svg' as const) : ('proxy' as const) };
+        });
+    }
+
+    /**
+     * Runs an action on the element of a shape. An SVG shape is clicked with a real pointer click, so the drawing's hit
+     * testing runs; the proxy button of a canvas shape has `pointer-events: none` and is clicked at element level.
+     * `hover` moves the mouse to the middle of the element's or proxy's box, `focus` focuses it, `press` and `key`
+     * focus it and press the key
+     */
+    private async performOnShape(page: Page, step: InteractStep, statePath: string, element: ElementHandle<HTMLElement>, shape: ShapeTarget): Promise<void> {
+        const refused = shapeActionError(statePath, shape.kind, step.action);
+        if (refused !== undefined) throw new InteractionError(refused);
+        if (await this.behindModal(page, element)) throw new InteractionError(behindModalMessage(statePath));
+        const timeout = 5000;
+        const focus = async (): Promise<void> => {
+            const focused = await element.evaluate((node: HTMLElement) => {
+                node.focus();
+                return node.matches(':focus');
+            });
+            if (!focused) throw new InteractionError(`${statePath} takes no focus: only an interactive shape does (interactive: true)`);
+        };
+        switch (step.action) {
+            case 'click':
+                if (shape.via === 'svg') await element.click({ timeout });
+                else await element.evaluate((node: HTMLElement) => node.click());
+                return;
+            case 'hover': {
+                await element.scrollIntoViewIfNeeded({ timeout }).catch(() => undefined);
+                const box = await element.boundingBox();
+                if (box === null || (box.width === 0 && box.height === 0)) throw new InteractionError(`${statePath} is drawn but has no box on screen, so it cannot be hovered`);
+                await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+                return;
+            }
+            case 'focus':
+                await focus();
+                return;
+            case 'press':
+            case 'key':
+                if (step.value === undefined) throw new InteractionError(`${step.action} needs a key, such as Enter or Space`);
+                await focus();
+                await page.keyboard.press(step.value);
+                return;
+            default:
+                throw new InteractionError(`${step.action} is not done on a shape`);
+        }
+    }
+
     private async perform(page: Page, step: InteractStep): Promise<void> {
-        if (step.action === 'key') {
+        if (step.action === 'key' && step.path === undefined) {
             if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
             // The key goes to whatever has focus: a focus action, or the control an earlier action left focused
             await page.keyboard.press(step.value);
@@ -496,6 +596,22 @@ export class BrowserPreview {
             return;
         }
         const element = await this.elementAt(page, statePath);
+        const shape = await this.shapeOf(element);
+        if (shape !== undefined) {
+            try {
+                await this.performOnShape(page, step, statePath, element, shape);
+            } finally {
+                await element.dispose();
+            }
+            return;
+        }
+        if (step.action === 'key') {
+            // A key with the path of a node that is not a shape goes to whatever has focus, as without a path
+            await element.dispose();
+            if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
+            await page.keyboard.press(step.value);
+            return;
+        }
         if (step.action === 'focus') {
             try {
                 if (await this.behindModal(page, element)) throw new InteractionError(behindModalMessage(statePath));
@@ -607,7 +723,8 @@ export class BrowserPreview {
      * scrolling element of a component (the main area of a page), so the height is the viewport plus the most any of
      * them can still scroll. Measures again after each growth, since a taller view can draw more (virtual rows)
      */
-    private async growToContent(page: Page, viewport: { width: number; height: number }): Promise<void> {
+    private async growToContent(page: Page, viewport: { width: number; height: number }, pending: readonly string[]): Promise<readonly string[]> {
+        let stillPending = pending;
         for (let pass = 0; pass < FULL_PAGE_PASSES && viewport.height < MAX_FULL_PAGE_HEIGHT; pass += 1) {
             const extra = await this.runtimeFrame(page).evaluate(() => {
                 let most = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -623,10 +740,44 @@ export class BrowserPreview {
                 walk(document);
                 return Math.ceil(most);
             });
-            if (extra <= 1) return;
+            if (extra <= 1) return stillPending;
             viewport.height = Math.min(MAX_FULL_PAGE_HEIGHT, viewport.height + extra);
             await page.setViewportSize(viewport);
+            // A resize redraws every drawing
+            stillPending = await this.waitDrawn(page);
             await this.settle(page);
+        }
+        return stillPending;
+    }
+
+    /**
+     * Waits until no drawing or scene in the runtime frame is marked `data-render="pending"`, up to `RENDER_TIMEOUT_MS`,
+     * and gives the state paths of those still pending then (none when all drew). Two frames pass first, so a redraw
+     * that a resize or a theme message just started has marked itself
+     */
+    private async waitDrawn(page: Page): Promise<readonly string[]> {
+        const frame = page.frames().find((candidate) => candidate !== page.mainFrame());
+        if (frame === undefined) return [];
+        const pendingPaths = (): string[] => {
+            const found: string[] = [];
+            const walk = (root: ParentNode): void => {
+                for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
+                    if (element.getAttribute('data-render') === 'pending') found.push(element.scope?.basePath ?? element.localName);
+                    if (element.shadowRoot) walk(element.shadowRoot);
+                }
+            };
+            walk(document);
+            return found;
+        };
+        try {
+            await frame.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+            await frame.waitForFunction(`(${pendingPaths.toString()})().length === 0`, undefined, { timeout: RENDER_TIMEOUT_MS, polling: 'raf' });
+            return [];
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TimeoutError') return frame.evaluate(`(${pendingPaths.toString()})()`) as Promise<string[]>;
+            // The frame was replaced meanwhile (a reload): the next wait sees the new one
+            if (error instanceof Error && DETACHED.test(error.message)) return [];
+            throw error;
         }
     }
 
@@ -637,6 +788,26 @@ export class BrowserPreview {
 
 function behindModalMessage(statePath: string): string {
     return `${statePath} is behind an open modal dialog: act inside the modal, or close it first`;
+}
+
+/** The `pending` field of a result: the drawings still pending, or nothing when all drew */
+function pendingOf(pending: readonly string[]): { pending?: readonly string[] } {
+    return pending.length === 0 ? {} : { pending };
+}
+
+/**
+ * The nodes and interactive shapes the page code found that are at or below `under`, in page order, each path once
+ * (the first element that draws it)
+ */
+export function renderedUnder(found: readonly FoundNode[], under: string): RenderedNode[] {
+    const seen = new Set<string>();
+    const nodes: RenderedNode[] = [];
+    for (const { path, component, visible } of found) {
+        if (seen.has(path) || !isAtOrBelow(path, under)) continue;
+        seen.add(path);
+        nodes.push({ path, component, visible });
+    }
+    return nodes;
 }
 
 /** Accepts `$.app.children.x` and `app.children.x` */

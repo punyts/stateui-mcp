@@ -39,7 +39,7 @@ const COMMAND = defineInput({
 const SCREENSHOT = defineInput({
     ...RUN_APP_FIELDS,
     ...SCREEN_FIELDS,
-    path: { type: 'string', description: 'A node to capture alone, such as "$.app.children.form"; rows and cards have runtime paths (ui_tree with rendered: true). Without it the whole page' },
+    path: { type: 'string', description: 'A node to capture alone, such as "$.app.children.form" or a drawing; rows, cards and shapes have runtime paths (ui_tree with rendered: true). Without it the whole page' },
     width: { type: 'integer', minimum: 200, maximum: 3840, description: 'Viewport width in pixels (default 1280)' },
     height: { type: 'integer', minimum: 200, maximum: 4000, description: 'Viewport height in pixels (default 800)' },
     mode: { type: 'string', description: 'A "mode" overlay name from ui_tokens_list, such as "dark", applied to the headless page before the capture' },
@@ -60,7 +60,7 @@ const INTERACT = defineInput({
                 required: true,
                 enum: INTERACT_ACTIONS,
                 description:
-                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick an option by its value or label (radioField, segmented, select). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together'
+                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick an option by its value or label (radioField, segmented, select). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together. A shape of a drawing (path from ui_tree with rendered: true) takes click, press, hover, focus and key (key with its path focuses it first); fill, select and choose are refused'
             },
             path: { type: 'string', description: 'The node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths, and with rendered: true the paths of rows and cards' },
             value: {
@@ -87,6 +87,11 @@ const CALL_ANSWER = defineInput({
 
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
+}
+
+/** The drawings and scenes that did not finish drawing within the wait, for a result: `scenes: "pending"` and their paths */
+function pendingScenes(pending: readonly string[] | undefined): { scenes?: 'pending'; pending?: readonly string[] } {
+    return pending === undefined || pending.length === 0 ? {} : { scenes: 'pending', pending };
 }
 
 function browserUnavailable(error: BrowserUnavailableError): ToolOutcome {
@@ -183,7 +188,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_screenshot',
             description:
-                'Run time: take a PNG screenshot of the app in the headless browser: the whole page, or one node when path is given. With app it shows the instance of the app part, and screen and params capture that screen (the instance stays on it). Optional width and height set the viewport, fullPage: true captures the whole scrolling height, mode switches the theme overlay (such as "dark") for the capture. Nothing of the definition changes. Returns the image and a short summary { app, revision, target, width, height, mode?, screen? }. Use it to check what the user will see after a write.',
+                'Run time: take a PNG screenshot of the app in the headless browser: the whole page, or one node when path is given. With app it shows the instance of the app part, and screen and params capture that screen (the instance stays on it). Optional width and height set the viewport, fullPage: true captures the whole scrolling height, mode switches the theme overlay (such as "dark") for the capture. The capture waits until every drawing has drawn (up to 10 seconds); one that did not is named in pending, with scenes: "pending", and the capture is still taken. Nothing of the definition changes. Returns the image and a short summary { app, revision, target, width, height, mode?, screen?, scenes?, pending? }. Use it to check what the user will see after a write.',
             inputSchema: SCREENSHOT.schema,
             annotations: SHOWS,
             run: async (args) => {
@@ -206,7 +211,16 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                         ...(fullPage === true && { fullPage })
                     });
                     return succeed(
-                        { ...runName(target), revision, target: shot.target, width: shot.width, height: shot.height, ...(mode !== undefined && { mode }), ...(screen !== undefined && { screen }) },
+                        {
+                            ...runName(target),
+                            revision,
+                            target: shot.target,
+                            width: shot.width,
+                            height: shot.height,
+                            ...(mode !== undefined && { mode }),
+                            ...(screen !== undefined && { screen }),
+                            ...pendingScenes(shot.pending)
+                        },
                         [{ data: shot.png.toString('base64'), mimeType: 'image/png' }]
                     );
                 } catch (error) {
@@ -219,7 +233,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
+                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. The interactive shapes of a drawing are reached by their paths too (ui_tree with rendered: true lists them). An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -238,7 +252,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 try {
                     const result = await browser.interact(appId, target.viewRevision, steps);
                     const failed = result.results.some((step) => !step.ok);
-                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, emits: result.events, cursor: result.cursor };
+                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, emits: result.events, cursor: result.cursor, ...pendingScenes(result.pending) };
                     return failed ? { isError: true, body: { error: 'action-failed', message: 'An action failed; the later actions did not run', ...body } } : succeed(body);
                 } catch (error) {
                     if (error instanceof BrowserUnavailableError) return browserUnavailable(error);

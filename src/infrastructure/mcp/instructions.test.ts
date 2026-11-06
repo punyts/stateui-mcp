@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
-import { buildServerInstructions, searchWorkflowSection, START_HERE } from './instructions.js';
+import { buildServerInstructions, graphicsSection, searchWorkflowSection, START_HERE } from './instructions.js';
 
 /** The tool names of each step, in the order the steps list them */
 const STEP_TOOLS = [
@@ -99,6 +99,45 @@ describe('searchWorkflowSection', () => {
         expect(text).not.toMatch(/preset/i);
         expect(text).toContain('ui_theme_create');
         expect(text).toContain('ui_theme_write');
+    });
+});
+
+describe('graphicsSection', () => {
+    it('should name every 2D shape and say shapes sit in a drawing', () => {
+        // Act
+        const text = graphicsSection();
+
+        // Assert
+        for (const shape of ['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'drawText', 'drawImage', 'drawGroup', 'drawRepeat']) expect(text).toContain(shape);
+        expect(text).toContain('holds shape nodes in its children');
+        expect(text).toContain('accepted only inside a drawing');
+    });
+
+    it('should state the value, record colour and drag rules', () => {
+        // Act
+        const text = graphicsSection();
+
+        // Assert
+        expect(text).toContain('a literal, a theme token');
+        expect(text).toContain('a link ("<-cx"');
+        expect(text).toContain('A colour that depends on a record comes from the record');
+        expect(text).toContain('"<-fill": "$row.fill"');
+        expect(text).toContain('once, on release');
+    });
+
+    it('should say shapes are reached with ui_tree rendered and ui_interact, in about ten lines', () => {
+        // Act
+        const text = graphicsSection();
+
+        // Assert
+        expect(text).toContain('ui_tree with rendered: true lists its interactive shapes');
+        expect(text).toContain('ui_interact takes click, press, hover, focus and key');
+        expect(text.split('\n').length).toBeLessThanOrEqual(12);
+        expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('should be a section of the server instructions', () => {
+        expect(buildServerInstructions(INDEX, PRESETS)).toContain(graphicsSection());
     });
 });
 

@@ -60,6 +60,24 @@ const LOGIC = [
     'Behavior goes in the logic of an app or of a logic module (ui_logic_write): machines (a state path, an initial state and transitions from one state to another when a trigger matches) and rules (a trigger and commands). A trigger is a state path ("$.data.contacts.{id}"; * and {name} match one segment) or the result of a save-data or delete-data command ("result": its "as" name; a machine waits for its own commands, a rule or table for those of rules and tables), narrowed by "is" and "if". Within one step a unit runs after the units whose commands write under its trigger path, so a rule over $.data.bag sees the line totals a table writes. Commands: set, merge, copy, toggle, increment, reset, save-data, delete-data, pull-data, query, notify, emit, reject. A rule whose only command is reject is a guard: it refuses the change. A Save button sets a flag the machine watches (an on command takes "from": a path whose value it uses instead of "value", so set copies a value); save-data copies the form into $.data. Tables (logic.tables: when, inputs, rows of { match?, if?, do }) run the first matching row, with a last row of neither match nor if as the default. "was" compares the value a change replaced ($previous). "debounce": ms waits for a path to be quiet; "after": ms on a machine transition with "from" fires that long after the machine entered the state. call (machines only) asks a server procedure: one the server does not know arrives as a logic.call event { id, name, payload } in ui_events_read; answer it with ui_call_answer and the machine gets the answer as its "as" result. ui_tree with logic: true lists the machines with their current state and the tables, and failures arrive as logic.failed events.'
 ];
 
+/**
+ * The shape vocabulary of drawings and its rules (G1.10 of the graphics epic 1). Its own function so a later epic can
+ * move it into a guide topic without touching the other sections
+ */
+export function graphicsSection(): string {
+    return [
+        'Drawings: a drawing node (category graphics) holds shape nodes in its children: rect, circle, ellipse, line, polyline, polygon, path, drawText, drawImage, drawGroup (shapes in its own children) and drawRepeat (one copy of its row shape per record). A shape is accepted only inside a drawing, a drawGroup or a drawRepeat row; ui_component_get gives the properties of each.',
+        [
+            '- viewBox ({ x, y, width, height }) sets the drawing units the shapes use; fit says how it fills the box.',
+            '- A shape value is a literal, a theme token ("fill": "{color.accent.base}") or a link ("<-cx": "$.data.chart.x"). No expressions: a value that changes is linked to state that logic writes.',
+            '- A colour that depends on a record comes from the record: in a drawRepeat row, "<-fill": "$row.fill", where a rule or table writes the record\'s fill field. $row links read the record, as in a list row.',
+            '- interactive: true makes a shape pressable and focusable; give it a _label (its accessible name). Its "on" entries run on press and hover (once each time the pointer enters), like a button\'s.',
+            '- draggable ("x", "y" or "both") moves a shape; the drag writes the final position once, on release, through its <-x and <-y links when it has them.',
+            '- Check a drawing with ui_screenshot of its path. ui_tree with rendered: true lists its interactive shapes with their paths (...rows.<recordKey> for a repeat copy), and ui_interact takes click, press, hover, focus and key on those paths.'
+        ].join('\n')
+    ].join('\n');
+}
+
 const SAFETY = [
     'ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.'
 ];
@@ -72,6 +90,7 @@ export function buildServerInstructions(index: readonly CategoryIndexEntry[], pr
         ...WORKING_LOOP,
         ...LOGIC,
         ...LIVE_VIEW,
+        graphicsSection(),
         ...SAFETY
     ].join('\n\n');
 }

@@ -32,3 +32,45 @@ export async function releaseStoredFile(appId: string, id: unknown, fetcher: Fil
     if (response.status === 204 || response.status === 404 || response.status === 409) return { ok: true };
     return { ok: false, code: 'internal', message: `The release was refused (${response.status})` };
 }
+
+/** How long a release waits for the view's changes to reach the server before it is sent anyway, in milliseconds */
+export const RELEASE_SETTLE_MS = 5000;
+
+/**
+ * Holds a release back until the sync client has no change waiting for the authority's ack. A component gives a file
+ * back right after it writes the value that let go of it, but that write goes to the server over the socket and the
+ * release over HTTP: sent at once, the release could reach the server while its live state still references the file,
+ * which answers `409` and leaves the file for the sweep. `update` takes every status report of the sync client;
+ * `settled` resolves once nothing is waiting, at once when the client is not online (nothing would be acknowledged), and
+ * after `timeoutMs` at the latest
+ */
+export interface ReleaseGate {
+    update(status: string, waiting: number): void;
+    settled(timeoutMs?: number): Promise<void>;
+}
+
+export function createReleaseGate(): ReleaseGate {
+    let status = 'connecting';
+    let waiting = 0;
+    const waiters = new Set<() => void>();
+    const open = (): boolean => status !== 'online' || waiting === 0;
+    return {
+        update(nextStatus, nextWaiting) {
+            status = nextStatus;
+            waiting = nextWaiting;
+            if (open()) for (const done of [...waiters]) done();
+        },
+        settled(timeoutMs = RELEASE_SETTLE_MS) {
+            if (open()) return Promise.resolve();
+            return new Promise((resolve) => {
+                const done = (): void => {
+                    clearTimeout(timer);
+                    waiters.delete(done);
+                    resolve();
+                };
+                const timer = setTimeout(done, timeoutMs);
+                waiters.add(done);
+            });
+        }
+    };
+}

@@ -25,7 +25,9 @@
  * `fileResult`), and a `fileRead` is fetched from `GET /apps/:appId/files/:fileId` (`fileRead.ts`) and answered with
  * `fileData`, its bytes in the transfer list. A `fileRelease` is sent as `DELETE /apps/:appId/files/:fileId`
  * (`fileRelease.ts`) and answered with `fileReleased`: `ok: true` when the file is gone or was never there, and also when
- * the server keeps it because the app or its live state still references it (`409`; the sweep removes it later).
+ * the server keeps it because the app or its live state still references it (`409`; the sweep removes it later). The
+ * DELETE waits until the sync client has no change waiting for its ack (at most `RELEASE_SETTLE_MS`), so the write that
+ * let go of the file reaches the server first.
  *
  * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
  * and its errors.
@@ -38,7 +40,7 @@ import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { readStoredFile } from './fileRead.js';
-import { releaseStoredFile } from './fileRelease.js';
+import { createReleaseGate, releaseStoredFile } from './fileRelease.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
 
 /** The app events an app server's logic sends to the views: failures and `notify.<name>` */
@@ -285,6 +287,8 @@ class LiveView {
     private locale: string | undefined;
     private readonly queuedCommands: Extract<ServerMessage, { type: 'command' }>[] = [];
     private readonly uploads = new Map<number, XMLHttpRequest>();
+    /** Holds a file release back until the frame's changes have reached the server (`fileRelease.ts`) */
+    private readonly releaseGate = createReleaseGate();
 
     constructor(private readonly body: HTMLElement) {
         this.appId = body.dataset['appId'] ?? '';
@@ -447,6 +451,7 @@ class LiveView {
 
     private onSyncStatus(report: SyncStatusReport): void {
         this.syncStatus = { mode: 'full', status: report.status, waiting: report.waiting };
+        this.releaseGate.update(report.status, report.waiting);
         this.body.dataset['sync'] = report.status;
         if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
     }
@@ -704,11 +709,15 @@ class LiveView {
         });
     }
 
-    /** A component gives a stored file back: a DELETE on the page's own origin, answered with `fileReleased` */
+    /**
+     * A component gives a stored file back: a DELETE on the page's own origin, answered with `fileReleased`. It waits
+     * until the frame's changes before it (the write that let go of the file) are acknowledged, so the server's live
+     * state no longer references the file
+     */
     private onFileRelease(message: RuntimeMessage): void {
         const requestId = message['requestId'];
         if (typeof requestId !== 'number') return;
-        void releaseStoredFile(this.appId, message['id'], (url, init) => fetch(url, init)).then((outcome) => {
+        void this.releaseGate.settled().then(() => releaseStoredFile(this.appId, message['id'], (url, init) => fetch(url, init))).then((outcome) => {
             this.post({ type: 'fileReleased', requestId, ...outcome });
         });
     }

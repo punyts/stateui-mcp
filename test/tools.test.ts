@@ -265,6 +265,36 @@ describe('live tools', () => {
         expect(shot.body).toMatchObject({ app: app.name, revision: 1, target: 'page', mode: 'dark' });
     });
 
+    it('should report a drawing that stayed pending as scenes: pending and still return the capture', async () => {
+        const app = await createForm();
+        browser['screenshot']?.mockResolvedValueOnce({ png: PNG, width: 1280, height: 800, target: 'page', pending: ['$.app.children.map'] });
+
+        const shot = await call(harness.client, 'ui_screenshot', { app: app.name });
+
+        expect(shot.isError).toBe(false);
+        expect(shot.images).toHaveLength(1);
+        expect(shot.body).toMatchObject({ scenes: 'pending', pending: ['$.app.children.map'] });
+    });
+
+    it('should leave scenes out of a screenshot whose drawings all drew', async () => {
+        const app = await createForm();
+
+        const shot = await call(harness.client, 'ui_screenshot', { app: app.name });
+
+        expect(shot.body['scenes']).toBeUndefined();
+        expect(shot.body['pending']).toBeUndefined();
+    });
+
+    it('should report a drawing that stayed pending after the actions as scenes: pending', async () => {
+        const app = await createForm();
+        browser['interact']?.mockResolvedValueOnce({ results: [{ index: 0, action: 'click', path: '$.app', ok: true }], errors: [], events: [], cursor: 0, pending: ['$.app.children.map'] });
+
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app' }] });
+
+        expect(result.isError).toBe(false);
+        expect(result.body).toMatchObject({ scenes: 'pending', pending: ['$.app.children.map'] });
+    });
+
     it('should say how to install Chromium when a screenshot cannot be taken', async () => {
         const app = await createForm();
         browser['screenshot']?.mockRejectedValueOnce(new BrowserUnavailableError('missing'));

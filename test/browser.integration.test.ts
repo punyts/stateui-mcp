@@ -4,6 +4,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
 import { call, createApp, httpHarness, shellOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
+import { readFile, writeFile } from 'node:fs/promises';
+import { UNREFERENCED_FILE_GRACE_MS } from '../src/domain/UiFile.js';
+import { FileUiFileRepository } from '../src/infrastructure/storage/FileUiFileRepository.js';
+import { KeyedLock } from '../src/infrastructure/storage/KeyedLock.js';
+import { PartFolders } from '../src/infrastructure/storage/PartFolders.js';
 
 const installed = await BrowserPreview.isInstalled();
 
@@ -437,6 +442,237 @@ describe.skipIf(!installed)('ui_interact choose and ui_preview reload (Chromium 
     });
 });
 
+/** What a PNG shows, read in a blank Chromium page: its size, the colour at its centre, and where the red dot is */
+interface ShotPixels {
+    readonly width: number;
+    readonly height: number;
+    readonly center: readonly [number, number, number];
+    /** The mean x of the pure red pixels (the dot), or -1 when there are none */
+    readonly redX: number;
+    /** The number of different colours: 1 for a blank image */
+    readonly colours: number;
+}
+
+async function readPixels(page: Page, result: ToolResult): Promise<ShotPixels> {
+    const data = result.images[0]?.data ?? '';
+    return page.evaluate(async (base64: string) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext('2d') as CanvasRenderingContext2D;
+        context.drawImage(image, 0, 0);
+        const { data: pixels } = context.getImageData(0, 0, image.width, image.height);
+        const colours = new Set<number>();
+        let redSum = 0;
+        let redCount = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+            const [r, g, b] = [pixels[index] as number, pixels[index + 1] as number, pixels[index + 2] as number];
+            colours.add((r << 16) | (g << 8) | b);
+            if (r > 200 && g < 40 && b < 40) {
+                redSum += (index / 4) % image.width;
+                redCount += 1;
+            }
+        }
+        const at = (Math.floor(image.height / 2) * image.width + Math.floor(image.width / 2)) * 4;
+        const center: [number, number, number] = [pixels[at] as number, pixels[at + 1] as number, pixels[at + 2] as number];
+        return { width: image.width, height: image.height, center, redX: redCount === 0 ? -1 : redSum / redCount, colours: colours.size };
+    }, data);
+}
+
+/** `rgb(r, g, b)` as numbers */
+function rgbOf(css: string): [number, number, number] {
+    const [r = -1, g = -1, b = -1] = (css.match(/\d+/g) ?? []).map(Number);
+    return [r, g, b];
+}
+
+describe.skipIf(!installed)('drawings through the agent tools: release 1A of the graphics epic 1 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    const DRAWING = '$.app.children.map';
+    const DOT = `${DRAWING}.children.dot`;
+
+    /**
+     * The drawing an agent writes from the kit instructions and ui_component_get: a backdrop rect filled with a theme
+     * token over the whole viewBox, a red circle whose cx is linked to $.data and whose press sets a state value, and a
+     * label. The circle sits left of the centre, so the centre pixel of a capture is the token colour
+     */
+    const drawing = {
+        component: 'drawing',
+        _title: 'Seat map',
+        viewBox: { x: 0, y: 0, width: 200, height: 100 },
+        children: {
+            backdrop: { component: 'rect', x: 0, y: 0, width: 200, height: 100, fill: '{color.accent.base}' },
+            dot: {
+                component: 'circle',
+                '<-cx': '$.data.pos.p1.x',
+                cy: 50,
+                r: 12,
+                fill: '#ff0000',
+                interactive: true,
+                _label: 'Seat dot',
+                on: { press: [{ command: 'set', target: '$.data.pos.p1.chosen', value: 'yes' }] }
+            },
+            label: { component: 'drawText', x: 150, y: 20, _text: 'Seats', fill: '#000000' }
+        }
+    };
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        await step(harness, 'ui_model_write', {
+            model: 'point',
+            operations: [
+                { op: 'set', field: 'x', type: 'number' },
+                { op: 'set', field: 'chosen', type: 'string' }
+            ]
+        });
+        await step(harness, 'ui_data_write', { dataset: 'points', model: 'point', operations: [{ op: 'set', path: 'p1', value: { x: 40, chosen: 'no' } }] });
+        await createApp(harness.client, 'seats', shellOf({}), { data: { pos: { dataset: 'points' } } });
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should accept the drawing from the kit vocabulary and validate it', async () => {
+        // Arrange: what the agent reads before it writes
+        const instructions = harness.client.getInstructions() ?? '';
+        const components = await Promise.all(['drawing', 'rect', 'circle', 'drawText'].map((component) => call(harness.client, 'ui_component_get', { name: component })));
+
+        // Act
+        const written = await writeShell(harness, 'seats', 1, [{ op: 'set', path: 'root.children.map', value: drawing }]);
+        const validated = await call(harness.client, 'ui_validate', { app: 'seats' });
+
+        // Assert
+        expect(instructions).toContain('ui_tree with rendered: true lists its interactive shapes');
+        expect(components.map((component) => component.isError)).toEqual([false, false, false, false]);
+        expect(written.isError).toBe(false);
+        expect(validated.body['valid']).toBe(true);
+        expect(validated.body['errors']).toEqual([]);
+    });
+
+    it('should screenshot the drawing with the token colour at its centre and the dot drawn', async () => {
+        // Arrange: the colour the token resolves to, read from a page of the same app
+        const preview = await call(harness.client, 'ui_preview', { app: 'seats' });
+        const own = await browser.newPage();
+        await own.goto(String(preview.body['url']));
+        const fill = await own
+            .frameLocator('iframe')
+            .locator('ui-drawing[data-render="ready"]')
+            .evaluate((host) => {
+                const backdrop = host.shadowRoot?.querySelector('[data-shape-path$=".backdrop"]');
+                return backdrop === null || backdrop === undefined ? '' : getComputedStyle(backdrop).fill;
+            });
+        await own.close();
+
+        // Act
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'seats', path: DRAWING });
+        const pixels = await readPixels(blank, shot);
+
+        // Assert
+        expect(shot.isError).toBe(false);
+        expect(shot.body['target']).toBe(DRAWING);
+        expect(shot.body['scenes']).toBeUndefined();
+        expect(pixels.colours).toBeGreaterThan(2);
+        const token = rgbOf(fill);
+        pixels.center.forEach((channel, index) => expect(Math.abs(channel - (token[index] as number))).toBeLessThanOrEqual(2));
+        expect(pixels.redX).toBeGreaterThan(0);
+        expect(pixels.redX).toBeLessThan(pixels.width / 2);
+    });
+
+    it('should list the interactive shape in ui_tree rendered, and not the others', async () => {
+        // Act
+        const tree = await call(harness.client, 'ui_tree', { app: 'seats', rendered: true, path: DRAWING });
+
+        // Assert
+        expect(tree.isError).toBe(false);
+        const text = String(tree.body['text']);
+        expect(text).toContain(`dot (circle) ${DOT}`);
+        expect(text).not.toContain('backdrop');
+        expect(text).not.toContain('drawText');
+    });
+
+    it('should press the circle with ui_interact click and change the state value once', async () => {
+        // Act
+        const clicked = await call(harness.client, 'ui_interact', { app: 'seats', actions: [{ action: 'click', path: DOT }] });
+        const state = await eventually(harness, 'ui_state_get', { app: 'seats', path: '$.data.pos.p1' }, (result) => JSON.stringify(result.body).includes('"yes"'));
+
+        // Assert
+        expect(clicked.isError).toBe(false);
+        expect(clicked.body['errors']).toEqual([]);
+        expect(JSON.stringify(state.body)).toContain('"chosen":"yes"');
+    });
+
+    it('should hover, focus and press a key on the circle, and refuse fill on it naming what a shape takes', async () => {
+        // Arrange
+        await step(harness, 'ui_data_write', { dataset: 'points', operations: [{ op: 'set', path: 'p1.chosen', value: 'no' }] });
+        await eventually(harness, 'ui_state_get', { app: 'seats', path: '$.data.pos.p1' }, (result) => JSON.stringify(result.body).includes('"chosen":"no"'));
+
+        // Act
+        const acted = await call(harness.client, 'ui_interact', {
+            app: 'seats',
+            actions: [
+                { action: 'hover', path: DOT },
+                { action: 'focus', path: DOT },
+                { action: 'press', path: DOT, value: 'Enter' }
+            ]
+        });
+        const pressed = await eventually(harness, 'ui_state_get', { app: 'seats', path: '$.data.pos.p1' }, (result) => JSON.stringify(result.body).includes('"yes"'));
+        const filled = await call(harness.client, 'ui_interact', { app: 'seats', actions: [{ action: 'fill', path: DOT, value: 'x' }] });
+
+        // Assert
+        expect((acted.body['results'] as { ok: boolean }[]).map((result) => result.ok)).toEqual([true, true, true]);
+        expect(JSON.stringify(pressed.body)).toContain('"chosen":"yes"');
+        expect(filled.isError).toBe(true);
+        expect((filled.body['results'] as { error?: string }[])[0]?.error).toBe(`${DOT} is a shape (circle), which takes click, press, hover, focus, key, not fill`);
+    });
+
+    it('should name the path when no shape is drawn there', async () => {
+        // Act
+        const result = await call(harness.client, 'ui_interact', { app: 'seats', actions: [{ action: 'click', path: `${DRAWING}.children.nothing` }] });
+
+        // Assert
+        expect(result.isError).toBe(true);
+        expect((result.body['results'] as { error?: string }[])[0]?.error).toContain(`Nothing is rendered at ${DRAWING}.children.nothing`);
+    });
+
+    it('should move the circle in the next screenshot when the linked $.data value changes (a dataset write)', async () => {
+        // Arrange
+        const before = await readPixels(blank, await call(harness.client, 'ui_screenshot', { app: 'seats', path: DRAWING }));
+
+        // Act
+        await step(harness, 'ui_data_write', { dataset: 'points', operations: [{ op: 'set', path: 'p1.x', value: 160 }] });
+        const after = await readPixels(blank, await call(harness.client, 'ui_screenshot', { app: 'seats', path: DRAWING }));
+
+        // Assert
+        expect(before.redX).toBeLessThan(before.width / 2);
+        expect(after.redX).toBeGreaterThan(after.width / 2);
+    });
+
+    it('should draw the token colour of the dark mode in a mode: "dark" screenshot', async () => {
+        // Arrange
+        const light = await readPixels(blank, await call(harness.client, 'ui_screenshot', { app: 'seats', path: DRAWING }));
+
+        // Act
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'seats', path: DRAWING, mode: 'dark' });
+        const dark = await readPixels(blank, shot);
+
+        // Assert
+        expect(shot.isError).toBe(false);
+        expect(shot.body['mode']).toBe('dark');
+        expect(dark.center).not.toEqual(light.center);
+    });
+});
+
 describe.skipIf(!installed)('live sync between pages and the server (Chromium through Playwright)', () => {
     let data: TempData;
     let harness: HttpHarness;
@@ -548,6 +784,126 @@ describe.skipIf(!installed)('live sync between pages and the server (Chromium th
         await expect.poll(() => email(page).inputValue()).toBe('');
         const state = await call(harness.client, 'ui_state_get', { app: app.name });
         expect(JSON.stringify(state.body['state'])).not.toContain('refused@server.test');
+        await page.close();
+    });
+});
+
+describe.skipIf(!installed)('paintField saving through the live view (G2.8 of the graphics epic 2, Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    const SIGN = { component: 'paintField', _label: 'Signature', width: 200, height: 100, colors: ['#ff0000'], sizes: [8] };
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    /** The file reference the field holds in the server's state of the app, or undefined */
+    async function savedRef(app: string): Promise<{ id: string; name: string; size: number; type: string } | undefined> {
+        const state = await call(harness.client, 'ui_state_get', { app });
+        const find = (value: unknown): { id: string; name: string; size: number; type: string } | undefined => {
+            if (typeof value !== 'object' || value === null) return undefined;
+            const entry = value as Record<string, unknown>;
+            if (entry['type'] === 'image/png' && typeof entry['id'] === 'string') return entry as { id: string; name: string; size: number; type: string };
+            for (const child of Object.values(entry)) {
+                const found = find(child);
+                if (found) return found;
+            }
+            return undefined;
+        };
+        return find(state.body['state']);
+    }
+
+    /** Waits until the server's state holds a saved painting other than `previous` and gives its reference */
+    async function nextSave(app: string, previous: string | undefined): Promise<{ id: string; name: string; size: number; type: string }> {
+        const deadline = Date.now() + 15_000;
+        for (;;) {
+            const found = await savedRef(app);
+            if (found && found.id !== previous) return found;
+            if (Date.now() > deadline) throw new Error(`No new save; the state holds ${JSON.stringify(found)}`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+    }
+
+    /** Draws a horizontal stroke across the field's canvas at the fraction `at` of its height */
+    async function drawStroke(page: Page, at: number): Promise<void> {
+        const box = await page.frameLocator('iframe').locator('canvas').boundingBox();
+        if (!box) throw new Error('the canvas is not rendered');
+        const y = box.y + box.height * at;
+        await page.mouse.move(box.x + box.width * 0.1, y);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width * 0.5, y, { steps: 4 });
+        await page.mouse.move(box.x + box.width * 0.9, y, { steps: 4 });
+        await page.mouse.up();
+    }
+
+    /** The PNG files the app stores, as the test server's file repository lists them */
+    async function storedPngs(appId: string): Promise<readonly string[]> {
+        const files = await new FileUiFileRepository(new PartFolders(data.dir), new KeyedLock()).list(appId);
+        return files.filter((file) => file.type === 'image/png').map((file) => file.id);
+    }
+
+    it('should save a painting the server serves back as a PNG, keep one file over ten saves and keep it past the sweep', { timeout: 120_000 }, async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'paint', shellOf({ sign: SIGN }));
+        const page = await browser.newPage();
+        await page.goto(`${harness.server.origin}/apps/${app.id}`);
+        await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
+        await page.frameLocator('iframe').locator('canvas').waitFor();
+
+        // Act: one stroke, then the pause
+        await drawStroke(page, 0.5);
+        const first = await nextSave(app.name, undefined);
+        const response = await fetch(`${harness.server.origin}/apps/${app.id}/files/${first.id}`);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        const pixels = await page.evaluate(async (base64: string) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${base64}`;
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext('2d') as CanvasRenderingContext2D;
+            context.drawImage(image, 0, 0);
+            return { centre: [...context.getImageData(100, 50, 1, 1).data], corner: [...context.getImageData(2, 2, 1, 1).data] };
+        }, bytes.toString('base64'));
+
+        // Act: nine more saves
+        let last = first;
+        for (let index = 1; index < 10; index += 1) {
+            await drawStroke(page, 0.1 + index * 0.08);
+            last = await nextSave(app.name, last.id);
+        }
+        await expect.poll(() => storedPngs(app.id), { timeout: 10_000 }).toEqual([last.id]);
+
+        // Act: a day passes and another upload runs the sweep
+        const index = new PartFolders(data.dir).filesIndex(app.id);
+        const entries = JSON.parse(await readFile(index, 'utf8')) as { createdAt: string }[];
+        const old = new Date(Date.now() - UNREFERENCED_FILE_GRACE_MS - 60_000).toISOString();
+        await writeFile(index, JSON.stringify(entries.map((entry) => ({ ...entry, createdAt: old }))));
+        const trigger = new FormData();
+        trigger.append('file', new Blob([new Uint8Array(Buffer.from('trigger'))]), 'trigger.txt');
+        const uploaded = await fetch(`${harness.server.origin}/apps/${app.id}/files`, { method: 'POST', body: trigger });
+        const kept = await fetch(`${harness.server.origin}/apps/${app.id}/files/${last.id}`);
+
+        // Assert
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toContain('image/png');
+        expect(first).toMatchObject({ name: 'Signature.png', type: 'image/png', size: bytes.length });
+        expect(bytes.subarray(1, 4).toString()).toBe('PNG');
+        expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([200, 100]);
+        expect(pixels.centre).toEqual([255, 0, 0, 255]);
+        expect(pixels.corner[3]).toBe(0);
+        expect(uploaded.status).toBe(201);
+        expect(kept.status).toBe(200);
         await page.close();
     });
 });
