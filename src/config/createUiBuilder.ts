@@ -27,6 +27,7 @@ import { ReadFile } from '../application/use-cases/ReadFile.js';
 import { ReadFileText } from '../application/use-cases/ReadFileText.js';
 import { RecordPreviewErrors } from '../application/use-cases/RecordPreviewErrors.js';
 import { RecordPreviewLoad } from '../application/use-cases/RecordPreviewLoad.js';
+import { ReleaseFile } from '../application/use-cases/ReleaseFile.js';
 import { RunCommand } from '../application/use-cases/RunCommand.js';
 import { SetPartState } from '../application/use-cases/SetState.js';
 import { ResetInstance } from '../application/use-cases/ResetState.js';
@@ -84,6 +85,8 @@ export interface UiBuilderUseCases {
     readonly recordPreviewLoad: RecordPreviewLoad;
     readonly uploadFile: UploadFile;
     readonly readFile: ReadFile;
+    /** Removes a file nothing references any more (`DELETE /apps/:appId/files/:fileId`) */
+    readonly releaseFile: ReleaseFile;
     readonly readFileText: ReadFileText;
     readonly createPartApp: CreatePartApp;
     readonly configureApp: ConfigureApp;
@@ -132,6 +135,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
         uploadFile: new UploadFile(fileRepository, fileStore, new SweepAppFiles(fileRepository, fileStore, parts, instanceStates, now, report), newId, report),
         readFile,
+        releaseFile: new ReleaseFile(fileRepository, fileStore, parts, instanceStates, report),
         readFileText: new ReadFileText(readFile),
         createTheme: new CreateTheme(parts, writePart, validator, patterns, report),
         writeTheme: new WriteTheme(parts, writePart, validator, catalog, report),

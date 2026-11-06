@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
@@ -273,6 +275,83 @@ describe('POST /apps/:appId/files', () => {
 
         expect(over.status).toBe(409);
         expect(await over.json()).toEqual({ error: 'quota', reason: 'files' });
+    });
+});
+
+describe('DELETE /apps/:appId/files/:fileId', () => {
+    async function stored(name: string): Promise<string> {
+        return ((await (await upload(`/apps/${appId}/files`, Buffer.from(name), name)).json()) as { id: string }).id;
+    }
+
+    /** A DELETE with headers of our choosing, such as a Host that `fetch` does not allow */
+    function rawDelete(path: string, headers: Record<string, string>): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const url = new URL(origin);
+            const req = httpRequest({ host: url.hostname, port: url.port, path, method: 'DELETE', headers }, (response) => {
+                response.resume();
+                resolve(response.statusCode ?? 0);
+            });
+            req.on('error', reject);
+            req.end();
+        });
+    }
+
+    it('should remove a file nothing references with 204, then answer 404 for it (a release is idempotent)', async () => {
+        const id = await stored('gone.txt');
+        const bytes = join(data.dir, appId.toLowerCase(), 'files', id);
+        const storedBefore = existsSync(bytes);
+
+        const first = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE', headers: { origin } });
+        const second = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+
+        expect(first.status).toBe(204);
+        expect(await first.text()).toBe('');
+        expect(second.status).toBe(404);
+        expect(((await second.json()) as { error: string }).error).toBe('not_found');
+        expect(read.status).toBe(404);
+        expect([storedBefore, existsSync(bytes)]).toEqual([true, false]);
+    });
+
+    it('should answer 409 and keep a file the state of the instance references', async () => {
+        const id = await stored('held.txt');
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.form.children.email.value', value: id });
+
+        const response = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.form.children.email.value', value: '' });
+        const afterLetGo = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+
+        expect(response.status).toBe(409);
+        expect(((await response.json()) as { error: string }).error).toBe('referenced');
+        expect(read.status).toBe(200);
+        expect(afterLetGo.status).toBe(204);
+    });
+
+    it("should answer 404 for another app's file and an unknown app, and 400 for ids that are not UUIDs", async () => {
+        const otherApp = (await createApp(harness.client, 'release-other', shellOf({}))).id;
+        const id = await stored('mine.txt');
+
+        const fromOther = await fetch(`${origin}/apps/${otherApp}/files/${id}`, { method: 'DELETE' });
+        const unknownApp = await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111/files/${id}`, { method: 'DELETE' });
+        const badFile = await fetch(`${origin}/apps/${appId}/files/not-a-uuid`, { method: 'DELETE' });
+        const badApp = await fetch(`${origin}/apps/not-a-uuid/files/${id}`, { method: 'DELETE' });
+
+        expect([fromOther.status, unknownApp.status, badFile.status, badApp.status]).toEqual([404, 404, 400, 400]);
+        expect((await fetch(`${origin}/apps/${appId}/files/${id}`)).status).toBe(200);
+    });
+
+    it('should refuse a cross-origin DELETE and a foreign Host header with 403, and keep the file', async () => {
+        const id = await stored('guarded.txt');
+        const path = `/apps/${appId}/files/${id}`;
+
+        const crossOrigin = await fetch(`${origin}${path}`, { method: 'DELETE', headers: { origin: 'http://evil.example' } });
+        const foreignHost = await rawDelete(path, { Host: 'evil.example' });
+
+        expect(crossOrigin.status).toBe(403);
+        expect(((await crossOrigin.json()) as { error: string }).error).toBe('forbidden_origin');
+        expect(foreignHost).toBe(403);
+        expect((await fetch(`${origin}${path}`)).status).toBe(200);
     });
 });
 

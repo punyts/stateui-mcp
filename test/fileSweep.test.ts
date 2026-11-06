@@ -113,6 +113,33 @@ describe('the file sweep and files held only in live state (G2.5a)', () => {
         expect(status).toBe(200);
     });
 
+    it('should refuse to release a file a view holds (409, G2.5) and release it once the view lets go', async () => {
+        // Arrange
+        const { running, app } = await start();
+        const file = await upload(running.server.origin, app.id, PNG, 'signature.png');
+        const view = await openView(running, app);
+        closers.push(() => view.close());
+        view.send(JSON.stringify({ type: 'change', change: { id: 'pick-1', path: HELD_AT, op: 'set', value: file, base: 0 } }));
+        await heldLive(running, app, file.id);
+        const url = `${running.server.origin}/apps/${app.id}/files/${file.id}`;
+
+        // Act
+        const held = await fetch(url, { method: 'DELETE' });
+        const kept = await fetch(url);
+        view.send(JSON.stringify({ type: 'change', change: { id: 'pick-2', path: HELD_AT, op: 'set', value: '', base: 1 } }));
+        await eventually(
+            () => call(running.client, 'ui_state_get', { app: app.name }),
+            (result) => !JSON.stringify(result.body['state'] ?? {}).includes(file.id)
+        );
+        const released = await fetch(url, { method: 'DELETE' });
+
+        // Assert
+        expect(held.status).toBe(409);
+        expect(kept.status).toBe(200);
+        expect(released.status).toBe(204);
+        expect((await fetch(url)).status).toBe(404);
+    });
+
     it('should remove an old file that neither the app nor the state references', async () => {
         // Arrange
         const { running, app } = await start();

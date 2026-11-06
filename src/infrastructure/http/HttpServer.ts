@@ -138,6 +138,7 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
+ * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
  *
  * A second listener on `runtimePort` is the runtime origin. It serves only the app frame:
@@ -216,6 +217,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             if (method === 'POST' && rest.length === 1 && rest[0] === 'report') return reportRoute(request, response, appId);
             if (method === 'POST' && rest.length === 1 && rest[0] === 'files') return uploadRoute(request, response, appId);
             if (method === 'GET' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return downloadRoute(response, appId, rest[1]);
+            if (method === 'DELETE' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return releaseRoute(response, appId, rest[1]);
         }
         throw new HttpError(404, 'Not found', 'not_found');
     }
@@ -323,6 +325,25 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             ...COMMON_HEADERS
         });
         result.content.pipe(response);
+    }
+
+    /**
+     * Releases a file (`fileRelease` of the runtime, through the host page). The host and same-origin checks of `handler`
+     * apply, as to every method but GET and HEAD. A file the app's definition or live state still references stays: `409`
+     */
+    async function releaseRoute(response: ServerResponse, appId: string, fileId: string): Promise<void> {
+        if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
+        const result = await useCases.releaseFile.execute(appId, fileId);
+        switch (result.kind) {
+            case 'released':
+                response.writeHead(204, { ...COMMON_HEADERS, 'Cache-Control': 'no-store' });
+                response.end();
+                return;
+            case 'referenced':
+                throw new HttpError(409, 'The app or its live state still references this file', 'referenced');
+            case 'not-found':
+                throw new HttpError(404, 'No file with this id', 'not_found');
+        }
     }
 
     const handler = (handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) => (request: IncomingMessage, response: ServerResponse) => {

@@ -23,7 +23,9 @@
  *
  * Files: a `file` from the runtime is uploaded to `POST /apps/:appId/files` (answered with `fileProgress` and
  * `fileResult`), and a `fileRead` is fetched from `GET /apps/:appId/files/:fileId` (`fileRead.ts`) and answered with
- * `fileData`, its bytes in the transfer list.
+ * `fileData`, its bytes in the transfer list. A `fileRelease` is sent as `DELETE /apps/:appId/files/:fileId`
+ * (`fileRelease.ts`) and answered with `fileReleased`: `ok: true` when the file is gone or was never there, and also when
+ * the server keeps it because the app or its live state still references it (`409`; the sweep removes it later).
  *
  * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
  * and its errors.
@@ -34,6 +36,7 @@
 
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@punyts/state-sync';
 import { readStoredFile } from './fileRead.js';
+import { releaseStoredFile } from './fileRelease.js';
 import type { JsonValue, LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
 
 type Json = JsonValue;
@@ -739,6 +742,9 @@ class LiveView {
             case 'fileRead':
                 this.onFileRead(message);
                 break;
+            case 'fileRelease':
+                this.onFileRelease(message);
+                break;
             default:
                 break;
         }
@@ -835,6 +841,15 @@ class LiveView {
         void readStoredFile(this.appId, message['id'], (url, init) => fetch(url, init)).then((outcome) => {
             if (outcome.ok) this.post({ type: 'fileData', requestId, ok: true, file: outcome.file, data: outcome.data }, [outcome.data]);
             else this.post({ type: 'fileData', requestId, ok: false, code: outcome.code, message: outcome.message });
+        });
+    }
+
+    /** A component gives a stored file back: a DELETE on the page's own origin, answered with `fileReleased` */
+    private onFileRelease(message: RuntimeMessage): void {
+        const requestId = message['requestId'];
+        if (typeof requestId !== 'number') return;
+        void releaseStoredFile(this.appId, message['id'], (url, init) => fetch(url, init)).then((outcome) => {
+            this.post({ type: 'fileReleased', requestId, ...outcome });
         });
     }
 

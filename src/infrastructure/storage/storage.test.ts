@@ -179,4 +179,32 @@ describe('files', () => {
         expect(old.map((file) => file.id).sort()).toEqual([first, second]);
         expect(none).toEqual([]);
     });
+
+    it('should delete one file unless the check says it is referenced, and run the check under the per-app lock', async () => {
+        const id = await createApp();
+        const files = new FileUiFileRepository(folders, lock);
+        const kept = '77777777-7777-4777-8777-777777777777';
+        const released = '88888888-8888-4888-8888-888888888888';
+        await files.add({ id: kept, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
+        await files.add({ id: released, appId: id, name: 'r', size: 1, type: 'text/plain', sha256: 'h' });
+        let addedDuringCheck: Promise<unknown> | undefined;
+        let countSeenByCheck = -1;
+
+        const referenced = await files.deleteUnlessReferenced(id, kept, async () => true);
+        const deleted = await files.deleteUnlessReferenced(id, released, async () => {
+            // An add asked for while the check runs waits for the release to finish
+            addedDuringCheck = files.add({ id: '99999999-9999-4999-8999-999999999999', appId: id, name: 'n', size: 1, type: 'text/plain', sha256: 'h' });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            countSeenByCheck = (await files.usage(id)).count;
+            return false;
+        });
+        await addedDuringCheck;
+        const missing = await files.deleteUnlessReferenced(id, released, async () => {
+            throw new Error('the check must not run for a missing file');
+        });
+
+        expect([referenced, deleted, missing]).toEqual(['referenced', 'deleted', 'not-found']);
+        expect(countSeenByCheck).toBe(2);
+        expect((await files.list(id)).map((file) => file.id).sort()).toEqual([kept, '99999999-9999-4999-8999-999999999999']);
+    });
 });

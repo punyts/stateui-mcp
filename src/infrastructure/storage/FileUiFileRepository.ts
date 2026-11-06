@@ -1,4 +1,4 @@
-import type { AddUiFileInput, AddUiFileResult, UiFileRepository, UiFileUsage } from '../../application/ports/UiFileRepository.js';
+import type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from '../../application/ports/UiFileRepository.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_BYTES_PER_APP, MAX_FILES_PER_APP } from '../../domain/UiFile.js';
 import type { UiFile } from '../../domain/UiFile.js';
@@ -89,6 +89,19 @@ export class FileUiFileRepository implements UiFileRepository {
                 this.folders.filesIndex(appId),
                 entries.filter((entry) => !fileIds.includes(entry.id))
             );
+        });
+    }
+
+    async deleteUnlessReferenced(appId: string, fileId: string, isReferenced: () => Promise<boolean>): Promise<ReleaseUiFileOutcome> {
+        return this.lock.run(`files:${appId}`, async (): Promise<ReleaseUiFileOutcome> => {
+            const entries = await this.readEntries(appId);
+            if (!entries.some((entry) => entry.id === fileId)) return 'not-found';
+            if (await isReferenced()) return 'referenced';
+            await writeJsonAtomic(
+                this.folders.filesIndex(appId),
+                entries.filter((entry) => entry.id !== fileId)
+            );
+            return 'deleted';
         });
     }
 
