@@ -42,14 +42,14 @@ export function createCatalogTools(
         {
             name: 'ui_components_search',
             description:
-                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), best first: name, category, tier, summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category.',
+                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), library and owner (ui_composed_write) components, best first: name, category, tier, source (library or owner), summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category.',
             inputSchema: COMPONENTS_SEARCH.schema,
             annotations: READ_ONLY,
-            run: (args) => {
+            run: async (args) => {
                 const parsed = COMPONENTS_SEARCH.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
                 const { need, category, tier, limit } = parsed.value;
-                const outcome = useCases.searchComponents.execute({
+                const outcome = await useCases.searchComponents.execute({
                     need,
                     ...(category !== undefined && { category }),
                     ...(tier !== undefined && { tier }),

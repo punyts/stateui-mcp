@@ -79,7 +79,7 @@ Thirty-five tools in three groups: build time, the owner's data and run time. Bu
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `ui_components_search` | `need`, `category?`, `tier?`, `limit?` (5, at most 20) | `{ results: [{ name, category, tier, summary, matched, example }], weak, categories? }`, best first and never empty: `weak` when nothing fits well, and a need that matches nothing gets the category index and the nearest category's components; an unknown `category` or `tier` is `invalid-argument` with `allowed` |
+| `ui_components_search` | `need`, `category?`, `tier?`, `limit?` (5, at most 20) | `{ results: [{ name, category, tier, summary, matched, example, source }], weak, categories? }`, library and owner components (`ui_composed_write`) ranked together, best first and never empty; `source` is `library` or `owner`, an owner component without summary, category and purposes is found by the words of its name only, and an owner phrase may repeat a library one (both rank): `weak` when nothing fits well, and a need that matches nothing gets the category index and the nearest category's components; an unknown `category` or `tier` is `invalid-argument` with `allowed` |
 | `ui_component_get` | `name` | the compact catalog entry (properties with only the keys that apply, slots, events, commands, tokens, example; a composed component's tree and exposed paths); an unknown name is `unknown-component` with `nearest` |
 | `ui_icons_list` | `query?`, `category?`, `filled?`, `limit?` | `{ icons, total, more }` |
 | `ui_tokens_list` | `group?`, `query?`, `includeOverlays?` | `{ count, tokens, overlays? }`; `unknown-group` lists the groups |

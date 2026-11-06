@@ -123,7 +123,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const runCommand = new RunCommand(catalog, previewLog, now, newId, report);
     const writePart = new WritePart(parts, parts, validator, report);
     return {
-        searchComponents: new SearchComponents(catalog),
+        searchComponents: new SearchComponents(catalog, parts),
         searchPatterns: new SearchPatterns(patterns, parts),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog),

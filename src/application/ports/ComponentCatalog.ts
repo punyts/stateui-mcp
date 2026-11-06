@@ -110,6 +110,19 @@ export interface ComponentSearchHit {
     /** The purpose phrases that hold a need word, then need words matched only elsewhere; empty for a fallback entry */
     readonly matched: readonly string[];
     readonly example: JsonObject;
+    /** Where the component comes from: the library, or the owner (`ui_composed_write`) */
+    readonly source: 'library' | 'owner';
+}
+
+/**
+ * An owner component as the search sees it: its name and the search fields of its write. One with all three fields
+ * ranks with the library; one without them is found by the words of its name only
+ */
+export interface OwnerComponent {
+    readonly name: string;
+    readonly summary?: string;
+    readonly category?: string;
+    readonly purposes?: readonly string[];
 }
 
 /** One category that has members, with how many and three typical ones */
@@ -144,8 +157,11 @@ export class InvalidSearchArgumentError extends Error {
 export interface ComponentCatalog {
     list(): readonly ComponentSummary[];
     get(name: string): ComponentEntry | undefined;
-    /** Components ranked for a need; throws `InvalidSearchArgumentError` for an unknown category or tier */
-    search(query: ComponentSearchQuery): ComponentSearchResult;
+    /**
+     * Components ranked for a need, the library's and these owner components together, each hit with its `source`;
+     * throws `InvalidSearchArgumentError` for an unknown category or tier
+     */
+    search(query: ComponentSearchQuery, owner?: readonly OwnerComponent[]): ComponentSearchResult;
     /** One entry per category that has members, in the order of `COMPONENT_CATEGORIES` */
     categoryIndex(): readonly CategoryIndexEntry[];
     searchIcons(query: IconQuery): IconSearchResult;

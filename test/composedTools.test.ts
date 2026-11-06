@@ -169,3 +169,76 @@ describe('ui_composed_write', () => {
         expect(missing.body).toMatchObject({ error: 'not-found', nearest: ['price-field'] });
     });
 });
+
+describe('owner components in ui_components_search', () => {
+    type Hit = { name: string; source: string; tier: string; matched: string[] };
+    async function search(args: Record<string, unknown>): Promise<Hit[]> {
+        const found = await call(harness.client, 'ui_components_search', args);
+        if (found.isError) throw new Error(JSON.stringify(found.body));
+        return found.body['results'] as Hit[];
+    }
+    const LOYALTY = deepFreeze({
+        summary: 'A loyalty card with the points a customer holds',
+        category: 'content',
+        purposes: ['show a loyalty card', 'points a customer has collected', 'membership card of a shop']
+    });
+
+    it('should find an owner component by a need its purposes meet, with source owner, and mark library hits library', async () => {
+        // Arrange
+        const written = await call(harness.client, 'ui_composed_write', { name: 'loyalty-card', tree: { component: 'card', _title: 'Points' }, ...LOYALTY });
+
+        // Act
+        const results = await search({ need: 'loyalty card' });
+
+        // Assert
+        expect(written.body['searchable']).toBe(true);
+        expect(results[0]).toMatchObject({ name: 'loyalty-card', source: 'owner', tier: 'composed' });
+        expect(results.slice(1).every((hit) => hit.source === 'library')).toBe(true);
+    });
+
+    it('should find an owner component without search fields by its name only, not by a need', async () => {
+        // Arrange
+        const written = await call(harness.client, 'ui_composed_write', { name: 'loyalty-card', tree: { component: 'card', _title: 'Points' } });
+
+        // Act
+        const byNeed = await search({ need: 'show the points a customer has collected' });
+        const byName = await search({ need: 'loyalty card' });
+
+        // Assert
+        expect(written.body['searchable']).toBe(false);
+        expect(byNeed.map((hit) => hit.name)).not.toContain('loyalty-card');
+        expect(byName.find((hit) => hit.name === 'loyalty-card')).toMatchObject({ source: 'owner' });
+    });
+
+    it('should rank both when an owner component repeats a purpose phrase of a library component', async () => {
+        // Arrange
+        const [library] = await search({ need: 'pick a date range', limit: 1 });
+        const phrase = library!.matched[0]!;
+        await call(harness.client, 'ui_composed_write', {
+            name: 'stay-dates',
+            tree: { component: 'dateRangeField', _label: 'Stay' },
+            summary: 'The dates of a stay',
+            category: 'forms',
+            purposes: [phrase, 'dates of a hotel stay', 'check-in and check-out dates']
+        });
+
+        // Act
+        const results = await search({ need: phrase });
+
+        // Assert
+        const sources = new Map(results.map((hit) => [hit.name, hit.source]));
+        expect(sources.get(library!.name)).toBe('library');
+        expect(sources.get('stay-dates')).toBe('owner');
+    });
+
+    it('should keep an owner component with no category out of a category search', async () => {
+        // Arrange
+        await call(harness.client, 'ui_composed_write', { name: 'loyalty-card', tree: { component: 'card', _title: 'Points' } });
+
+        // Act
+        const results = await search({ need: 'loyalty card', category: 'content' });
+
+        // Assert
+        expect(results.map((hit) => hit.name)).not.toContain('loyalty-card');
+    });
+});
