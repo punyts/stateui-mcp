@@ -18,9 +18,17 @@ export interface OwnerPattern {
     readonly body: PatternPart;
 }
 
-/** A library theme preset by name: base tokens and overlays, written as a theme part */
+/** A library theme preset by name: base tokens and overlays, written as a theme part, with a one-line summary */
 export interface ThemePresetEntry extends ThemePart {
     readonly name: string;
+    /** What the preset looks like, for the tool text; not copied into the theme */
+    readonly summary?: string;
+}
+
+/** A theme preset as the tool text names it */
+export interface ThemePresetSummary {
+    readonly name: string;
+    readonly summary: string;
 }
 
 /** What a person needs a shell or screen for, in plain words, with an optional kind */

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
+import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
@@ -62,7 +63,7 @@ export interface Services {
     /** The catalog's category index, for the server instructions */
     readonly categoryIndex: readonly CategoryIndexEntry[];
     /** The library's theme preset names, for the server instructions */
-    readonly presets: readonly string[];
+    readonly presets: readonly ThemePresetSummary[];
     /** Finishes a part rename that a crash stopped halfway (`rename.pending.json`); true when there was one */
     readonly recoverParts: () => Promise<boolean>;
     readonly browser: PreviewBrowser;
@@ -120,7 +121,7 @@ export function createServices(options: ServicesOptions): Services {
         liveViews,
         instanceViews,
         categoryIndex: catalog.categoryIndex(),
-        presets: patterns.presets(),
+        presets: patterns.presets().map((name) => ({ name, summary: patterns.preset(name)?.summary ?? '' })),
         recoverParts: () => partFiles.recover(),
         browser,
         report: options.report,

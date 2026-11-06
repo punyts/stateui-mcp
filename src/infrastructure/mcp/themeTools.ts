@@ -3,12 +3,22 @@ import type { ThemeOperation, ThemeReport } from '../../application/use-cases/Wr
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
 import { CREATES, WRITES, defineInput, fail, succeed } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
+import type { ThemePresetSummary } from '../../application/ports/PatternCatalog.js';
 
-const THEME_CREATE = defineInput({
-    name: { type: 'string', required: true, description: 'The new theme\'s name: lower-case letters, digits and dashes, starting with a letter' },
-    from: { type: 'string', description: 'A theme of yours to copy (ui_list kind "themes"), with all its tokens and overlays' },
-    preset: { type: 'string', description: 'A library preset to start from' }
-});
+/** The input of ui_theme_create: `preset` is an enum of the library's presets, each described, when there are any */
+function themeCreateInput(presets: readonly ThemePresetSummary[]) {
+    const names = presets.map((preset) => preset.name);
+    const described = presets.map((preset) => (preset.summary === '' ? preset.name : `${preset.name} (${preset.summary})`)).join('; ');
+    return defineInput({
+        name: { type: 'string', required: true, description: 'The new theme\'s name: lower-case letters, digits and dashes, starting with a letter' },
+        from: { type: 'string', description: 'A theme of yours to copy (ui_list kind "themes"), with all its tokens and overlays' },
+        preset: {
+            type: 'string',
+            ...(names.length > 0 && { enum: names }),
+            description: names.length > 0 ? `A library preset to start from: ${described}` : 'A library preset to start from; this library has none'
+        }
+    });
+}
 
 const THEME_ITEMS = {
     op: {
@@ -81,9 +91,11 @@ const REPORT_TEXT =
     'contrast: the WCAG ratio of each text token on its surface in each mode ({ mode, text, surface, ratio, passesAA }, AA being 4.5; ratio "unresolved" when a side is not an opaque colour); reaches: for each written token, the components whose own tokens (ui_component_get) refer to it, directly or through a semantic token; a token component styles read directly, such as color.text.base, lists none; warnings: the apps that use the theme and now have errors, by name';
 
 /** `ui_theme_create` and `ui_theme_write`, when the server has parts */
-export function createThemeTools(useCases: Pick<UiBuilderUseCases, 'createTheme' | 'writeTheme'>): readonly UiToolDefinition[] {
+export function createThemeTools(useCases: Pick<UiBuilderUseCases, 'createTheme' | 'writeTheme'>, presets: readonly ThemePresetSummary[] = []): readonly UiToolDefinition[] {
     const { createTheme, writeTheme } = useCases;
     if (createTheme === undefined || writeTheme === undefined) return [];
+    const THEME_CREATE = themeCreateInput(presets);
+    const presetNames = presets.map((preset) => preset.name);
     return [
         {
             name: 'ui_theme_create',
@@ -109,7 +121,10 @@ export function createThemeTools(useCases: Pick<UiBuilderUseCases, 'createTheme'
                             nearest: result.nearest
                         });
                     case 'unknown-preset':
-                        return fail('invalid-argument', `No such preset: "${result.preset}"`, { argument: 'preset' });
+                        return fail('invalid-argument', `No such preset: "${result.preset}"; ${presetNames.length > 0 ? `use one of: ${presetNames.join(', ')}` : 'this library has none'}`, {
+                            argument: 'preset',
+                            allowed: presetNames
+                        });
                     case 'invalid':
                         return fail('invalid-theme', 'The theme has blocking errors; nothing was written', { errors: result.errors });
                 }

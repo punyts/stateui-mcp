@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
+import type { ThemePresetSummary } from '../../application/ports/PatternCatalog.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { ToolCallEntry, ToolCallLog } from '../../application/ports/ToolCallLog.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
@@ -36,8 +37,8 @@ export interface StateUiToolDependencies {
     readonly useCases: UiBuilderUseCases;
     /** The catalog's category index, which the server instructions list */
     readonly categoryIndex: readonly CategoryIndexEntry[];
-    /** The library's theme preset names, which the server instructions list; none until the catalog has presets */
-    readonly presets?: readonly string[];
+    /** The library's theme presets, which the server instructions and ui_theme_create list; none until the catalog has presets */
+    readonly presets?: readonly ThemePresetSummary[];
     readonly hub: PreviewHub;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
@@ -65,7 +66,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createPartTools(useCases, liveViews),
         ...createPartAppTools(useCases),
         ...createNodeTools(useCases),
-        ...createThemeTools(useCases),
+        ...createThemeTools(useCases, dependencies.presets ?? []),
         ...createModelTools(useCases),
         ...createDataTools(useCases),
         ...createLogicTools(useCases),
@@ -134,7 +135,7 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
 
     const server = new Server(
         { name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION },
-        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex, dependencies.presets ?? []) }
+        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex, (dependencies.presets ?? []).map((preset) => preset.name)) }
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({

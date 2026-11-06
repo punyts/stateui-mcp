@@ -88,7 +88,7 @@ export class CreateTheme {
         } else {
             const preset = this.patterns.preset(input.preset);
             if (preset === undefined) return { kind: 'unknown-preset', preset: input.preset };
-            const { name: _name, ...part } = structuredClone(preset);
+            const { name: _name, summary: _summary, ...part } = structuredClone(preset);
             body = part as ThemeBody;
         }
         const written = await this.writePart.execute({ kind: 'themes', name: input.name, body });
