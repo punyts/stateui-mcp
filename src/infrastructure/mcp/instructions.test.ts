@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
-import { buildServerInstructions, graphicsSection, searchWorkflowSection, START_HERE } from './instructions.js';
+import { buildServerInstructions, graphicsSection, paintFieldSection, searchWorkflowSection, START_HERE } from './instructions.js';
 
 /** The tool names of each step, in the order the steps list them */
 const STEP_TOOLS = [
@@ -138,6 +138,31 @@ describe('graphicsSection', () => {
 
     it('should be a section of the server instructions', () => {
         expect(buildServerInstructions(INDEX, PRESETS)).toContain(graphicsSection());
+    });
+});
+
+describe('paintFieldSection', () => {
+    it('should name paintField, its file value and the typed alternative in two lines', () => {
+        // Act
+        const text = paintFieldSection();
+
+        // Assert
+        expect(text).toContain('paintField (category forms)');
+        expect(text).toContain('a PNG');
+        expect(text).toContain('{ id, name, size, type }');
+        expect(text).toContain('a form waits for the save');
+        expect(text).toContain('textField');
+        expect(text.split('\n')).toHaveLength(2);
+        expect(toolNames(text)).toEqual([]);
+    });
+
+    it('should be a section of the server instructions, after the drawing section', () => {
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS);
+
+        // Assert
+        expect(text).toContain(paintFieldSection());
+        expect(text.indexOf(paintFieldSection())).toBeGreaterThan(text.indexOf(graphicsSection()));
     });
 });
 

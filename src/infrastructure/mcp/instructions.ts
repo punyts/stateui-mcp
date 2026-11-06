@@ -78,6 +78,17 @@ export function graphicsSection(): string {
     ].join('\n');
 }
 
+/**
+ * The painting field (G2.11 of the graphics epic 2), in one or two lines. Its own function, beside the drawing section, so
+ * it can move into a guide topic or change with the paint tools without touching the drawing lines
+ */
+export function paintFieldSection(): string {
+    return [
+        'Painting: paintField (category forms) is a form field where a person paints a signature or a sketch with a pointer; it saves itself as a PNG in the app\'s file store and its value is that file\'s reference { id, name, size, type } (link it with "<-value"), and a form waits for the save before it submits.',
+        'Painting needs a pointer: when the form must work without one, put a textField beside it for a typed alternative (a typed signature).'
+    ].join('\n');
+}
+
 const SAFETY = [
     'ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.'
 ];
@@ -91,6 +102,7 @@ export function buildServerInstructions(index: readonly CategoryIndexEntry[], pr
         ...LOGIC,
         ...LIVE_VIEW,
         graphicsSection(),
+        paintFieldSection(),
         ...SAFETY
     ].join('\n\n');
 }
