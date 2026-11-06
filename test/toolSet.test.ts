@@ -148,8 +148,10 @@ describe('the server instructions', () => {
         for (const name of REMOVED_TOOLS) expect(instructions.includes(name), name).toBe(false);
         expect(index.length).toBeGreaterThan(0);
         for (const entry of index) expect(instructions).toContain(`- ${entry.category} (${entry.count}): `);
-        expect(instructions.indexOf('ui_components_search')).toBeLessThan(instructions.indexOf('ui_component_get'));
-        expect(instructions.indexOf('ui_component_get')).toBeLessThan(instructions.indexOf('ui_app_create'));
+        // The build steps: shell and screen patterns first, then components for what the patterns do not cover
+        const order = ['ui_patterns_search', 'ui_app_create', 'ui_screen_create', 'ui_components_search', 'ui_component_get', 'ui_nodes_write'].map((name) => instructions.indexOf(name));
+        expect(order.every((at) => at >= 0)).toBe(true);
+        expect(order).toEqual([...order].sort((left, right) => left - right));
     });
 });
 

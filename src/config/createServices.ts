@@ -61,6 +61,8 @@ export interface Services {
     readonly instanceViews: InstanceViews;
     /** The catalog's category index, for the server instructions */
     readonly categoryIndex: readonly CategoryIndexEntry[];
+    /** The library's theme preset names, for the server instructions */
+    readonly presets: readonly string[];
     /** Finishes a part rename that a crash stopped halfway (`rename.pending.json`); true when there was one */
     readonly recoverParts: () => Promise<boolean>;
     readonly browser: PreviewBrowser;
@@ -118,6 +120,7 @@ export function createServices(options: ServicesOptions): Services {
         liveViews,
         instanceViews,
         categoryIndex: catalog.categoryIndex(),
+        presets: patterns.presets(),
         recoverParts: () => partFiles.recover(),
         browser,
         report: options.report,

@@ -35,6 +35,8 @@ export interface StateUiToolDependencies {
     readonly useCases: UiBuilderUseCases;
     /** The catalog's category index, which the server instructions list */
     readonly categoryIndex: readonly CategoryIndexEntry[];
+    /** The library's theme preset names, which the server instructions list; none until the catalog has presets */
+    readonly presets?: readonly string[];
     readonly hub: PreviewHub;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
@@ -130,7 +132,7 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
 
     const server = new Server(
         { name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION },
-        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex) }
+        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex, dependencies.presets ?? []) }
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({

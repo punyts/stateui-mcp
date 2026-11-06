@@ -57,7 +57,7 @@ export interface PatternSearchResult {
 /**
  * The library's shell and screen patterns and theme presets, read only. `search` ranks patterns for a need and
  * throws `InvalidSearchArgumentError` for an unknown kind. Until the built catalog has a `themePresets` section,
- * `preset` returns `undefined`
+ * `preset` returns `undefined` and `presets` is empty
  */
 export interface PatternCatalog {
     get(name: string): PatternEntry | undefined;
@@ -65,4 +65,6 @@ export interface PatternCatalog {
     names(): readonly string[];
     search(query: PatternSearchQuery): PatternSearchResult;
     preset(name: string): ThemePresetEntry | undefined;
+    /** Every theme preset name, in catalog order; empty while the catalog has none */
+    presets(): readonly string[];
 }

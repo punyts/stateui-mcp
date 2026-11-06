@@ -44,7 +44,7 @@ const CATALOG = {
     listTokens: () => []
 } as unknown as ComponentCatalog;
 
-const PATTERNS: PatternCatalog = { get: () => undefined, names: () => [], search: () => ({ results: [], weak: true }), preset: (name) => (name === 'calm' ? (PRESET as never) : undefined) };
+const PATTERNS: PatternCatalog = { get: () => undefined, names: () => [], search: () => ({ results: [], weak: true }), preset: (name) => (name === 'calm' ? (PRESET as never) : undefined), presets: () => ['calm'] };
 
 async function setUp() {
     let next = 0;

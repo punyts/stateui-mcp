@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
+import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
 import { buildServerInstructions, searchWorkflowSection, START_HERE } from './instructions.js';
+
+/** The tool names of each step, in the order the steps list them */
+const STEP_TOOLS = [
+    'ui_theme_create',
+    'ui_theme_write',
+    'ui_tokens_list',
+    'ui_model_write',
+    'ui_data_write',
+    'ui_patterns_search',
+    'ui_app_create',
+    'ui_screen_create',
+    'ui_components_search',
+    'ui_component_get',
+    'ui_nodes_write',
+    'ui_logic_write',
+    'ui_validate',
+    'ui_preview',
+    'ui_screenshot',
+    'ui_interact'
+];
+const PRESETS = Object.freeze(['calm', 'bold', 'warm', 'crisp']);
+
+function toolNames(text: string): string[] {
+    return [...new Set(text.match(/\bui_[a-z_]+/g) ?? [])];
+}
 
 const INDEX: readonly CategoryIndexEntry[] = Object.freeze([
     Object.freeze({ category: 'forms', count: 12, typical: Object.freeze(['dateRangeField', 'textField', 'select']) }),
@@ -24,24 +50,75 @@ describe('searchWorkflowSection', () => {
         expect(text).not.toContain('graphics');
     });
 
-    it('should plan first, then search, get and build in that order', () => {
+    it('should list the eight steps, plan first, with their tools in step order', () => {
+        // Act
         const text = searchWorkflowSection(INDEX);
 
-        expect(text.indexOf('Plan before you search')).toBeLessThan(text.indexOf('ui_components_search'));
-        expect(text.indexOf('ui_components_search')).toBeLessThan(text.indexOf('ui_component_get'));
-        expect(text.indexOf('ui_component_get')).toBeLessThan(text.indexOf('ui_app_create'));
+        // Assert
+        const steps = ['1. Plan', '2. Theme', '3. Data', '4. App and shell', '5. Screens', '6. Sections', '7. Logic', '8. Check'].map((step) => text.indexOf(step));
+        expect(steps.every((at) => at >= 0)).toBe(true);
+        expect(steps).toEqual([...steps].sort((left, right) => left - right));
+        const firsts = STEP_TOOLS.map((name) => text.indexOf(name));
+        expect(firsts.every((at) => at > steps[0]!)).toBe(true);
+        expect(firsts).toEqual([...firsts].sort((left, right) => left - right));
+    });
+
+    it('should call the order guidance, start an edit at its step, and show the plan of a large app', () => {
+        // Act
+        const text = searchWorkflowSection(INDEX);
+
+        // Assert
+        expect(text).toContain('The order is guidance');
+        expect(text).toContain('an edit starts at the step the change needs');
+        expect(text).toContain('more than three screens, or one that writes to an owner dataset other apps use');
         expect(text).toContain('wait for their OK');
-        expect(text).toContain('guidance');
+    });
+
+    it('should check at full page and at phone width', () => {
+        // Act
+        const text = searchWorkflowSection(INDEX);
+
+        // Assert
+        expect(text).toContain('fullPage: true');
+        expect(text).toContain('width: 375');
+    });
+
+    it('should name the four presets of a catalog that has them', () => {
+        // Act
+        const text = searchWorkflowSection(INDEX, PRESETS);
+
+        // Assert
+        expect(text).toContain('Theme presets for ui_theme_create (preset): calm, bold, warm, crisp.');
+    });
+
+    it('should leave out the preset line, but keep both theme tools, while the catalog has no presets', () => {
+        // Act
+        const text = searchWorkflowSection(INDEX, []);
+
+        // Assert
+        expect(text).not.toMatch(/preset/i);
+        expect(text).toContain('ui_theme_create');
+        expect(text).toContain('ui_theme_write');
     });
 });
 
 describe('buildServerInstructions', () => {
     it('should carry the workflow section and never name the removed list tool', () => {
-        const text = buildServerInstructions(INDEX);
+        const text = buildServerInstructions(INDEX, PRESETS);
 
-        expect(text).toContain(searchWorkflowSection(INDEX));
+        expect(text).toContain(searchWorkflowSection(INDEX, PRESETS));
         expect(text).not.toContain('ui_components_list');
         expect(START_HERE).toContain('ui_components_search');
         expect(START_HERE).not.toContain('ui_components_list');
+    });
+
+    it('should name only registered tools and none of the removed ones', () => {
+        // Act
+        const text = `${buildServerInstructions(INDEX, PRESETS)}
+${START_HERE}`;
+
+        // Assert
+        expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
+        for (const removed of ['ui_app_write', 'ui_components_list', 'ui_outline']) expect(text).not.toContain(removed);
     });
 });

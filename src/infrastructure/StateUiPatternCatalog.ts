@@ -58,13 +58,13 @@ function toHit(pattern: PatternEntry, matched: readonly string[]): PatternSearch
  */
 export class StateUiPatternCatalog implements PatternCatalog {
     private readonly patterns: ReadonlyMap<string, PatternEntry>;
-    private readonly presets: ReadonlyMap<string, ThemePresetEntry>;
+    private readonly presetsByName: ReadonlyMap<string, ThemePresetEntry>;
     /** One search index per kind (`''` for both), built on first use */
     private readonly indexes = new Map<string, SearchIndex>();
 
     constructor(catalog: Pick<CatalogFile, 'patterns'> & Partial<Pick<CatalogFile, 'themePresets'>>) {
         this.patterns = new Map(catalog.patterns.map((pattern) => [pattern.name, pattern]));
-        this.presets = new Map((catalog.themePresets ?? []).map((preset) => [preset.name, preset]));
+        this.presetsByName = new Map((catalog.themePresets ?? []).map((preset) => [preset.name, preset]));
     }
 
     get(name: string): PatternEntry | undefined {
@@ -94,7 +94,11 @@ export class StateUiPatternCatalog implements PatternCatalog {
     }
 
     preset(name: string): ThemePresetEntry | undefined {
-        return this.presets.get(name);
+        return this.presetsByName.get(name);
+    }
+
+    presets(): readonly string[] {
+        return [...this.presetsByName.keys()];
     }
 
     /** The patterns of a kind, or of both kinds, in catalog order (kind, then name) */

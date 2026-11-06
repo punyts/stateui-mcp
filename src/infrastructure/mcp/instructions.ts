@@ -7,14 +7,25 @@
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 
 /**
- * Plan first, then search the catalog by need, then build and check; with the generated category index. Its own
- * function so the other sections can be rewritten without touching it
+ * The eight build steps, from the plan to the check, with the generated category index and the theme presets. Its own
+ * function so the other sections can be rewritten without touching it. `presets` are the library's theme preset
+ * names; with none the preset sentence is left out, so the text never names a preset that is not there
  */
-export function searchWorkflowSection(index: readonly CategoryIndexEntry[]): string {
+export function searchWorkflowSection(index: readonly CategoryIndexEntry[], presets: readonly string[] = []): string {
     return [
-        'Plan before you search. Decide the sections of the app, their layout, the mood of its theme (colors, type and shape that suit the subject), the data it holds and how it behaves. Make no catalog call yet.',
-        'Then, for each part of the plan: ui_components_search with the need in plain words ("pick a date range", "show totals by month"), ui_component_get for the component you choose, then ui_app_create, ui_nodes_write, ui_validate, ui_preview and ui_screenshot to see the result. A weak result means nothing fitted well: say the need another way, or narrow it with a category from the index below.',
-        'A large app (more than three screens, or one that writes to an owner dataset other apps use): show the plan to the user and wait for their OK before you build. A small app: go straight to building. This order is guidance, not a rule.',
+        'Build steps, in this order. The order is guidance: a new app goes through all of them, and an edit starts at the step the change needs (a new field starts at data, a new screen at screens).',
+        [
+            '1. Plan: ui_list to see what the owner already has, then decide the screens, the sections of each, the mood of the theme (colors, type and shape that suit the subject), the data and how it behaves. Make no catalog call yet. A large app (more than three screens, or one that writes to an owner dataset other apps use): show the plan to the user and wait for their OK before you build. A small app: go straight on.',
+            `2. Theme: ui_theme_create (from another theme${presets.length > 0 ? ', or from a preset' : ''}) or ui_theme_write without expectedRevision (a first theme); token names come from ui_tokens_list.`,
+            '3. Data: ui_model_write for the fields of a record, ui_data_write for a dataset of that model with seed records.',
+            '4. App and shell: ui_patterns_search with kind shell and the frame in plain words ("app with a side menu"), then ui_app_create with shell { pattern, params } and the themes, data bindings and logic it uses. The result lists the slots of the shell: the node paths to fill.',
+            '5. Screens: ui_patterns_search with kind screen and each screen of the plan ("finance dashboard with totals and a trend"), then ui_screen_create with pattern and patternParams (the path params of a pattern name the datasets bound in uses.data). The result lists the slots of the screen. With no pattern that fits, give the screen a root node.',
+            '6. Sections: for each part a pattern does not cover, ui_components_search with the need in plain words ("pick a date range", "show totals by month"), ui_component_get for the component you choose, then ui_nodes_write into a slot. ui_composed_write makes a reusable component, ui_locale_write another language.',
+            '7. Logic: ui_logic_write for the machines, rules and tables of the app or of a logic module.',
+            '8. Check: ui_validate, then ui_preview, ui_screenshot with fullPage: true and again with width: 375 (a phone), and ui_interact to try what the user will do.'
+        ].join('\n'),
+        'A weak search result means nothing fitted well: say the need another way, narrow a component search with a category from the index below, or build from components.',
+        ...(presets.length > 0 ? [`Theme presets for ui_theme_create (preset): ${presets.join(', ')}.`] : []),
         categoryIndexText(index)
     ].join('\n\n');
 }
@@ -26,7 +37,6 @@ function categoryIndexText(index: readonly CategoryIndexEntry[]): string {
 
 const WORKING_LOOP = [
     'What you build is parts the owner keeps by name: themes, models, datasets (data), logic modules, composed components and apps. An app uses parts by name (its "uses": themes, data bindings, logic modules), has a shell (the frame around every screen, with one outlet where the current screen shows) and one or more screens. A part is written once and every app that uses it shares it, so build a theme, model or dataset once and use it by name. Build time tools change definitions and never touch an instance; run time tools act on the default user\'s instance of an app and never change a definition. Each description starts with "Build time:" or "Run time:".',
-    'Build steps, in this order where they apply: ui_list to see what the owner already has; ui_theme_create (a theme from another theme) or ui_theme_write without expectedRevision (a first theme); ui_model_write for the fields of a record and ui_data_write for a dataset of that model, with seed records; ui_logic_write for the machines, rules and tables of a logic module or of an app; ui_composed_write for a reusable component; ui_app_create with the themes, data bindings, logic modules and shell; ui_screen_create for each further screen, with its params; ui_nodes_write for the nodes of the shell or of one screen; ui_locale_write for another language; then ui_validate to check the app with everything it uses, and ui_preview, ui_screenshot and ui_interact to see and try it.',
     'Paths: "$.app" is the shell, "$.screens.<name>" a screen (its root is "$.screens.<name>"), "$.route" the current screen and its params, "$.data.<binding>" a data binding. Tools take "$.app.children.main" and "app.children.main" alike. ui_tree shows the structure of an app with the path of every node, content: true what the user sees, logic: true the machines with their current state, the rules and tables (those of modules too); ui_interact clicks, types and drags in the running app. Rows of a list and cards of a board get their own paths while the app runs (...body.main.slots.0); ui_tree with rendered: true lists them, for ui_interact and ui_screenshot. A screen has params: ui_command with navigate, the screen name as target and the params as value shows it, and $.route holds where the app is.',
     'Revisions and warnings: every part has its own revision. Read the part you will change with ui_get (a path and a depth), write it with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat; a write to one part never raises the revision of another. A part something uses is not deleted (the result names its users), and ui_rename rewrites every reference to the part it renames.',
     'Icon names come from ui_icons_list. Never guess an icon name.',
@@ -54,11 +64,11 @@ const SAFETY = [
     'ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.'
 ];
 
-/** The `instructions` field of the server, shown by the client to the model, with the catalog's category index */
-export function buildServerInstructions(index: readonly CategoryIndexEntry[]): string {
+/** The `instructions` field of the server, shown by the client to the model, with the catalog's category index and presets */
+export function buildServerInstructions(index: readonly CategoryIndexEntry[], presets: readonly string[] = []): string {
     return [
         'StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.',
-        searchWorkflowSection(index),
+        searchWorkflowSection(index, presets),
         ...WORKING_LOOP,
         ...LOGIC,
         ...LIVE_VIEW,
@@ -67,4 +77,4 @@ export function buildServerInstructions(index: readonly CategoryIndexEntry[]): s
 }
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
-export const START_HERE = 'Start of the working loop: ui_list, ui_theme_create, ui_components_search, ui_component_get, ui_app_create, ui_nodes_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (add the parent first or use merge).';
+export const START_HERE = 'Start of the working loop: ui_list, ui_theme_create, ui_model_write, ui_patterns_search, ui_app_create, ui_screen_create, ui_components_search, ui_nodes_write, ui_validate, ui_preview (see the build steps in the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (add the parent first or use merge).';
