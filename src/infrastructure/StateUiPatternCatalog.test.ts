@@ -85,7 +85,7 @@ describe('StateUiPatternCatalog', () => {
 
             // Assert
             expect(result.weak).toBe(true);
-            expect(result.results.map((hit) => hit.name).sort()).toEqual(['bag-and-checkout', 'product-detail', 'product-grid', 'sign-in-form']);
+            expect(result.results.map((hit) => hit.name).sort()).toEqual([...catalog.names()].sort());
             expect(result.results.every((hit) => hit.matched.length === 0)).toBe(true);
         });
 
