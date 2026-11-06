@@ -126,6 +126,8 @@ Differences from `ui-builder`: no `workspace-missing` or `user-missing`, no appr
 
 `path` in `ui_screenshot` and `ui_interact` is the state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional). It is mapped to the element the component rendered for that node, through open shadow roots. A hidden or closed node has no element. When no component rendered that path, it is mapped to the element with `data-shape-path` equal to it (`shapeTargets.ts`): the SVG element of a shape, or the proxy button of a canvas shape, so a path that names no shape is an error naming the path.
 
+Drawings (graphics epic 1) use the same tools: shape nodes go in a `drawing` node's `children` with `ui_nodes_write` (`ui_components_search` with `category: "graphics"` finds them), `ui_validate` reports the paint, token and label checks, `ui_screenshot` of the drawing's path waits until it is drawn, `ui_tree` with `rendered: true` lists its interactive shapes, and `ui_interact` presses, hovers or focuses one by its path. The server instructions' drawing section (`graphicsSection`, above) says the same to the model. The shape vocabulary, the renderers and the events are documented in the `@punyts/stateui-components` README ("Graphics").
+
 ## Browser endpoint
 
 | Route | What |
