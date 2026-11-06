@@ -51,7 +51,7 @@ describe('ui_theme_create', () => {
         expect((created.body['contrast'] as { mode: string }[]).map((pair) => pair.mode)).toContain('night');
     });
 
-    it('should refuse a preset while the library has none, and need exactly one source', async () => {
+    it('should refuse an unknown preset with the four names, and need exactly one source', async () => {
         // Act
         const preset = await call(harness.client, 'ui_theme_create', { name: 'calm', preset: 'calm' });
         const neither = await call(harness.client, 'ui_theme_create', { name: 'calm' });
@@ -61,7 +61,7 @@ describe('ui_theme_create', () => {
 
         // Assert
         expect(preset.body).toMatchObject({ error: 'invalid-argument', argument: 'preset' });
-        expect(preset.body['message']).toContain('No such preset: "calm"');
+        expect(preset.body['message']).toContain('one of: clean, moody, playful, professional');
         expect(neither.body).toMatchObject({ error: 'invalid-argument' });
         expect(both.body).toMatchObject({ error: 'invalid-argument' });
         expect(missing.body).toMatchObject({ error: 'not-found', nearest: ['store'] });
