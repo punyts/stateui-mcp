@@ -35,12 +35,11 @@
  */
 
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@punyts/state-sync';
+import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
+import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { readStoredFile } from './fileRead.js';
 import { releaseStoredFile } from './fileRelease.js';
-import type { JsonValue, LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
-
-type Json = JsonValue;
-type JsonRecord = { [key: string]: Json };
+import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
 
 /** The app events an app server's logic sends to the views: failures and `notify.<name>` */
 function isLogicEvent(name: string): boolean {
@@ -58,7 +57,6 @@ interface ViewState {
 type ChangeOp = 'set' | 'replace' | 'merge' | 'delete';
 
 const PROTOCOL_VERSION = 1;
-const MAX_WRITES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = [
     'image/png',
@@ -76,14 +74,7 @@ const ALLOWED_FILE_TYPES = [
 /** Keys of a node that belong to the document, never to the synced state */
 const NODE_KEYS: readonly string[] = ['component', 'on', 'layout', 'placement', 'theme'];
 const CONTENT_PREFIX = '_';
-const SEGMENT = /^[^.\s]+$/;
 const VIEW_FRAME = '{"type":"view"';
-
-interface PathWrite {
-    path: string;
-    value?: Json;
-    remove?: true;
-}
 
 interface AppMessage {
     type: 'app';
@@ -105,63 +96,6 @@ interface RuntimeMessage {
     nonce?: unknown;
     type?: unknown;
     [key: string]: unknown;
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isJson(value: unknown): value is Json {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
-    if (typeof value === 'number') return Number.isFinite(value);
-    if (Array.isArray(value)) return value.every(isJson);
-    if (isRecord(value)) return Object.values(value).every(isJson);
-    return false;
-}
-
-function copy<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]));
-    if (isRecord(a) && isRecord(b)) {
-        const keys = Object.keys(a);
-        return keys.length === Object.keys(b).length && keys.every((key) => key in b && deepEqual(a[key], b[key]));
-    }
-    return false;
-}
-
-/** The writes that turn `a` into `b` below `path`; a key that only `a` has is removed. False when writes cannot carry it */
-function diffComplete(path: string, a: unknown, b: unknown, writes: PathWrite[]): boolean {
-    if (deepEqual(a, b)) return true;
-    if (isRecord(a) && isRecord(b)) {
-        for (const key of Object.keys(a)) {
-            if (key in b) continue;
-            if (!SEGMENT.test(key)) return false;
-            writes.push({ path: `${path}.${key}`, remove: true });
-        }
-        for (const key of Object.keys(b)) {
-            if (!SEGMENT.test(key)) return false;
-            const child = `${path}.${key}`;
-            const value = b[key];
-            if (!(key in a)) {
-                if (!isJson(value)) return false;
-                writes.push({ path: child, value });
-            } else if (!diffComplete(child, a[key], value, writes)) {
-                return false;
-            }
-        }
-        return writes.length <= MAX_WRITES;
-    }
-    if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return false;
-        return a.every((item, index) => diffComplete(`${path}.${index}`, item, b[index], writes));
-    }
-    if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
-    writes.push({ path, value: b });
-    return writes.length <= MAX_WRITES;
 }
 
 /**
@@ -197,80 +131,6 @@ function diffArticulation(path: string, before: unknown, after: unknown, documen
     if (isTreeRoot(path)) return false;
     writes.push({ path, value: after as Json });
     return writes.length <= MAX_WRITES;
-}
-
-/**
- * True when a write changes the component of a node or adds, changes or removes a `<-` link, or writes a value that
- * holds nodes or links. The runtime mounts a node (component defaults, composed components, links) only when the node
- * is written whole; such a write is lifted to a write of the node that owns it
- */
-function mountsNodes(write: PathWrite): boolean {
-    const key = write.path.slice(write.path.lastIndexOf('.') + 1);
-    if (key === 'component' || key.startsWith('<-')) return true;
-    return write.remove !== true && holdsNodeOrLink(write.value);
-}
-
-function holdsNodeOrLink(value: unknown): boolean {
-    if (Array.isArray(value)) return value.some(holdsNodeOrLink);
-    if (!isRecord(value)) return false;
-    return Object.entries(value).some(([key, item]) => key === 'component' || key.startsWith('<-') || holdsNodeOrLink(item));
-}
-
-function isNode(value: unknown): value is JsonRecord {
-    return isRecord(value) && typeof value['component'] === 'string';
-}
-
-function isAtOrBelow(path: string, base: string): boolean {
-    return path === base || path.startsWith(`${base}.`);
-}
-
-/**
- * The path and value of the node in `app` (at `$.app`) that a write below `$.app` belongs to: the written value when
- * it is a whole node, else the nearest node above the path. Undefined when the owner is the root node, which only a
- * load mounts
- */
-function owningNode(app: unknown, write: PathWrite): { path: string; value: JsonRecord } | undefined {
-    if (write.remove !== true && isNode(write.value)) return { path: write.path, value: write.value };
-    const segments = write.path.split('.').slice(2);
-    let owner: { path: string; value: JsonRecord } | undefined;
-    let value: unknown = app;
-    for (let index = 0; index < segments.length - 1; index += 1) {
-        value = isRecord(value) || Array.isArray(value) ? (value as Record<string, unknown>)[segments[index]!] : undefined;
-        if (value === undefined) break;
-        if (isNode(value)) owner = { path: `$.app.${segments.slice(0, index + 1).join('.')}`, value };
-    }
-    return owner;
-}
-
-/**
- * The writes with each one that mounts nodes replaced by a write of its owning node whole, which the runtime mounts as
- * a load would; the other writes inside a lifted node are dropped. 'load' when a change belongs to the root node
- */
-function liftNodeWrites(app: unknown, writes: readonly PathWrite[]): PathWrite[] | 'load' {
-    const owners: { path: string; value: JsonRecord }[] = [];
-    for (const write of writes) {
-        if (!mountsNodes(write)) continue;
-        const owner = owningNode(app, write);
-        if (!owner) return 'load';
-        if (owners.some((known) => isAtOrBelow(owner.path, known.path))) continue;
-        for (let index = owners.length - 1; index >= 0; index -= 1) if (isAtOrBelow(owners[index]!.path, owner.path)) owners.splice(index, 1);
-        owners.push(owner);
-    }
-    if (owners.length === 0) return [...writes];
-    const rest = writes.filter((write) => !owners.some((owner) => isAtOrBelow(write.path, owner.path)));
-    return [...rest, ...owners.map((owner) => ({ path: owner.path, value: copy(owner.value) }))];
-}
-
-/** A document change as writes: the `app` tree changes through writes, anything else (theme, locales, composed) is a full load. `data` is the synced state's */
-function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
-    const { data: _previousData, app: previousApp, ...previousRest } = previous;
-    const { data: _nextData, app: nextApp, ...nextRest } = next;
-    if (!deepEqual(previousRest, nextRest)) return 'load';
-    const writes: PathWrite[] = [];
-    if (!diffComplete('$.app', previousApp, nextApp, writes) || writes.length > MAX_WRITES) return 'load';
-    const lifted = liftNodeWrites(nextApp, writes);
-    if (lifted === 'load') return 'load';
-    return lifted.length === 0 ? 'none' : lifted;
 }
 
 /** Content and the structure keys of a node cut out of a value below `$.app`; undefined when nothing is left */

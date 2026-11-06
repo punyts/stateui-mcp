@@ -168,6 +168,39 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         expect(String(tree.body['text'])).toContain('Boxed');
     });
 
+    it('should follow a move that only reorders the children of a container in the open page', async () => {
+        // Arrange
+        const children = { a: { component: 'text', _text: 'alpha' }, b: { component: 'text', _text: 'beta' }, c: { component: 'text', _text: 'gamma' } };
+        await createApp(harness.client, 'reorder', shellOf({ list: { component: 'panel', children } }));
+        const preview = await call(harness.client, 'ui_preview', { app: 'reorder' });
+        const browser = await chromium.launch();
+        const page = await browser.newPage();
+        await page.goto(String(preview.body['url']));
+        const frame = page.frameLocator('iframe');
+        await frame.getByText('gamma').waitFor();
+        // The text of each child in rendered order (a text node renders its text in its shadow root)
+        const order = async (): Promise<string[]> => frame.locator('ui-panel ui-text').evaluateAll((items) => items.map((item) => (item.shadowRoot ?? item).textContent?.trim() ?? ''));
+        const before = await order();
+
+        // Act
+        const moved = await writeShell(harness, 'reorder', 1, [{ op: 'move', path: 'root.children.list.children.c', before: 'a' }]);
+        await eventually(harness, 'ui_state_get', { app: 'reorder' }, (result) => renderedRevision(result) === 2);
+        const deadline = Date.now() + 5000;
+        let after = await order();
+        while (after[0] !== 'gamma' && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            after = await order();
+        }
+        const state = await call(harness.client, 'ui_state_get', { app: 'reorder' });
+        await browser.close();
+
+        // Assert
+        expect(moved.isError).toBe(false);
+        expect(JSON.stringify((state.body['preview'] as { errors: unknown[] }).errors)).toBe('[]');
+        expect(before).toEqual(['alpha', 'beta', 'gamma']);
+        expect(after).toEqual(['gamma', 'alpha', 'beta']);
+    });
+
     it('should re-point a changed link in the open page', async () => {
         // Arrange
         await seedItems(harness, { i1: 'first-value', i2: 'second-value' });
