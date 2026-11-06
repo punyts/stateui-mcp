@@ -128,12 +128,12 @@ describe('running instances of owner apps', () => {
         const state = await states.state(await app());
         await authorities.close();
 
-        // Assert
+        // Assert: the cart module's rule derived the totals at start, so the currency is the app's EUR, not the default
         expect(state).toEqual({
             app: {},
             screens: {},
             route: { screen: 'home', params: {} },
-            data: { products: { p1: { name: 'Lamp', price: 30 }, p2: { name: 'Chair', price: 90 } }, bag: {}, totals: { net: 0, gross: 0, currency: 'USD' } }
+            data: { products: { p1: { name: 'Lamp', price: 30 }, p2: { name: 'Chair', price: 90 } }, bag: {}, totals: { net: 0, gross: 0, currency: 'EUR' } }
         });
     });
 

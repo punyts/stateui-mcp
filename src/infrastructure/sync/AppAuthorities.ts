@@ -64,7 +64,15 @@ export class AppAuthorities {
 
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
     instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
-        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {});
+        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined);
+    }
+
+    /**
+     * Runs a running instance's deriving rules: with shared datasets its logic starts without them, and the instance
+     * side runs them once the instance is attached, so their writes reach the datasets
+     */
+    deriveInstance(key: InstanceKey): void {
+        if (this.dataGate !== undefined) this.logics.get(appNamespace(key))?.derive();
     }
 
     /** A tool's write to a running instance: asked of the guards, written, and looked up by the logic. Returns the reason when a guard refused it */
@@ -94,7 +102,7 @@ export class AppAuthorities {
     }
 
     /** The authority of a namespace, made on first use; its emits and its logic's events are recorded under `appId` */
-    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>): Promise<Authority> {
+    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true): Promise<Authority> {
         let authority = this.authorities.get(namespace);
         if (authority === undefined) {
             authority = createAuthority({
@@ -105,7 +113,7 @@ export class AppAuthorities {
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
-                this.startLogic(namespace, appId, created, document);
+                this.startLogic(namespace, appId, created, document, derive);
                 return created;
             }, (error: unknown) => {
                 throw this.explain(appId, error);
@@ -117,7 +125,7 @@ export class AppAuthorities {
         return authority;
     }
 
-    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument): void {
+    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true): void {
         if (this.logic === undefined) return;
         const { library, report } = this.logic;
         const logic = new AppLogic(
@@ -130,7 +138,7 @@ export class AppAuthorities {
         );
         this.logics.set(namespace, logic);
         try {
-            logic.setDocument(document);
+            logic.setDocument(document, { derive });
         } catch (error) {
             report.info('App logic did not start', { app: appId, reason: error instanceof Error ? error.message : String(error) });
         }

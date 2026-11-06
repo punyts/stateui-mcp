@@ -340,7 +340,8 @@ describe('AppLogic data gate', () => {
         expect(refused).toEqual(['not a contact', 'not a contact']);
         expect(written).toBeUndefined();
         expect(authority.get('$.data.contacts')).toEqual({ c1: { name: 'Ana' } });
-        expect(applied).toEqual([['$.app.children.addContact.phase'], ['$.data.contacts.c1'], ['$.data.stats.contacts']]);
+        // the machine's initial state and the count the stats rule derived at start, then the write and its count
+        expect(applied).toEqual([['$.app.children.addContact.phase'], ['$.data.stats.contacts'], ['$.data.contacts.c1'], ['$.data.stats.contacts']]);
     });
 
     it('should run the rules for writes it receives, without asking the gate', async () => {

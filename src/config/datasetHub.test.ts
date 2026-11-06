@@ -154,11 +154,28 @@ describe('DatasetHub', () => {
         await hub.settled();
 
         // Assert
-        const expected = { p1: { name: 'Lamp', price: 30 }, p2: { name: 'Armchair', price: 90 }, p3: { name: 'Desk', price: 100, gross: 200 } };
+        const expected = { p1: { name: 'Lamp', price: 30, gross: 60 }, p2: { name: 'Armchair', price: 90, gross: 180 }, p3: { name: 'Desk', price: 100, gross: 200 } };
         expect((await stored()).records).toEqual(expected);
         expect(a.get('$.data.products')).toEqual(expected);
         expect(b.get('$.data.products')).toEqual(expected);
-        // one write per change: shop B's rule wrote p3's gross before the hub wrote p3 through, so the record went whole
+        // the gross rule derived p1's and p2's gross when shop A started (a write each), then one write per change: shop
+        // B's rule wrote p3's gross before the hub wrote p3 through, so the record went whole
+        expect((await stored()).revision).toBe(5);
+    });
+
+    it('should write the values a rule derives at start through to the dataset, and give them to the next instance', async () => {
+        // Act
+        const a = await states.authority(shopA);
+        await hub.settled();
+        const b = await states.authority(shopB);
+        await hub.settled();
+
+        // Assert
+        const expected = { p1: { name: 'Lamp', price: 30, gross: 60 }, p2: { name: 'Chair', price: 90, gross: 180 } };
+        expect((await stored()).records).toEqual(expected);
+        expect(a.get('$.data.products')).toEqual(expected);
+        expect(b.get('$.data.products')).toEqual(expected);
+        // shop B derived the same values, so it wrote nothing more
         expect((await stored()).revision).toBe(3);
     });
 
@@ -167,6 +184,7 @@ describe('DatasetHub', () => {
         const a = await states.authority(shopA);
         const b = await states.authority(shopB);
         const c = await states.authority(shopC);
+        await hub.settled();
         const receive = vi.spyOn(authorities, 'receiveInstance');
         const viewA = view(a);
 
@@ -199,11 +217,14 @@ describe('DatasetHub', () => {
         expect(ack?.reason).toContain('"price"');
         expect(ack?.reason).toContain('"p1"');
         expect(a.get('$.data.products.p1.price')).toBe(30);
-        expect(await stored()).toEqual({ revision: 1, records: { p1: { name: 'Lamp', price: 30 }, p2: { name: 'Chair', price: 90 } } });
+        // the two writes are the grosses the pricing rule derived at start
+        expect(await stored()).toEqual({ revision: 3, records: { p1: { name: 'Lamp', price: 30, gross: 60 }, p2: { name: 'Chair', price: 90, gross: 180 } } });
     });
 
     it('should give a save-data with a bad field the rejected result and leave the dataset file unchanged', async () => {
         // Arrange
+        await states.authority(shopA);
+        await hub.settled();
         const before = await stored();
 
         // Act
@@ -225,7 +246,7 @@ describe('DatasetHub', () => {
 
         // Assert
         expect(refused).toContain('"name"');
-        expect((await states.authority(shopB)).get('$.data.products.p2')).toEqual({ name: 'Chair', price: 90 });
+        expect((await states.authority(shopB)).get('$.data.products.p2')).toEqual({ name: 'Chair', price: 90, gross: 180 });
     });
 
     it('should put the stored records back into the instance and report when the write-through fails', async () => {
@@ -249,6 +270,7 @@ describe('DatasetHub', () => {
         // Arrange
         const a = await states.authority(shopA);
         const b = await states.authority(shopB);
+        await hub.settled();
 
         // Act
         await writeData.execute({ name: 'catalog', operations: [{ op: 'remove', path: 'p1' }, { op: 'set', path: 'p2.price', value: 95 }] });
@@ -276,6 +298,7 @@ describe('DatasetHub', () => {
         // Assert
         expect(a.get('$.data.cart.l1')).toEqual({ qty: 2 });
         expect(b.get('$.data.cart.l1')).toBeUndefined();
-        expect((await stored()).revision).toBe(1);
+        // the two writes are the grosses the pricing rule derived at start, not the cart
+        expect((await stored()).revision).toBe(3);
     });
 });

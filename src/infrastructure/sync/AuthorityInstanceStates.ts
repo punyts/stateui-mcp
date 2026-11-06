@@ -87,6 +87,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         const { start, storage } = running;
         const ready = this.authorities.instance(start, storage).then(async (authority) => {
             await this.hub?.attach(appNamespace(start.key), authority, start.bindings, (writes) => this.authorities.receiveInstance(start.key, authority, writes));
+            this.authorities.deriveInstance(start.key);
             return authority;
         });
         running.ready = ready;

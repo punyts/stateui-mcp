@@ -95,8 +95,12 @@ export class AppLogic {
         for (const root of ROOTS) this.removers.push(authority.onChange(root, (context) => this.guardClient(context)));
     }
 
-    /** Builds the engine from the document's `logic` (only its valid machines and rules) and writes missing initial states */
-    setDocument(document: UiDocument): void {
+    /**
+     * Builds the engine from the document's `logic` (only its valid machines and rules), writes missing initial states
+     * and runs the rules that only derive values; with `derive` false that pass waits for `derive()` (an instance runs it
+     * once it is attached to its shared datasets, so the derived writes reach them)
+     */
+    setDocument(document: UiDocument, options: { derive?: boolean } = {}): void {
         this.engine?.stop();
         this.engine = undefined;
         const logic = document['logic'];
@@ -154,7 +158,12 @@ export class AppLogic {
             }
         };
         this.engine = createLogicEngine(valid, host);
-        this.engine.start();
+        this.engine.start({ derive: options.derive !== false });
+    }
+
+    /** Runs the rules that only derive values, once, as at start (`LogicEngine.derive`) */
+    derive(): void {
+        this.engine?.derive();
     }
 
     /**
