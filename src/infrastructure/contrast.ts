@@ -41,11 +41,17 @@ function pairsOf(tree: TokenTree): [string, string][] {
     return pairs;
 }
 
-/** The modes a theme has at run time: the shipped ones, then its own `mode` overlays (a clashing name is the shipped one) */
+/**
+ * The modes a theme has at run time: the shipped ones, then its own `mode` overlays. An own overlay named like a shipped
+ * mode refines it, its tokens merged over the shipped ones, as `buildOverlayCatalog` does
+ */
 function modesOf(theme: ThemePart): [string, LibraryJsonObject][] {
     const modes: [string, LibraryJsonObject][] = Object.entries(SHIPPED_OVERLAYS['mode'] ?? {}).map(([name, overlay]) => [name, overlay.tokens]);
     for (const [name, overlay] of Object.entries(theme.overlays ?? {})) {
-        if (overlay.kind === 'mode' && !modes.some(([taken]) => taken === name)) modes.push([name, overlay.tokens]);
+        if (overlay.kind !== 'mode') continue;
+        const at = modes.findIndex(([taken]) => taken === name);
+        if (at === -1) modes.push([name, overlay.tokens]);
+        else modes[at] = [name, mergeTokenTrees(modes[at]![1], overlay.tokens)];
     }
     return modes;
 }

@@ -49,4 +49,22 @@ describe('themeContrast', () => {
         expect(dimMuted).toEqual({ mode: 'dim', text: 'color.text.muted', surface: 'color.surface.base', ratio: 'unresolved' });
         expect(report.some((pair) => pair.mode === 'acme')).toBe(false);
     });
+
+    it('should check a theme dark overlay merged over the shipped dark, in its place', () => {
+        // Arrange
+        const theme = deepFreeze({
+            tokens: {},
+            overlays: { dark: { kind: 'mode', tokens: { color: { accent: { base: '#000000' } } } } }
+        }) as unknown as ThemePart;
+
+        // Act
+        const report = themeContrast(theme);
+        const accent = report.find((pair) => pair.mode === 'dark' && pair.text === 'color.accent.on');
+        const text = report.find((pair) => pair.mode === 'dark' && pair.text === 'color.text.base');
+
+        // Assert
+        expect([...new Set(report.map((pair) => pair.mode))]).toEqual(['light', 'dark', 'contrast']);
+        expect(accent).toMatchObject({ surface: 'color.accent.base', passesAA: false });
+        expect(text).toMatchObject({ passesAA: true });
+    });
 });
