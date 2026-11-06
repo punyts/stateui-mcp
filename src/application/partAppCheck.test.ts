@@ -23,7 +23,8 @@ const PATTERNS: PatternCatalog = Object.freeze({
     names: () => [CHECKOUT.name],
     search: () => ({ results: [], weak: true }),
     preset: () => undefined,
-    presets: () => []
+    presets: () => [],
+    withOwner: () => PATTERNS
 });
 
 describe('treeOf', () => {

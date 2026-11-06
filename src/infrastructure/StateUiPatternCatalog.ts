@@ -1,7 +1,8 @@
-import { PATTERN_KINDS, createSearchIndex } from '@punyts/stateui-app/core';
-import type { SearchEntry, SearchIndex } from '@punyts/stateui-app/core';
+import { PATTERN_KINDS, createSearchIndex, patternComponents } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, SearchEntry, SearchIndex } from '@punyts/stateui-app/core';
 import { InvalidSearchArgumentError } from '../application/ports/ComponentCatalog.js';
 import type {
+    OwnerPattern,
     PatternCatalog,
     PatternEntry,
     PatternParamView,
@@ -47,23 +48,38 @@ function toHit(pattern: PatternEntry, matched: readonly string[]): PatternSearch
         slots: Object.fromEntries(Object.entries(pattern.slots).map(([name, slot]) => [name, slot.description])),
         params: Object.fromEntries(Object.entries(pattern.params).map(([name, param]) => [name, paramView(param)])),
         components: [...(pattern.components ?? [])],
-        source: 'library'
+        source: pattern.source ?? 'library'
     };
 }
 
 /**
  * `PatternCatalog` over the `patterns` and optional `themePresets` sections of `catalog.json`. Search uses the
  * engine of the component search. A pattern catalog is small, so the component catalog's score floor does not carry
- * over: a result is weak when nothing matched or when the best match holds none of its purpose phrases
+ * over: a result is weak when nothing matched or when the best match holds none of its purpose phrases. `withOwner`
+ * adds the owner's patterns, their components listed through the library (an owner component counts as its own name)
  */
 export class StateUiPatternCatalog implements PatternCatalog {
+    private readonly catalog: Pick<CatalogFile, 'patterns'> & Partial<Pick<CatalogFile, 'themePresets'>>;
+    private readonly library: ComponentLibrary;
     private readonly patterns: ReadonlyMap<string, PatternEntry>;
     private readonly presetsByName: ReadonlyMap<string, ThemePresetEntry>;
     /** One search index per kind (`''` for both), built on first use */
     private readonly indexes = new Map<string, SearchIndex>();
 
-    constructor(catalog: Pick<CatalogFile, 'patterns'> & Partial<Pick<CatalogFile, 'themePresets'>>) {
-        this.patterns = new Map(catalog.patterns.map((pattern) => [pattern.name, pattern]));
+    constructor(
+        catalog: Pick<CatalogFile, 'patterns'> & Partial<Pick<CatalogFile, 'themePresets'>>,
+        library: ComponentLibrary = {},
+        owner: readonly OwnerPattern[] = []
+    ) {
+        this.catalog = catalog;
+        this.library = library;
+        const entries: [string, PatternEntry][] = catalog.patterns.map((pattern) => [pattern.name, pattern]);
+        const libraryNames = new Set(catalog.patterns.map((pattern) => pattern.name));
+        for (const { name, body } of owner) {
+            if (libraryNames.has(name)) continue;
+            entries.push([name, { ...body, name, source: 'owner', components: patternComponents(body, library) }]);
+        }
+        this.patterns = new Map(entries);
         this.presetsByName = new Map((catalog.themePresets ?? []).map((preset) => [preset.name, preset]));
     }
 
@@ -99,6 +115,10 @@ export class StateUiPatternCatalog implements PatternCatalog {
 
     presets(): readonly string[] {
         return [...this.presetsByName.keys()];
+    }
+
+    withOwner(owner: readonly OwnerPattern[]): PatternCatalog {
+        return owner.length === 0 ? this : new StateUiPatternCatalog(this.catalog, this.library, owner);
     }
 
     /** The patterns of a kind, or of both kinds, in catalog order (kind, then name) */

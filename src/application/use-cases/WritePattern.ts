@@ -57,7 +57,7 @@ export type WritePatternResult =
  * paths of that copy. The part is checked through `WritePart`, which runs the library build's pattern checks, so a
  * slot or param path that is not in the tree, a shell without exactly one outlet or a node that fails its shape fails
  * the write and nothing is stored. A name the library's patterns have is refused, so a `pattern` argument names one
- * pattern. Nothing here ranks or searches: `ui_patterns_search` reads the stored patterns (search epic 2 S2.8)
+ * pattern. `ui_patterns_search`, `ui_app_create` and `ui_screen_create` read the stored patterns
  */
 export class WritePattern {
     constructor(

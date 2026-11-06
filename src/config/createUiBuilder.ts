@@ -124,7 +124,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const writePart = new WritePart(parts, parts, validator, report);
     return {
         searchComponents: new SearchComponents(catalog),
-        searchPatterns: new SearchPatterns(patterns),
+        searchPatterns: new SearchPatterns(patterns, parts),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog),
         listTokens: new ListTokens(catalog),

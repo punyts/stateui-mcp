@@ -228,7 +228,8 @@ describe('a copied pattern is ordinary nodes', () => {
             names: () => ['note'],
             search: () => ({ results: [], weak: true }),
             preset: () => undefined,
-            presets: () => []
+            presets: () => [],
+            withOwner: () => patterns
         };
         await parts.create({ kind: 'apps', name: 'notes', body: { start: 'home', shell: STUB_SHELL, screens: { home: { root: { component: 'panel' } } } } as unknown as UiPartBodies['apps'] });
         const createScreen = new CreateScreen(parts, validator, patterns, silentReport);

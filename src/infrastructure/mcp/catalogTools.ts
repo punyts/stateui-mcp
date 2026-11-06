@@ -64,15 +64,15 @@ export function createCatalogTools(
         {
             name: 'ui_patterns_search',
             description:
-                'Find a ready shell or screen for a need, described in plain words ("online store product page", "sign in"), best first: name, kind, summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start an app or a screen from the one that fits, then fill its slots. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns of the kind (of both kinds when no kind is given).',
+                'Find a ready shell or screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start an app or a screen from the one that fits, then fill its slots. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns of the kind (of both kinds when no kind is given).',
             inputSchema: PATTERNS_SEARCH.schema,
             annotations: READ_ONLY,
-            run: (args) => {
+            run: async (args) => {
                 const parsed = PATTERNS_SEARCH.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
                 const { need, kind, limit } = parsed.value;
                 if (need.trim() === '') return fail('invalid-argument', 'need must say what the shell or screen is for', { argument: 'need' });
-                const outcome = useCases.searchPatterns.execute({ need, ...(kind !== undefined && { kind }), ...(limit !== undefined && { limit }) });
+                const outcome = await useCases.searchPatterns.execute({ need, ...(kind !== undefined && { kind }), ...(limit !== undefined && { limit }) });
                 if (outcome.kind === 'invalid-argument') {
                     return fail('invalid-argument', `Unknown ${outcome.argument}; use one of: ${outcome.allowed.join(', ')}`, { argument: outcome.argument, allowed: outcome.allowed });
                 }

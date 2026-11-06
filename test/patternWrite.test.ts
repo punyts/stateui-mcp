@@ -118,6 +118,65 @@ describe('ui_pattern_write', () => {
     });
 });
 
+describe('owner patterns in search and creation', () => {
+    type Hit = { name: string; source: string; components: string[] };
+    async function search(need: string): Promise<Hit[]> {
+        const found = await call(harness.client, 'ui_patterns_search', { need });
+        if (found.isError) throw new Error(JSON.stringify(found.body));
+        return found.body['results'] as Hit[];
+    }
+
+    it('should find a screen saved with ui_pattern_write by its purposes and start a new screen from it', async () => {
+        // Arrange
+        await call(harness.client, 'ui_pattern_write', {
+            name: 'opening-hours',
+            kind: 'screen',
+            ...SEARCH,
+            from: { app: 'shop', screen: 'home' },
+            params: { title: { type: 'string', default: 'Opening hours', paths: ['_title'], description: 'The heading' } }
+        });
+
+        // Act
+        const results = await search('when the shop is open');
+        const screen = await call(harness.client, 'ui_screen_create', { app: 'shop', name: 'hours', expectedRevision: 2, pattern: 'opening-hours', patternParams: { title: 'Hours' } });
+        const read = await call(harness.client, 'ui_get', { kind: 'apps', name: 'shop' });
+
+        // Assert
+        expect(results[0]).toMatchObject({ name: 'opening-hours', source: 'owner' });
+        expect(results[0]!.components).toEqual(['panel', 'text']);
+        expect(results.filter((hit) => hit.name !== 'opening-hours').every((hit) => hit.source === 'library')).toBe(true);
+        expect(screen.isError, JSON.stringify(screen.body)).toBeFalsy();
+        const screens = (read.body['value'] as { screens: Record<string, { root: unknown }> }).screens;
+        expect(screens['hours']!.root).toEqual({ ...ROOT, _title: 'Hours' });
+    });
+
+    it('should rank an owner pattern with the purposes of a library pattern beside it, each with its source', async () => {
+        // Arrange
+        const purposes = ['show key figures and a chart on one screen', 'overview of income and spending', 'finance dashboard with totals and a trend'];
+        await call(harness.client, 'ui_pattern_write', { name: 'my-dashboard', kind: 'screen', summary: 'Our own figures screen', purposes, tree: ROOT });
+
+        // Act
+        const results = await search('finance dashboard with totals and a trend');
+
+        // Assert
+        const sources = new Map(results.map((hit) => [hit.name, hit.source]));
+        expect(sources.get('dashboard')).toBe('library');
+        expect(sources.get('my-dashboard')).toBe('owner');
+        expect(results.slice(0, 2).map((hit) => hit.name).sort()).toEqual(['dashboard', 'my-dashboard']);
+    });
+
+    it('should start an app from an owner shell', async () => {
+        // Arrange
+        await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'shell', ...SEARCH, from: { app: 'shop', screen: 'shell' } });
+
+        // Act
+        const created = await call(harness.client, 'ui_app_create', { name: 'kiosk', shell: { pattern: 'plain-frame' } });
+
+        // Assert
+        expect(created.isError, JSON.stringify(created.body)).toBeFalsy();
+    });
+});
+
 describe('WritePattern and the library names', () => {
     it('should refuse the name of a library pattern, naming it, and write nothing', async () => {
         // Arrange

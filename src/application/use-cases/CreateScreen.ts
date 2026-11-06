@@ -4,6 +4,7 @@ import { hasScreen } from '../../domain/renameReferences.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { PART_SHAPE_CODE, partNameProblem } from '../../domain/UiPart.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
+import { withOwnerPatterns } from '../ownerPatterns.js';
 import { checkPartApp, treeOf } from '../partAppCheck.js';
 import type { MissingPart, PatternSlot, TreeChoice, TreeOutcome } from '../partAppCheck.js';
 import type { PatternCatalog } from '../ports/PatternCatalog.js';
@@ -35,7 +36,7 @@ export type CreateScreenResult =
     | Exclude<TreeOutcome, { readonly kind: 'tree' }>;
 
 /**
- * Adds a screen to an app: title, params and a root (a node tree or a library pattern). It is a write of the app, so the
+ * Adds a screen to an app: title, params and a root (a node tree, or a library or owner pattern). It is a write of the app, so the
  * app's revision is checked and raised, and the app is checked as a whole first (`checkPartApp`)
  */
 export class CreateScreen {
@@ -59,7 +60,7 @@ export class CreateScreen {
         if (app === undefined) return { kind: 'not-found', nearest: nearestNames(input.app, (await this.parts.list('apps')).map((summary) => summary.name)) };
         if (app.revision !== input.expectedRevision) return { kind: 'conflict', currentRevision: app.revision };
         if (hasScreen(app.body, input.name)) return { kind: 'duplicate-name' };
-        const root = treeOf(input.root, 'screen', this.patterns, `$.screens.${input.name}`);
+        const root = treeOf(input.root, 'screen', await withOwnerPatterns(this.patterns, this.parts), `$.screens.${input.name}`);
         if (root.kind !== 'tree') return root;
         const screen = {
             ...(input.title !== undefined && { title: input.title }),

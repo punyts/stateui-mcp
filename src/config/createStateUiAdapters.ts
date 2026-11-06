@@ -36,12 +36,13 @@ export function createStateUiAdapters(options: StateUiAdapterOptions = {}): Stat
     // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
     const report = options.report ?? { info: (): void => undefined };
     const toolCallLog = options.toolLog === undefined ? undefined : new FileToolCallLog(options.toolLog, report);
+    const library = libraryFromCatalog(catalogFile as unknown as CatalogSource);
     return {
         validator,
         catalog,
-        patterns: new StateUiPatternCatalog(catalogFile),
+        patterns: new StateUiPatternCatalog(catalogFile, library),
         coreIconNames: CORE_ICON_NAMES,
-        library: libraryFromCatalog(catalogFile as unknown as CatalogSource),
+        library,
         ...(toolCallLog !== undefined && { toolCallLog })
     };
 }

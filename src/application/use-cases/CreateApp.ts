@@ -2,6 +2,7 @@ import type { UiBuildError } from '../../domain/UiBuildError.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { partNameProblem } from '../../domain/UiPart.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
+import { withOwnerPatterns } from '../ownerPatterns.js';
 import { checkPartApp, treeOf } from '../partAppCheck.js';
 import type { MissingPart, PatternSlot, TreeChoice, TreeOutcome } from '../partAppCheck.js';
 import type { PatternCatalog } from '../ports/PatternCatalog.js';
@@ -42,7 +43,7 @@ export type CreatePartAppResult =
     | Exclude<TreeOutcome, { readonly kind: 'tree' }>;
 
 /**
- * Creates an app of parts: its title, the `uses` it is given, the shell (a node tree or a library pattern) and a first
+ * Creates an app of parts: its title, the `uses` it is given, the shell (a node tree, or a library or owner pattern) and a first
  * screen `home` that is its `start`. The app is checked as a whole first (`checkPartApp`); nothing is stored on a missing
  * part or a blocking error
  */
@@ -63,7 +64,7 @@ export class CreatePartApp {
     private async create(input: CreatePartAppInput): Promise<CreatePartAppResult> {
         const problem = partNameProblem(input.name);
         if (problem !== undefined) return { kind: 'invalid-name', reason: problem };
-        const shell = treeOf(input.shell, 'shell', this.patterns, '$.app');
+        const shell = treeOf(input.shell, 'shell', await withOwnerPatterns(this.patterns, this.parts), '$.app');
         if (shell.kind !== 'tree') return shell;
         const uses = {
             ...(input.themes !== undefined && { themes: [...input.themes] }),
