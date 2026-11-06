@@ -7,7 +7,7 @@ import type { UiToolDefinition } from './toolKit.js';
 const COMPONENTS_SEARCH = defineInput({
     need: { type: 'string', required: true, allowEmpty: true, description: 'What the component is for, in plain words, such as "pick a date range" or "show totals by month"' },
     category: { type: 'string', description: 'Only components of this category (the index in the server instructions lists them)' },
-    tier: { type: 'string', description: 'Only components of this tier: root (draws itself) or composed (a ready-made tree of other components)' },
+    tier: { type: 'string', description: 'Only components of this tier: root (draws itself), composed (a ready-made tree of other components) or shape (a mark a chart or diagram draws, such as a bar or a node)' },
     limit: { type: 'integer', minimum: 1, description: `How many results (default ${DEFAULT_SEARCH_LIMIT}, at most ${MAX_SEARCH_LIMIT})` }
 });
 

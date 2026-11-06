@@ -51,7 +51,7 @@ interface Candidate {
 
 /** The four search fields of a catalog entry: purposes, name words, summary, and the property and event names of a root */
 function libraryCandidate(component: CatalogFileComponent): Candidate {
-    const properties = component.tier === 'root' ? [...Object.keys((component.shape?.['properties'] as object | undefined) ?? {}), ...(component.events ?? [])] : [];
+    const properties = component.tier !== 'composed' ? [...Object.keys((component.shape?.['properties'] as object | undefined) ?? {}), ...(component.events ?? [])] : [];
     const { name, category, tier, summary, example } = component;
     const fields = { purposes: component.purposes, name: nameWords(name), summary: summary === '' ? [] : [summary], properties };
     return { name, category, tier, summary, example, source: 'library', entry: { id: name, fields } };
@@ -84,6 +84,9 @@ function toEntry(component: CatalogFileComponent): ComponentEntry {
     const base = { ...toSummary(component), example: component.example, locales: component.locales, tokens };
     if (component.tier === 'composed') {
         return { ...base, tier: 'composed', tree: component.tree ?? {}, exposes: component.exposes ?? [] };
+    }
+    if (component.tier === 'shape') {
+        return { ...base, tier: 'shape', shape: component.shape ?? {}, events: component.events ?? [] };
     }
     return {
         ...base,

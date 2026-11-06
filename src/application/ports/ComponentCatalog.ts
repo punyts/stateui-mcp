@@ -1,6 +1,6 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
 
-export type ComponentTier = 'root' | 'composed';
+export type ComponentTier = 'root' | 'composed' | 'shape';
 
 /** One line of the component list */
 export interface ComponentSummary {
@@ -45,8 +45,15 @@ export interface ComposedComponentEntry extends ComponentEntryBase {
     readonly exposes: readonly JsonObject[];
 }
 
+/** A shape component: a state file only, drawn by a graphics renderer; it has a shape and events but no slots or commands */
+export interface ShapeComponentEntry extends ComponentEntryBase {
+    readonly tier: 'shape';
+    readonly shape: JsonObject;
+    readonly events: readonly string[];
+}
+
 /** The full catalog entry of a component */
-export type ComponentEntry = RootComponentEntry | ComposedComponentEntry;
+export type ComponentEntry = RootComponentEntry | ComposedComponentEntry | ShapeComponentEntry;
 
 export interface IconQuery {
     /** Words that must each appear in the icon name, one of its tags or an alias that names it */

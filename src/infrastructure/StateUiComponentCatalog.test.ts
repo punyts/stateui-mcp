@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { toComponentView } from '../application/componentView.js';
 import { InvalidSearchArgumentError } from '../application/ports/ComponentCatalog.js';
 import { createStateUiAdapters } from '../config/createStateUiAdapters.js';
 import { hasSearchKeys, loadCatalogFile, loadIconsFile } from './stateUiLibrary.js';
@@ -312,5 +313,41 @@ describe('the catalog file check', () => {
         expect(hasSearchKeys([{ category: 'forms', purposes: ['a', 'b', 'c'] }])).toBe(true);
         expect(hasSearchKeys([{ category: 'forms' }])).toBe(false);
         expect(hasSearchKeys([{ purposes: ['a', 'b', 'c'] }])).toBe(false);
+    });
+});
+
+describe('StateUiComponentCatalog shape components', () => {
+    const SHAPE_ENTRY = {
+        name: 'chartBar',
+        tier: 'shape' as const,
+        size: 'atom',
+        summary: 'A bar of a bar chart',
+        category: 'graphics',
+        purposes: ['show one value as a bar', 'compare amounts side by side', 'draw a bar of a chart'],
+        shape: { summary: 'A bar of a bar chart', properties: { value: { type: 'number', required: true } }, shared: [], events: ['press'], commands: [], layout: false },
+        events: ['press'],
+        locales: [],
+        example: { component: 'chartBar', value: 0 },
+        tokens: [{ path: 'bar.fill', group: 'bar', type: 'color', default: '{color.accent.base}' }]
+    };
+    const file = loadCatalogFile();
+    const withShape = new StateUiComponentCatalog({ ...file, components: [...file.components, SHAPE_ENTRY] }, loadIconsFile());
+
+    it('should give a shape entry with tier shape, its shape, events and tokens and no slots or commands', () => {
+        const entry = withShape.get('chartBar');
+
+        expect(entry?.tier).toBe('shape');
+        const view = toComponentView(entry as NonNullable<typeof entry>);
+        expect(view).toMatchObject({ name: 'chartBar', tier: 'shape', category: 'graphics', events: ['press'], tokens: [{ path: 'bar.fill', type: 'color', default: '{color.accent.base}' }] });
+        expect(view).toHaveProperty('properties.value');
+        expect(view).not.toHaveProperty('slots');
+        expect(view).not.toHaveProperty('commands');
+    });
+
+    it('should find a shape entry by its purposes and narrow the search to tier shape', () => {
+        const result = withShape.search({ need: 'compare amounts as bars', tier: 'shape' });
+
+        expect(result.results.map((hit) => [hit.name, hit.tier])).toEqual([['chartBar', 'shape']]);
+        expect(withShape.search({ need: 'compare amounts as bars' }).results[0]?.tier).toBe('shape');
     });
 });

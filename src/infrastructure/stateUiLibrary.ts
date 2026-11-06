@@ -3,11 +3,12 @@ import type { IconsFile } from '@punyts/stateui-components';
 import type { PatternEntry, ThemePresetEntry } from '../application/ports/PatternCatalog.js';
 import type { JsonObject } from '../domain/JsonValue.js';
 
-/** A catalog entry as `catalog.json` holds it. A root entry has `shape`, a composed one has `tree` and `exposes` */
+/** A catalog entry as `catalog.json` holds it. A root or shape entry has `shape`, a composed one has `tree` and `exposes` */
 export interface CatalogFileComponent {
     readonly name: string;
-    readonly tier: 'root' | 'composed';
-    readonly tag: string;
+    readonly tier: 'root' | 'composed' | 'shape';
+    /** Absent for a shape component, which has no element */
+    readonly tag?: string;
     readonly size: string;
     /** One line; a composed entry has it since `@punyts/stateui-components` keys its composed files */
     readonly summary: string;

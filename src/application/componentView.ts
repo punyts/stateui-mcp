@@ -73,9 +73,9 @@ export function toComponentView(entry: ComponentEntry): ComponentView {
         ...head,
         properties,
         ...rest,
-        ...(entry.slots.length > 0 && { slots: [...entry.slots] }),
+        ...(entry.tier === 'root' && entry.slots.length > 0 && { slots: [...entry.slots] }),
         ...(entry.events.length > 0 && { events: [...entry.events] }),
-        ...(entry.commands.length > 0 && { commands: [...entry.commands] }),
+        ...(entry.tier === 'root' && entry.commands.length > 0 && { commands: [...entry.commands] }),
         ...tail
     };
 }
