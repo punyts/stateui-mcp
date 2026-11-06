@@ -76,6 +76,21 @@ describe('StateUiPatternCatalog', () => {
             expect(result.results[0]?.components.length).toBeGreaterThan(0);
         });
 
+        it.each([
+            ['book a room for some dates', 'booking'],
+            ['a personal finance dashboard with income and spending charts', 'dashboard']
+        ])('should rank the pattern of a measured request first: %s', (need, name) => {
+            // Arrange
+            const catalog = real();
+
+            // Act
+            const result = catalog.search({ need });
+
+            // Assert
+            expect(result.weak).toBe(false);
+            expect(result.results[0]?.name).toBe(name);
+        });
+
         it('should answer a need that matches nothing with every pattern, marked weak', () => {
             // Arrange
             const catalog = real();
