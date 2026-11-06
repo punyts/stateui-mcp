@@ -280,7 +280,7 @@ describe('StateUiComponentCatalog search', () => {
     it('should reject an unknown category with the allowed list, and an unknown tier with the tiers of the catalog', () => {
         expect(() => catalog.search({ need: 'x', category: 'tables' })).toThrow(InvalidSearchArgumentError);
         expect(() => catalog.search({ need: 'x', category: 'tables' })).toThrow(/layout, navigation, forms/);
-        expect(() => catalog.search({ need: 'x', tier: 'shape' })).toThrow(/composed, root/);
+        expect(() => catalog.search({ need: 'x', tier: 'atom' })).toThrow(/composed, root, shape/);
     });
 });
 
@@ -288,13 +288,16 @@ describe('StateUiComponentCatalog categoryIndex', () => {
     it('should list each category with members, in list order, with its count and three typical members', () => {
         const index = catalog.categoryIndex();
 
-        expect(index.map((entry) => entry.category)).toEqual(['layout', 'navigation', 'forms', 'data', 'feedback', 'overlays', 'content', 'conversation']);
+        expect(index.map((entry) => entry.category)).toEqual(['layout', 'navigation', 'forms', 'data', 'feedback', 'overlays', 'content', 'conversation', 'graphics']);
         expect(index.reduce((sum, entry) => sum + entry.count, 0)).toBe(loadCatalogFile().components.length);
         expect(index.every((entry) => entry.typical.length === Math.min(3, entry.count))).toBe(true);
     });
 
-    it('should have no graphics entry while no graphics component exists', () => {
-        expect(catalog.categoryIndex().some((entry) => entry.category === 'graphics')).toBe(false);
+    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3)', () => {
+        const graphics = catalog.categoryIndex().find((entry) => entry.category === 'graphics');
+
+        expect(graphics?.count).toBe(12);
+        expect(catalog.search({ need: 'draw a seat map', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['drawing', 'drawRepeat']));
     });
 
     it('should pick the members with the most purposes, ties by name', () => {
@@ -347,7 +350,8 @@ describe('StateUiComponentCatalog shape components', () => {
     it('should find a shape entry by its purposes and narrow the search to tier shape', () => {
         const result = withShape.search({ need: 'compare amounts as bars', tier: 'shape' });
 
-        expect(result.results.map((hit) => [hit.name, hit.tier])).toEqual([['chartBar', 'shape']]);
+        expect(result.results[0]?.name).toBe('chartBar');
+        expect(result.results.every((hit) => hit.tier === 'shape')).toBe(true);
         expect(withShape.search({ need: 'compare amounts as bars' }).results[0]?.tier).toBe('shape');
     });
 });

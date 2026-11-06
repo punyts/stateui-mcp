@@ -6,6 +6,7 @@ import {
     libraryFromCatalog,
     resolveNode,
     screenPath,
+    themeTokenLookup,
     validateAppLocale,
     validateNode
 } from '@punyts/stateui-app/core';
@@ -74,13 +75,16 @@ function withoutLinked(tree: JsonObject, linkedPaths: readonly string[], root = 
 /**
  * `UiAppValidator` over `validateDocument` of `@punyts/stateui-app/core`. The library's pure part needs no DOM and
  * no worker. A document over the size or node limit is rejected before validation. `icon`-typed properties are
- * checked against `isIconName`. The library also checks `<-` targets: `$.data` paths that exist, `$row` only inside
+ * checked against `isIconName`, and a `{token}` colour of a shape against the theme's token names (`themeTokenLookup`,
+ * `SUI-STATE-TOKEN`). The library also checks `<-` targets: `$.data` paths that exist, `$row` only inside
  * a row template, and node references only to `exposed` properties. A document that is otherwise valid also gets
  * a `SUI-LOCALE-MISSING` warning for each content path that a language in its `locales` does not translate; the
  * component overlays come from the files the library ships
  */
 export class StateUiAppValidator implements UiAppValidator {
     private readonly library: ComponentLibrary;
+    /** The token names of the default theme and the library's component tokens, for `{token}` colours of shapes */
+    private readonly hasToken: (name: string) => boolean;
     private readonly overlaysByCode = new Map<string, ComponentOverlays>();
 
     constructor(
@@ -89,6 +93,7 @@ export class StateUiAppValidator implements UiAppValidator {
     ) {
         // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
         this.library = libraryFromCatalog(catalog as unknown as CatalogSource);
+        this.hasToken = themeTokenLookup(this.library);
     }
 
     resolveNode(document: UiDocument, path: readonly string[]): JsonObject | undefined {
@@ -104,7 +109,7 @@ export class StateUiAppValidator implements UiAppValidator {
     }
 
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
-        const errors = assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName });
+        const errors = assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
         if (errors.some(isBlockingError)) return errors;
 
         const document = this.assembleApp(blueprint, parts);
@@ -119,7 +124,7 @@ export class StateUiAppValidator implements UiAppValidator {
     }
 
     validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
-        return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName });
+        return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
     }
 
     /** `SUI-LOCALE-MISSING` warnings (and the errors of an overlay) for each language the shell or a screen of the assembled app declares in `locales` */

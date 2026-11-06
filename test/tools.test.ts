@@ -106,7 +106,7 @@ describe('catalog tools', () => {
         expect(category.body['error']).toBe('invalid-argument');
         expect(category.body['allowed']).toContain('forms');
         expect(tier.body['error']).toBe('invalid-argument');
-        expect(tier.body['allowed']).toEqual(['composed', 'root']);
+        expect(tier.body['allowed']).toEqual(['composed', 'root', 'shape']);
     });
 
     it('should find a screen pattern by a need in plain words, with its slots and params', async () => {
@@ -152,6 +152,22 @@ describe('catalog tools', () => {
         expect(result.body).not.toHaveProperty('shape');
         expect(result.body).not.toHaveProperty('purposes');
         expect(JSON.stringify(result.body['properties'])).not.toContain('"reflect"');
+    });
+
+    it('should return the drawing with its properties and find the 2D shapes by need (graphics G1.3)', async () => {
+        const drawing = await call(harness.client, 'ui_component_get', { name: 'drawing' });
+        const rect = await call(harness.client, 'ui_component_get', { name: 'rect' });
+        const found = await call(harness.client, 'ui_components_search', { need: 'draw a circle or dot', category: 'graphics' });
+        const shapes = await call(harness.client, 'ui_components_search', { need: 'draw seats from a dataset', tier: 'shape' });
+
+        expect(drawing.isError).toBe(false);
+        expect(Object.keys(drawing.body['properties'] as object)).toEqual(expect.arrayContaining(['renderer', 'viewBox', 'fit', 'paints', '_title', '_description']));
+        expect(JSON.stringify((drawing.body['properties'] as Record<string, unknown>)['viewBox'])).toContain('"width"');
+        expect(rect.body['tier']).toBe('shape');
+        expect(rect.body['events']).toEqual(['press', 'hover', 'dragEnd']);
+        expect((found.body['results'] as { name: string }[])[0]?.name).toBe('circle');
+        expect((shapes.body['results'] as { name: string; tier: string }[]).map((hit) => hit.name)).toContain('drawRepeat');
+        expect((shapes.body['results'] as { tier: string }[]).every((hit) => hit.tier === 'shape')).toBe(true);
     });
 
     it('should answer an unknown component with the nearest names', async () => {

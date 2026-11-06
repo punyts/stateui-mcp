@@ -21,6 +21,10 @@
  * view moved arrives as a `navigate` command, since the runtime protects `$.route`. `?screen=<name>&params=<json>` in
  * the page URL navigates there once the app is ready.
  *
+ * Files: a `file` from the runtime is uploaded to `POST /apps/:appId/files` (answered with `fileProgress` and
+ * `fileResult`), and a `fileRead` is fetched from `GET /apps/:appId/files/:fileId` (`fileRead.ts`) and answered with
+ * `fileData`, its bytes in the transfer list.
+ *
  * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
  * and its errors.
  *
@@ -29,6 +33,7 @@
  */
 
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@punyts/state-sync';
+import { readStoredFile } from './fileRead.js';
 import type { JsonValue, LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
 
 type Json = JsonValue;
@@ -532,8 +537,9 @@ class LiveView {
         }).catch(() => undefined);
     }
 
-    private post(message: Record<string, unknown>): void {
-        this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
+    /** Posts to the runtime; the buffers in `transfer` move to the frame (`fileData`) */
+    private post(message: Record<string, unknown>, transfer: Transferable[] = []): void {
+        this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, { targetOrigin: this.runtimeOrigin, transfer });
     }
 
     private onViewFrame(text: string): void {
@@ -730,6 +736,9 @@ class LiveView {
             case 'fileCancel':
                 if (typeof message['requestId'] === 'number') this.uploads.get(message['requestId'])?.abort();
                 break;
+            case 'fileRead':
+                this.onFileRead(message);
+                break;
             default:
                 break;
         }
@@ -817,6 +826,16 @@ class LiveView {
             this.uploads.delete(requestId);
         });
         request.send(form);
+    }
+
+    /** A component reads a stored file: fetched from the page's own origin and posted back as `fileData` with the bytes moved */
+    private onFileRead(message: RuntimeMessage): void {
+        const requestId = message['requestId'];
+        if (typeof requestId !== 'number') return;
+        void readStoredFile(this.appId, message['id'], (url, init) => fetch(url, init)).then((outcome) => {
+            if (outcome.ok) this.post({ type: 'fileData', requestId, ok: true, file: outcome.file, data: outcome.data }, [outcome.data]);
+            else this.post({ type: 'fileData', requestId, ok: false, code: outcome.code, message: outcome.message });
+        });
     }
 
     private fileFailed(requestId: number, code: string, message: string): void {

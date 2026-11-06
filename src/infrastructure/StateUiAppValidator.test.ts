@@ -56,6 +56,28 @@ describe('StateUiAppValidator', () => {
             expect(isValid(errors)).toBe(false);
         });
 
+        it('should check the token and paint names of a drawing against the theme and its paints (graphics G1.3)', () => {
+            const errors = check(
+                appWith({
+                    map: {
+                        component: 'drawing',
+                        paints: { sky: { stops: { a: { offset: 0, color: '{color.accent.soft}' } } } },
+                        children: {
+                            known: { component: 'rect', width: 1, height: 1, fill: '{drawing.background}', stroke: 'sky' },
+                            token: { component: 'rect', fill: '{color.nope.base}' },
+                            paint: { component: 'circle', r: 2, fill: 'sea', interactive: true }
+                        }
+                    }
+                })
+            );
+
+            expect(errors.map(pair)).toEqual([
+                ['SUI-STATE-TOKEN', '$.app.children.map.children.token.fill'],
+                ['SUI-STATE-PAINT', '$.app.children.map.children.paint.fill'],
+                ['SUI-STATE-LABEL', '$.app.children.map.children.paint']
+            ]);
+        });
+
         it('should report an unknown icon name on an icon-typed property', () => {
             const errors = check(appWith({ go: { component: 'button', icon: 'not-an-icon-at-all' } }));
 

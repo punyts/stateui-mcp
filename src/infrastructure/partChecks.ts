@@ -12,6 +12,8 @@ import type { UiPartBodies } from '../domain/UiPart.js';
 export interface PartCheckContext {
     readonly library: ComponentLibrary;
     readonly isIconName: (name: string) => boolean;
+    /** True for a token name the theme has; the `paint` validator reports an unknown `{token}` colour (`SUI-STATE-TOKEN`) */
+    readonly hasToken?: (name: string) => boolean;
 }
 
 function shapeError(kind: PartKind, name: string, path: string, reason: string): UiBuildError {
@@ -24,7 +26,7 @@ function isNode(value: unknown): boolean {
 
 /** `validateApp` of the library, each error with the part that holds it */
 export function assembledErrors(blueprint: AppBlueprint, parts: PartSource, name: string, context: PartCheckContext): UiPartError[] {
-    return validateApp(blueprint, parts, context.library, { name, isIconName: context.isIconName }).errors.map((error) => ({ ...error }));
+    return validateApp(blueprint, parts, context.library, { name, isIconName: context.isIconName, ...(context.hasToken !== undefined && { hasToken: context.hasToken }) }).errors.map((error) => ({ ...error }));
 }
 
 /** The errors one part holds when a probe app uses it: the app is a bare outlet shell with one screen of `root` */
