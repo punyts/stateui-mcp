@@ -129,10 +129,10 @@ export interface ComponentSearchResult {
     readonly categories?: readonly CategoryIndexEntry[];
 }
 
-/** A search argument outside the allowed values: an unknown `category` or `tier` */
+/** A search argument outside the allowed values: an unknown `category` or `tier`, or a pattern `kind` */
 export class InvalidSearchArgumentError extends Error {
     constructor(
-        readonly argument: 'category' | 'tier',
+        readonly argument: 'category' | 'tier' | 'kind',
         readonly allowed: readonly string[]
     ) {
         super(`Unknown ${argument}; use one of: ${allowed.join(', ')}`);

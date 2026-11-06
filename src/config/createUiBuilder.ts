@@ -19,6 +19,7 @@ import { DeletePart } from '../application/use-cases/DeletePart.js';
 import { GetComponent } from '../application/use-cases/GetComponent.js';
 import { GetPart } from '../application/use-cases/GetPart.js';
 import { SearchComponents } from '../application/use-cases/SearchComponents.js';
+import { SearchPatterns } from '../application/use-cases/SearchPatterns.js';
 import { ListParts } from '../application/use-cases/ListParts.js';
 import { ListIcons } from '../application/use-cases/ListIcons.js';
 import { ListTokens } from '../application/use-cases/ListTokens.js';
@@ -74,6 +75,7 @@ export interface UiBuilderOptions {
 
 export interface UiBuilderUseCases {
     readonly searchComponents: SearchComponents;
+    readonly searchPatterns: SearchPatterns;
     readonly getComponent: GetComponent;
     readonly listIcons: ListIcons;
     readonly listTokens: ListTokens;
@@ -120,6 +122,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const writePart = new WritePart(parts, parts, validator, report);
     return {
         searchComponents: new SearchComponents(catalog),
+        searchPatterns: new SearchPatterns(patterns),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog),
         listTokens: new ListTokens(catalog),

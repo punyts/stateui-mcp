@@ -1,8 +1,8 @@
 /**
  * The tools the server registers, in the order of the design's table (`stateui-owner-tree-and-tools.md`): build time,
- * the owner's data, run time. That is the design's 35 names less `ui_pattern_write` (owner-tree epic 3, story O3.9) and
- * `ui_patterns_search` (search epic 2, story S2.5), which ship with search epic 2: 33 at the owner-tree release. Each of
- * those stories adds its own tool here, which ends at 35
+ * the owner's data, run time. That is the design's 35 names less `ui_pattern_write` (owner-tree epic 3, story O3.9),
+ * which ships with search epic 2 and adds itself here: 33 at the owner-tree release, 34 with `ui_patterns_search`
+ * (search epic 2, story S2.5), 35 with `ui_pattern_write`
  */
 export const EXPECTED_TOOLS: readonly string[] = Object.freeze([
     // Build time: catalog
@@ -10,6 +10,7 @@ export const EXPECTED_TOOLS: readonly string[] = Object.freeze([
     'ui_component_get',
     'ui_icons_list',
     'ui_tokens_list',
+    'ui_patterns_search',
     // Build time: any part
     'ui_list',
     'ui_get',

@@ -13,6 +13,7 @@ const READ_ONLY_TOOLS = Object.freeze([
     'ui_component_get',
     'ui_icons_list',
     'ui_tokens_list',
+    'ui_patterns_search',
     'ui_list',
     'ui_get',
     'ui_validate',
@@ -44,7 +45,7 @@ const RUN_TIME_TOOLS = Object.freeze([
 const DATA_TOOLS = Object.freeze(['ui_data_write', 'ui_data_query']);
 
 /** The catalog tools, which are neither build time nor run time */
-const UNPREFIXED_TOOLS = Object.freeze(['ui_components_search', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list']);
+const UNPREFIXED_TOOLS = Object.freeze(['ui_components_search', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_patterns_search']);
 
 let data: TempData;
 let harness: InMemoryHarness;
@@ -60,15 +61,15 @@ afterEach(async () => {
 });
 
 describe('the registered tools', () => {
-    it('should be exactly EXPECTED_TOOLS: the design\'s 35 less the two that ship with search epic 2', async () => {
+    it('should be exactly EXPECTED_TOOLS: the design\'s 35 less ui_pattern_write, which ships later in search epic 2', async () => {
         // Act
         const { tools } = await harness.client.listTools();
 
         // Assert
-        expect(EXPECTED_TOOLS).toHaveLength(33);
+        expect(EXPECTED_TOOLS).toHaveLength(34);
         expect(tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
+        expect(EXPECTED_TOOLS).toContain('ui_patterns_search');
         expect(EXPECTED_TOOLS).not.toContain('ui_pattern_write');
-        expect(EXPECTED_TOOLS).not.toContain('ui_patterns_search');
     });
 
     it('should not register any tool of the removed document model', async () => {

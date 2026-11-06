@@ -4,7 +4,7 @@ import type { ComponentCatalog, ComponentSearchQuery, ComponentSearchResult } fr
 /** The ranking, or the argument outside the allowed values with the values it may take */
 export type SearchComponentsResult =
     | { readonly kind: 'found'; readonly result: ComponentSearchResult }
-    | { readonly kind: 'invalid-argument'; readonly argument: 'category' | 'tier'; readonly allowed: readonly string[] };
+    | { readonly kind: 'invalid-argument'; readonly argument: InvalidSearchArgumentError['argument']; readonly allowed: readonly string[] };
 
 /** Components ranked for a need in plain words; never empty (a need with no match falls back to a category) */
 export class SearchComponents {

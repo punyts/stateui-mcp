@@ -44,8 +44,8 @@ export interface CatalogFileTheme {
 export interface CatalogFile {
     readonly components: readonly CatalogFileComponent[];
     readonly theme: CatalogFileTheme;
-    /** The library's shell and screen patterns, by name; absent until search epic 2 S2.1b builds them (S2.5 makes it required) */
-    readonly patterns?: readonly PatternEntry[];
+    /** The library's shell and screen patterns, sorted by kind then name (search epic 2 S2.1b builds them) */
+    readonly patterns: readonly PatternEntry[];
     /** The library's theme presets, by name; absent until search epic 2 S2.7 */
     readonly themePresets?: readonly ThemePresetEntry[];
 }
@@ -69,8 +69,8 @@ export function hasSearchKeys(components: readonly unknown[]): boolean {
 
 export function isCatalogFile(value: unknown): value is CatalogFile {
     if (typeof value !== 'object' || value === null) return false;
-    const file = value as { components?: unknown; theme?: unknown };
-    if (!Array.isArray(file.components)) return false;
+    const file = value as { components?: unknown; theme?: unknown; patterns?: unknown };
+    if (!Array.isArray(file.components) || !Array.isArray(file.patterns)) return false;
     const theme = file.theme as { tokens?: unknown; overlays?: unknown } | null | undefined;
     return typeof theme === 'object' && theme !== null && Array.isArray(theme.tokens) && typeof theme.overlays === 'object' && theme.overlays !== null;
 }
@@ -85,7 +85,7 @@ function isIconsFile(value: unknown): value is IconsFile {
 export function loadCatalogFile(): CatalogFile {
     if (catalogFile === undefined) {
         const parsed: unknown = requireJson('@punyts/stateui-components/catalog.json');
-        if (!isCatalogFile(parsed)) throw new Error('@punyts/stateui-components/catalog.json has no components list and theme section; rebuild @punyts/stateui-components');
+        if (!isCatalogFile(parsed)) throw new Error('@punyts/stateui-components/catalog.json has no components list, patterns list and theme section; rebuild @punyts/stateui-components');
         if (!hasSearchKeys(parsed.components)) {
             throw new Error('@punyts/stateui-components/catalog.json has components without "category" or "purposes"; rebuild @punyts/stateui-components');
         }

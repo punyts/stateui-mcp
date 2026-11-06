@@ -109,6 +109,39 @@ describe('catalog tools', () => {
         expect(tier.body['allowed']).toEqual(['composed', 'root']);
     });
 
+    it('should find a screen pattern by a need in plain words, with its slots and params', async () => {
+        const result = await call(harness.client, 'ui_patterns_search', { need: 'online store product page' });
+        const results = result.body['results'] as { name: string; kind: string; slots: object; params: object }[];
+
+        expect(result.isError).toBe(false);
+        expect(result.body['weak']).toBe(false);
+        expect(results[0]?.name).toBe('product-detail');
+        expect(results[0]?.kind).toBe('screen');
+        expect(results[0]?.slots).toHaveProperty('detail');
+        expect(results[0]?.params).toHaveProperty('product');
+    });
+
+    it('should answer a pattern need that matches nothing with the weak result, capped at 20', async () => {
+        const nonsense = await call(harness.client, 'ui_patterns_search', { need: 'xyzzy', limit: 50 });
+
+        expect(nonsense.isError).toBe(false);
+        expect(nonsense.body['weak']).toBe(true);
+        const count = (nonsense.body['results'] as unknown[]).length;
+        expect(count).toBeGreaterThan(0);
+        expect(count).toBeLessThanOrEqual(20);
+    });
+
+    it('should refuse an absent or blank pattern need and an unknown kind', async () => {
+        const absent = await call(harness.client, 'ui_patterns_search', {});
+        const blank = await call(harness.client, 'ui_patterns_search', { need: '   ' });
+        const kind = await call(harness.client, 'ui_patterns_search', { need: 'sign in', kind: 'page' });
+
+        expect(absent.body['error']).toBe('invalid-argument');
+        expect(blank.body['error']).toBe('invalid-argument');
+        expect(kind.body['error']).toBe('invalid-argument');
+        expect(kind.body['allowed']).toEqual(['shell', 'screen']);
+    });
+
 
     it('should return the compact entry of a component', async () => {
         const result = await call(harness.client, 'ui_component_get', { name: 'button' });
