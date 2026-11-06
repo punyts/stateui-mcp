@@ -32,6 +32,21 @@ describe('themeContrast', () => {
         expect(report).toContainEqual(expect.objectContaining({ mode: 'light', text: 'color.accent.on', surface: 'color.accent.base' }));
     });
 
+    it('should check inverse text on the base text colour it is drawn on, and leave out disabled text', () => {
+        // Arrange
+        const theme = deepFreeze({ tokens: {} }) as ThemePart;
+
+        // Act
+        const report = themeContrast(theme);
+
+        // Assert
+        for (const mode of ['light', 'dark', 'contrast']) {
+            expect(report).toContainEqual(expect.objectContaining({ mode, text: 'color.text.inverse', surface: 'color.text.base', passesAA: true }));
+        }
+        expect(report.filter((pair) => pair.text === 'color.text.inverse' && pair.surface === 'color.surface.base')).toEqual([]);
+        expect(report.filter((pair) => pair.text === 'color.text.disabled')).toEqual([]);
+    });
+
     it('should use the theme tokens, add its own mode overlays and mark a pair it cannot resolve', () => {
         // Arrange
         const theme = deepFreeze({

@@ -27,7 +27,9 @@ function compactProperty(property: JsonValue): JsonValue {
     }
     for (const key of PROPERTY_KEYS_KEPT) {
         const value = property[key];
-        if (value !== undefined) compact[key] = value;
+        if (value === undefined) continue;
+        //a map's items sub-shape is properties too (table columns, select options): compact each the same way
+        compact[key] = key === 'items' && isJsonObject(value) ? Object.fromEntries(Object.entries(value).map(([name, nested]) => [name, compactProperty(nested)])) : value;
     }
     const validators = property['validators'];
     if (isJsonObject(validators) && Object.keys(validators).length > 0) compact['validators'] = validators;

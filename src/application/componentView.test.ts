@@ -65,6 +65,37 @@ describe('toComponentView', () => {
         });
     });
 
+    it("should compact the properties of a map's items the same way, and keep string items as they are", () => {
+        // Arrange
+        const table: RootComponentEntry = Object.freeze({
+            ...NUMBER_FIELD,
+            name: 'table',
+            shape: Object.freeze({
+                ...NUMBER_FIELD.shape,
+                properties: Object.freeze({
+                    columns: Object.freeze({
+                        ...FILLER,
+                        type: 'map',
+                        items: Object.freeze({
+                            _title: Object.freeze({ ...FILLER, type: 'string', kind: 'content' }),
+                            align: Object.freeze({ ...FILLER, type: 'string', default: 'start', values: Object.freeze(['start', 'end']), reflect: true })
+                        })
+                    }),
+                    _errors: Object.freeze({ ...FILLER, type: 'map', items: 'string' })
+                })
+            })
+        });
+
+        // Act
+        const view = toComponentView(table);
+
+        // Assert
+        expect(view['properties']).toEqual({
+            columns: { type: 'map', items: { _title: { type: 'string', kind: 'content' }, align: { type: 'string', default: 'start', values: ['start', 'end'] } } },
+            _errors: { type: 'map', items: 'string' }
+        });
+    });
+
     it('should give the events, commands and tokens once and drop the purposes, a false layout and empty slots', () => {
         // Act
         const view = toComponentView(NUMBER_FIELD);

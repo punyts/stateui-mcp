@@ -33,10 +33,20 @@ function literal(tree: TokenTree, path: string): string | undefined {
     return undefined;
 }
 
-/** The text-on-surface pairs of the tree: each `color.text.*` on `color.surface.base`, and each tone's `on` on its `base` */
+/** Text tokens drawn somewhere other than on `color.surface.base`, with the token they are drawn on */
+const TEXT_SURFACES: Readonly<Record<string, string>> = Object.freeze({ inverse: 'color.text.base' });
+
+/** Text tokens left out: disabled text is exempt from the WCAG contrast minimum */
+const TEXT_EXEMPT: ReadonlySet<string> = new Set(['disabled']);
+
+/**
+ * The text-on-surface pairs of the tree: each `color.text.*` on `color.surface.base` (but `inverse` on `text.base`,
+ * the fill of a tooltip, and no `disabled`), and each tone's `on` on its `base`
+ */
 function pairsOf(tree: TokenTree): [string, string][] {
     const text = valueAt(tree, 'color.text');
-    const pairs: [string, string][] = typeof text === 'object' ? Object.keys(text).map((key) => [`color.text.${key}`, SURFACE]) : [];
+    const keys = typeof text === 'object' ? Object.keys(text).filter((key) => !TEXT_EXEMPT.has(key)) : [];
+    const pairs: [string, string][] = keys.map((key) => [`color.text.${key}`, TEXT_SURFACES[key] ?? SURFACE]);
     for (const tone of TONES) if (valueAt(tree, `color.${tone}.on`) !== undefined) pairs.push([`color.${tone}.on`, `color.${tone}.base`]);
     return pairs;
 }
