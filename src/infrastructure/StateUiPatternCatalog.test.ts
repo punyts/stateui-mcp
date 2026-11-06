@@ -173,4 +173,39 @@ describe('StateUiPatternCatalog', () => {
             expect(() => catalog.search({ need: 'sign in', kind: 'page' })).toThrow(InvalidSearchArgumentError);
         });
     });
+    describe('withOwner', () => {
+        const OWN_FRAME = Object.freeze({ ...TOP_NAV, summary: 'Our own header frame', purposes: ['site header', 'our frame'] });
+
+        it('should leave out an owner pattern with a library name, so get never meets two patterns of one name', () => {
+            // Arrange
+            const catalog = new StateUiPatternCatalog({ patterns: [TOP_NAV] }).withOwner([
+                { name: 'top-nav', body: { ...OWN_FRAME, summary: 'A copy with the library name' } },
+                { name: 'own-frame', body: OWN_FRAME }
+            ]);
+
+            // Act
+            const library = catalog.get('top-nav');
+            const owner = catalog.get('own-frame');
+
+            // Assert
+            expect(library).toMatchObject({ summary: TOP_NAV.summary });
+            expect(library?.source ?? 'library').toBe('library');
+            expect(owner).toMatchObject({ source: 'owner', summary: OWN_FRAME.summary });
+            expect(catalog.names()).toEqual(['top-nav', 'own-frame']);
+        });
+
+        it('should rank an owner pattern with the purpose of a library pattern beside it, each with its source', () => {
+            // Arrange
+            const catalog = new StateUiPatternCatalog({ patterns: [TOP_NAV] }).withOwner([{ name: 'own-frame', body: OWN_FRAME }]);
+
+            // Act
+            const { results } = catalog.search({ need: 'site header' });
+
+            // Assert
+            expect(results.map((hit) => [hit.name, hit.source]).sort()).toEqual([
+                ['own-frame', 'owner'],
+                ['top-nav', 'library']
+            ]);
+        });
+    });
 });

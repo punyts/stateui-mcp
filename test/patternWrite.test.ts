@@ -165,6 +165,19 @@ describe('owner patterns in search and creation', () => {
         expect(results.slice(0, 2).map((hit) => hit.name).sort()).toEqual(['dashboard', 'my-dashboard']);
     });
 
+    it('should no longer find an owner pattern deleted with ui_delete', async () => {
+        // Arrange
+        await call(harness.client, 'ui_pattern_write', { name: 'opening-hours', kind: 'screen', ...SEARCH, tree: ROOT });
+
+        // Act
+        const deleted = await call(harness.client, 'ui_delete', { kind: 'patterns', name: 'opening-hours', expectedRevision: 1 });
+        const results = await search('when the shop is open');
+
+        // Assert
+        expect(deleted.isError, JSON.stringify(deleted.body)).toBeFalsy();
+        expect(results.map((hit) => hit.name)).not.toContain('opening-hours');
+    });
+
     it('should start an app from an owner shell', async () => {
         // Arrange
         await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'shell', ...SEARCH, from: { app: 'shop', screen: 'shell' } });
