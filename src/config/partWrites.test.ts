@@ -98,7 +98,7 @@ describe('part writes with the StateUI validator', () => {
         // Assert
         expect(results.map((result) => result.kind)).toEqual(Array(8).fill('invalid'));
         const codes = results.map((result) => (result.kind === 'invalid' ? result.errors[0]?.code : undefined));
-        expect(codes).toEqual(['SUI-USES-MISSING', 'SUI-THEME-TOKEN', 'SUI-LOGIC-SHAPE', 'SUI-MODEL-SHAPE', 'SUI-MODEL-FIELD', 'SUI-PART-SHAPE', 'SUI-USES-MISSING', 'SUI-PART-SHAPE']);
+        expect(codes).toEqual(['SUI-USES-MISSING', 'SUI-THEME-TOKEN', 'SUI-LOGIC-SHAPE', 'SUI-MODEL-SHAPE', 'SUI-MODEL-FIELD', 'SUI-PART-SHAPE', 'SUI-USES-MISSING', 'SUI-PATTERN-SHAPE']);
         const orphan = results[5];
         expect(orphan?.kind === 'invalid' && orphan.errors[0]?.message).toBe('The dataset "orphan" at $.model is not valid: the owner has no model "prodct"; nearest names: product');
         expect((await parts.list('data')).map((part) => part.name)).toEqual(['catalog']);

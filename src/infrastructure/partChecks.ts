@@ -1,5 +1,5 @@
-import { OUTLET_COMPONENT, checkRecord, nearestNames, readBlueprint, readModel, readModule, validateApp } from '@punyts/stateui-app/core';
-import type { AppBlueprint, ComponentLibrary, JsonValue as LibraryJsonValue, Node, PartSource } from '@punyts/stateui-app/core';
+import { OUTLET_COMPONENT, checkPattern, checkRecord, nearestNames, readBlueprint, readModel, readModule, readPattern, validateApp } from '@punyts/stateui-app/core';
+import type { AppBlueprint, ComponentLibrary, JsonValue as LibraryJsonValue, LibraryEntry, Node, PartSource, PatternKind } from '@punyts/stateui-app/core';
 import type { UiPartError } from '../application/ports/UiAppValidator.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { PartKind } from '../domain/partName.js';
@@ -8,8 +8,6 @@ import type { UiBuildError } from '../domain/UiBuildError.js';
 import { PART_SHAPE_CODE } from '../domain/UiPart.js';
 import type { UiPartBodies } from '../domain/UiPart.js';
 
-
-const PATTERN_KINDS: readonly unknown[] = ['shell', 'screen'];
 
 export interface PartCheckContext {
     readonly library: ComponentLibrary;
@@ -73,21 +71,32 @@ function datasetErrors(name: string, body: UiPartBodies['data'], parts: PartSour
     );
 }
 
-function patternErrors(name: string, body: UiPartBodies['patterns']): UiBuildError[] {
-    const errors: UiBuildError[] = [];
-    if (!PATTERN_KINDS.includes(body.kind)) errors.push(shapeError('patterns', name, '$.kind', 'must be "shell" or "screen"'));
-    if (typeof body.summary !== 'string' || body.summary.trim() === '') errors.push(shapeError('patterns', name, '$.summary', 'needs a one-line summary'));
-    if (!Array.isArray(body.purposes)) errors.push(shapeError('patterns', name, '$.purposes', 'must be a list of purposes'));
-    if (!isNode(body.tree)) errors.push(shapeError('patterns', name, '$.tree', 'must be a node with a "component" name'));
-    if (!isJsonObject(body.slots)) errors.push(shapeError('patterns', name, '$.slots', 'must be an object of slots by name'));
-    if (!isJsonObject(body.params)) errors.push(shapeError('patterns', name, '$.params', 'must be an object of params by name'));
-    return errors;
+/** The file-like path a pattern part's errors name, as a library pattern's name its file */
+export function patternFile(name: string): string {
+    return `patterns/${name}.pattern.json`;
+}
+
+/**
+ * A pattern is checked as the library build checks its patterns (`readPattern` and `checkPattern` of the library):
+ * shape and purposes, components, nodes, slot and param paths and the one outlet of a shell. The owner's components
+ * count as composed components of the library, so a pattern may use them
+ */
+function patternErrors(name: string, body: UiPartBodies['patterns'], parts: PartSource, context: PartCheckContext): UiBuildError[] {
+    const file = patternFile(name);
+    const read = readPattern(body as unknown as LibraryJsonValue, file, (isJsonObject(body) ? body.kind : undefined) as PatternKind);
+    if (read.pattern === undefined) return read.errors;
+    const owned = Object.fromEntries(
+        Object.entries(parts.components ?? {})
+            .filter(([component]) => !Object.hasOwn(context.library, component))
+            .map(([component, part]) => [component, { tier: 'composed', tree: part.tree } satisfies LibraryEntry])
+    );
+    return checkPattern(read.pattern, { ...context.library, ...owned }, file);
 }
 
 /**
  * The errors of one part on its own. Apps, logic modules and models have readers in the library; a theme and a
  * component are checked as a probe app that uses them would be, keeping only the errors the part holds; a dataset's
- * records are checked against its model, each error at `$.records.{key}`; a pattern's keys are checked for shape only
+ * records are checked against its model, each error at `$.records.{key}`; a pattern as the library build checks one
  */
 export function partErrors<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource, context: PartCheckContext): UiBuildError[] {
     switch (kind) {
@@ -104,6 +113,6 @@ export function partErrors<K extends PartKind>(kind: K, name: string, body: UiPa
         case 'components':
             return componentErrors(name, body as UiPartBodies['components'], parts, context);
         default:
-            return patternErrors(name, body as UiPartBodies['patterns']);
+            return patternErrors(name, body as UiPartBodies['patterns'], parts, context);
     }
 }

@@ -21,6 +21,7 @@ import { createModelTools } from './modelTools.js';
 import { createDataTools } from './dataTools.js';
 import { createLogicTools } from './logicTools.js';
 import { createComposedTools } from './composedTools.js';
+import { createPatternTools } from './patternTools.js';
 import { createPartAppTools } from './partAppTools.js';
 import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
@@ -69,6 +70,7 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createDataTools(useCases),
         ...createLogicTools(useCases),
         ...createComposedTools(useCases),
+        ...createPatternTools(useCases),
         ...createStateTools({ useCases, instanceViews }),
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, instanceViews, ...(authorities !== undefined && { logic: authorities }) }),
         ...createFileTools({ useCases, instanceViews })

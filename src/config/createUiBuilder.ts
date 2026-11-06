@@ -34,6 +34,7 @@ import { FindPartApp, GetPartState, RunPartCommand } from '../application/use-ca
 import { WriteModel } from '../application/use-cases/WriteModel.js';
 import { WriteLogic } from '../application/use-cases/WriteLogic.js';
 import { WriteComposed } from '../application/use-cases/WriteComposed.js';
+import { WritePattern } from '../application/use-cases/WritePattern.js';
 import { SweepAppFiles } from '../application/use-cases/SweepAppFiles.js';
 import { UploadFile } from '../application/use-cases/UploadFile.js';
 import { ValidatePartApp } from '../application/use-cases/ValidateApp.js';
@@ -92,6 +93,7 @@ export interface UiBuilderUseCases {
     readonly writeModel: WriteModel;
     readonly writeLogic: WriteLogic;
     readonly writeComposed: WriteComposed;
+    readonly writePattern: WritePattern;
     readonly writeNodes: WriteNodes;
     readonly writeLocale: WriteLocale;
     readonly listParts: ListParts;
@@ -136,6 +138,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         writeModel: new WriteModel(parts, parts, writePart, report),
         writeLogic: new WriteLogic(parts, validator, writePart, report),
         writeComposed: new WriteComposed(parts, writePart, catalog, report),
+        writePattern: new WritePattern(parts, writePart, patterns, report),
         createPartApp: new CreatePartApp(parts, validator, patterns, report),
         configureApp: new ConfigureApp(parts, validator, report),
         createScreen: new CreateScreen(parts, validator, patterns, report),

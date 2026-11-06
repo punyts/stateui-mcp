@@ -61,15 +61,15 @@ afterEach(async () => {
 });
 
 describe('the registered tools', () => {
-    it('should be exactly EXPECTED_TOOLS: the design\'s 35 less ui_pattern_write, which ships later in search epic 2', async () => {
+    it('should be exactly EXPECTED_TOOLS, the 35 tools of the design', async () => {
         // Act
         const { tools } = await harness.client.listTools();
 
         // Assert
-        expect(EXPECTED_TOOLS).toHaveLength(34);
+        expect(EXPECTED_TOOLS).toHaveLength(35);
         expect(tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
         expect(EXPECTED_TOOLS).toContain('ui_patterns_search');
-        expect(EXPECTED_TOOLS).not.toContain('ui_pattern_write');
+        expect(EXPECTED_TOOLS).toContain('ui_pattern_write');
     });
 
     it('should not register any tool of the removed document model', async () => {
