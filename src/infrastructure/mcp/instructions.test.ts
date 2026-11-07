@@ -186,14 +186,14 @@ describe('paintFieldSection', () => {
 });
 
 describe('scene3dSection', () => {
-    it('should name scene3d and only the 3D nodes release 3A draws', () => {
+    it('should name scene3d and only the 3D nodes that draw (release 3A and repeat3d, G3.6)', () => {
         // Act
         const text = scene3dSection();
 
         // Assert
         expect(text).toContain('scene3d node (category graphics)');
-        for (const node of ['camera', 'light', 'mesh', 'model', 'group3d']) expect(text).toContain(node);
-        for (const unbuilt of ['repeat3d', 'label3d', 'transition', 'animate', 'press', 'hover']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
+        for (const node of ['camera', 'light', 'mesh', 'model', 'group3d', 'repeat3d']) expect(text).toContain(node);
+        for (const unbuilt of ['label3d', 'animate', 'press', 'hover']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
     });
 
     it('should say a scene3d needs _title and _fallback', () => {
@@ -226,6 +226,28 @@ describe('scene3dSection', () => {
         expect(text).toContain('at most 16 WebGL contexts');
         expect(text).toContain('ui_validate warns past 16 scenes');
         expect(text).toContain('ui_screenshot of its path: it waits until the scene and its models are drawn');
+    });
+
+    it('should say transition eases the 3D channels and jumps with reduced motion (G3.9)', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity');
+        expect(text).toContain('a light\'s intensity and a camera\'s position and target when state changes them');
+        expect(text).toContain('with reduced motion it jumps');
+    });
+
+    it('should say repeat3d draws one instanced mesh from records, what varies per record and its cap (G3.6)', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('repeat3d draws its row (one mesh) once per record of records');
+        expect(text).toContain('"<-position": "$row.at"');
+        expect(text).toContain('Each record has its own position, rotation, scale, visible and material.color');
+        expect(text).toContain('SUI-RUN-DRAW');
+        expect(text).toContain('At most 20,000 records (more are cut, SUI-RUN-CAP)');
     });
 
     it('should take about ten lines and name only registered tools', () => {

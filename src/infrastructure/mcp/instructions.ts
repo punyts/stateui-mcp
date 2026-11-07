@@ -92,16 +92,19 @@ export function paintFieldSection(): string {
 
 /**
  * 3D scenes (G3.11 of the graphics epic 3, first pass for release 3A), in about ten lines. Names only the nodes whose
- * renderer exists; the second pass (release 3B) adds repeat3d, label3d, press and hover, transition and animate
+ * renderer exists; the second pass (release 3B) adds label3d, press and hover and animate. `transition`
+ * (G3.9) is named since the renderer eases it, and `repeat3d` (G3.6) since it draws as one instanced mesh
  */
 export function scene3dSection(): string {
     return [
-        '3D: a scene3d node (category graphics) draws a WebGL scene of camera, light, mesh, model and group3d nodes in its children (group3d holds nodes in its own children). A 3D node is accepted only inside a scene3d or a group3d; ui_component_get gives the properties of each.',
+        '3D: a scene3d node (category graphics) draws a WebGL scene of camera, light, mesh, model, group3d and repeat3d nodes in its children (group3d holds nodes in its own children). A 3D node is accepted only inside a scene3d or a group3d; ui_component_get gives the properties of each.',
         [
             '- Give every scene3d a _title (the scene\'s accessible name) and a _fallback (the text shown where the scene cannot draw: no WebGL, or the renderer did not load).',
             '- position, target, rotation (degrees) and scale are [x, y, z]. A mesh has a geometry ({ kind: box, sphere, cylinder, cone, plane, torus or capsule, and its sizes }) and a material ({ color, metalness, roughness, opacity, emissive }); colours are literals or theme tokens. With no camera node the scene frames what it draws; environment (studio by default, daylight, neutral, none) adds preset lights and a background to the light nodes.',
             '- model.src is the file reference { id, name, size, type } of a GLB (model/gltf-binary, binary glTF 2.0, at most 10 MiB) a person uploaded to the app\'s files, as listed by ui_state_get. Its embedded textures draw; a .gltf, a Draco, Meshopt or KTX2 compressed model or one with external files is refused (SUI-RUN-3D), and a file that cannot be read is SUI-RUN-FILE. material.map is not drawn yet.',
             '- controls: "orbit" (turn and zoom) or "pan" lets a person move the camera with a pointer or the arrow keys; the scene writes the active camera node\'s position and target once, when the gesture is released (through their links when they have them), so a reload keeps the view. Give the scene a camera node: the default camera moves but keeps nothing.',
+            '- A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity, a light\'s intensity and a camera\'s position and target when state changes them; with reduced motion it jumps, and ui_screenshot waits until it arrives.',
+            '- repeat3d draws its row (one mesh) once per record of records (a list or a keyed map) as one instanced mesh, linked like a list row ("<-position": "$row.at", "<-material": "$row.paint"). Each record has its own position, rotation, scale, visible and material.color; geometry and the rest of material are shared, so records that differ there are SUI-RUN-DRAW. At most 20,000 records (more are cut, SUI-RUN-CAP); keep them small, as an app\'s data is at most 512 KiB.',
             '- Chromium keeps at most 16 WebGL contexts a page: ui_validate warns past 16 scenes on one page, and the oldest show _fallback.',
             '- Check a scene with ui_screenshot of its path: it waits until the scene and its models are drawn.'
         ].join('\n')
