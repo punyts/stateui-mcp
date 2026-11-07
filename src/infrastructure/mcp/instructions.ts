@@ -13,7 +13,7 @@ import type { GuideContext, GuideTopic } from './guide.js';
 const OPENING = 'StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.';
 
 /** The second paragraph of the instructions: what ui_guide is and when to read a topic (K1.2 of the guide-tool epic) */
-export const GUIDE_INTRO = 'ui_guide is the guide to these tools: it answers one topic of how-to guidance by name, and its description lists the topics. This text holds the build steps and the rules that cost a failed call; the rest is in topics. Read a topic before the step it names: the lines at the end say which, and the topic start repeats this text for a client that does not show it.';
+export const GUIDE_INTRO = 'ui_guide is the guide to these tools: it answers one topic of how-to guidance by name, and its description lists the topics. This text holds the build steps and the rules that cost a failed call; the rest is in topics. Read a topic before the step it names: the lines at the end say which. You already have this text, so do not read the topic start: it only repeats this text for a client that does not show it.';
 
 /**
  * Always-on topics that continue the section of the topic before them, so the instructions join the two with one line

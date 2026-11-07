@@ -130,7 +130,9 @@ describe('ui_guide', () => {
         // Assert
         expect(tool.name).toBe('ui_guide');
         expect(tool.description.startsWith('Guide: ')).toBe(true);
-        expect(tool.description).toContain(`Topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`);
+        for (const name of GUIDE_TOPIC_NAMES) expect(tool.description, name).toMatch(new RegExp(`\\s${name}[,;]`));
+        // The fallback topic start comes last, marked as a repeat of the server instructions, so agents that have them skip it
+        expect(tool.description).toContain('; and start, which only repeats the server instructions for a client that does not show them.');
         expect(tool.annotations.readOnlyHint).toBe(true);
     });
 

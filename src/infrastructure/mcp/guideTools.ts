@@ -26,7 +26,7 @@ export function createGuideTools(context: GuideContext): readonly UiToolDefiniti
     return [
         {
             name: 'ui_guide',
-            description: `Guide: read one topic of how-to guidance before the step it names. { topic } answers { topic, text }; no topic answers the index { topics: [{ name, when }] }. Topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
+            description: `Guide: read one topic of how-to guidance before the step it names. { topic } answers { topic, text }; no topic answers the index { topics: [{ name, when }] }. Topics: ${GUIDE_TOPIC_NAMES.filter((name) => name !== GUIDE_FALLBACK_TOPIC).join(', ')}; and ${GUIDE_FALLBACK_TOPIC}, which only repeats the server instructions for a client that does not show them.`,
             inputSchema: GUIDE.schema,
             annotations: READ_ONLY,
             run: (args) => {

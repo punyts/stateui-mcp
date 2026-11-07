@@ -150,7 +150,7 @@ function fixed(text: string): (context: GuideContext) => string {
  * topic start with the whole instructions, for a client that does not show them
  */
 export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
-    { name: 'start', when: 'you build or change an app, when your client does not show the server instructions (the same text: the build steps, the rules that cost a failed call and the topic pointers)', text: startText, alwaysOn: true },
+    { name: 'start', when: 'you build an app, only if your client did not show you the server instructions (it repeats them in full; skip it when you have them)', text: startText, alwaysOn: true },
     { name: 'sections', when: 'you fill the sections of a screen, add logic or check an app (the later build steps, the theme presets and the component categories)', text: sectionsText, alwaysOn: true },
     { name: 'parts', when: 'you plan the parts of an app (what a part is, how apps share them, build time and run time)', text: fixed(PARTS), alwaysOn: false },
     { name: 'paths', when: 'you write a node, screen or route path, or look at a running app with ui_tree', text: fixed(PATHS), alwaysOn: false },
