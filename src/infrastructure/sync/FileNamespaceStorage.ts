@@ -27,6 +27,52 @@ function objectOr(value: unknown): JsonObject {
     return isJsonObject(value) ? value : {};
 }
 
+/** A control that switches a theme kind: its `on.change` sets `$.theme.active.<kind>` from its own `.value` */
+interface ThemeSwitch {
+    /** The node's path in the state, without the `$` */
+    readonly path: readonly string[];
+    readonly kind: string;
+    /** The control's starting value in the definition */
+    readonly initial: JsonValue | undefined;
+}
+
+const SWITCH_TARGET = /^\$\.theme\.active\.([^.]+)$/;
+
+function switchKind(node: JsonObject): string | undefined {
+    const change = objectOr(objectOr(node['on'])['change']);
+    if (change['command'] !== 'set' || change['from'] !== '.value' || typeof change['target'] !== 'string') return undefined;
+    return SWITCH_TARGET.exec(change['target'])?.[1];
+}
+
+function collectSwitches(value: JsonValue, path: readonly string[], found: ThemeSwitch[]): void {
+    if (!isJsonObject(value)) return;
+    const kind = switchKind(value);
+    if (kind !== undefined) found.push({ path, kind, initial: value['value'] });
+    for (const [key, child] of Object.entries(value)) if (key !== 'on') collectSwitches(child, [...path, key], found);
+}
+
+/** The theme switch controls of the app's tree and of each screen's tree */
+function themeSwitches(document: JsonObject): ThemeSwitch[] {
+    const found: ThemeSwitch[] = [];
+    collectSwitches(document['app'] ?? null, ['app'], found);
+    for (const [name, screen] of Object.entries(objectOr(document['screens']))) collectSwitches(objectOr(screen)['root'] ?? null, ['screens', name], found);
+    return found;
+}
+
+/** The stored node of a switch in the diff, created along the path when `create` */
+function storedNode(diff: Record<string, JsonValue>, path: readonly string[], create: boolean): Record<string, JsonValue> | undefined {
+    let at: Record<string, JsonValue> = diff;
+    for (const key of path) {
+        const next = at[key];
+        if (!isJsonObject(next)) {
+            if (!create) return undefined;
+            at[key] = {};
+        }
+        at = at[key] as Record<string, JsonValue>;
+    }
+    return at;
+}
+
 /**
  * The state of one running instance, kept as the persona's instance (`UiInstanceRepository`), not as a sync log.
  *
@@ -62,7 +108,17 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         const { appId } = this.start.key;
         const read = await this.instances.get(appId);
         if (read.problem !== undefined) this.report('Instance ignored', { app: appId, reason: read.problem });
-        const diff = read.value;
+        // A copy: the switch controls are brought in line with the theme below
+        const diff = JSON.parse(JSON.stringify(read.value)) as Record<string, JsonValue>;
+        const switches = themeSwitches(this.start.document as unknown as JsonObject);
+        const theme = objectOr(diff['theme']);
+        const active: Record<string, JsonValue> = { ...objectOr(theme['active']) };
+        // An instance saved before the theme choice was kept has the user's pick only in its switch control
+        for (const control of switches) {
+            const picked = storedNode(diff, control.path, false)?.['value'];
+            if (active[control.kind] === undefined && typeof picked === 'string') active[control.kind] = picked;
+        }
+        if (Object.keys(active).length > 0) diff['theme'] = { ...theme, active };
 
         const data: Record<string, JsonValue> = { ...objectOr(this.start.document['data']) };
         for (const binding of this.persona) {
@@ -82,6 +138,17 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
             this.start.document as unknown as AppDocument
         );
         for (const warning of laid.warnings) this.report('Instance value dropped', { app: appId, path: warning.statePath ?? '$', code: warning.code });
+
+        // A switch control shows the theme the page shows: the chosen one, or its own starting value when none is chosen
+        for (const control of switches) {
+            const shown = laid.active[control.kind];
+            const node = storedNode(diff, control.path, false);
+            if (shown === undefined || shown === control.initial) {
+                if (node !== undefined) delete node['value'];
+            } else if (node?.['value'] !== shown) {
+                (storedNode(diff, control.path, true) as Record<string, JsonValue>)['value'] = shown;
+            }
+        }
 
         const state: Record<string, SyncValue> = {
             app: objectOr(diff['app']) as SyncValue,

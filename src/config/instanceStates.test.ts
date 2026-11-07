@@ -307,6 +307,73 @@ describe('InstanceNamespaceStorage', () => {
         expect(report).toHaveBeenCalledWith('Instance value dropped', { app: appId, path: '$.route', code: 'SUI-INSTANCE-STALE' });
     });
 
+    describe('with a theme switch control', () => {
+        const SWITCHED = deepFreeze({
+            key: { persona: DEFAULT_PERSONA, ownerId: OWNER, appId: '' },
+            document: {
+                appThemes: { calm: { tokens: {} }, bold: { tokens: {} } },
+                app: {
+                    component: 'stack',
+                    children: {
+                        pick: { component: 'segmented', value: 'calm', on: { change: { command: 'set', target: '$.theme.active.theme', from: '.value' } } }
+                    }
+                }
+            },
+            bindings: {}
+        });
+
+        async function loadWith(stored: JsonObject): Promise<StoredNamespace['state']> {
+            const begun = { ...SWITCHED, key: { ...SWITCHED.key, appId } } as unknown as InstanceStart;
+            await instances.write(appId, {}, stored);
+            return (await new InstanceNamespaceStorage(begun, instances, () => undefined).load(appNamespace(begun.key))).state;
+        }
+
+        it('should take the theme from the switch control of an instance saved before the theme choice was kept', async () => {
+            // Act
+            const state = await loadWith({ app: { children: { pick: { value: 'bold' } } } });
+
+            // Assert
+            expect(state['theme']).toEqual({ active: { theme: 'bold' } });
+            expect(state['app']).toEqual({ children: { pick: { value: 'bold' } } });
+        });
+
+        it('should set the switch control to the kept theme when they disagree', async () => {
+            // Act
+            const state = await loadWith({ app: { children: { pick: { value: 'calm' } } }, theme: { active: { theme: 'bold' } } });
+
+            // Assert
+            expect(state['theme']).toEqual({ active: { theme: 'bold' } });
+            expect(state['app']).toEqual({ children: { pick: { value: 'bold' } } });
+        });
+
+        it('should give the switch control back its starting value when the kept theme is the starting one', async () => {
+            // Act
+            const state = await loadWith({ app: { children: { pick: { value: 'bold', open: true } } }, theme: { active: { theme: 'calm' } } });
+
+            // Assert
+            expect(state['theme']).toEqual({ active: { theme: 'calm' } });
+            expect(state['app']).toEqual({ children: { pick: { open: true } } });
+        });
+
+        it('should drop a stale theme in the switch control and show the starting one', async () => {
+            // Act
+            const state = await loadWith({ app: { children: { pick: { value: 'gone' } } } });
+
+            // Assert
+            expect(state['theme']).toBeUndefined();
+            expect(state['app']).toEqual({ children: { pick: {} } });
+        });
+
+        it('should store nothing for a switch control nobody touched', async () => {
+            // Act
+            const state = await loadWith({});
+
+            // Assert
+            expect(state['theme']).toBeUndefined();
+            expect(state['app']).toEqual({});
+        });
+    });
+
     it('should refuse a namespace that is not its own', async () => {
         // Arrange
         const storage = new InstanceNamespaceStorage(await start(), instances, () => undefined);
