@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
-import { buildServerInstructions, graphicsSection, paintFieldSection, searchWorkflowSection, START_HERE } from './instructions.js';
+import { buildServerInstructions, graphicsSection, paintFieldSection, scene3dSection, searchWorkflowSection, START_HERE } from './instructions.js';
 
 /** The tool names of each step, in the order the steps list them */
 const STEP_TOOLS = [
@@ -182,6 +182,68 @@ describe('paintFieldSection', () => {
         // Assert
         expect(text).toContain(paintFieldSection());
         expect(text.indexOf(paintFieldSection())).toBeGreaterThan(text.indexOf(graphicsSection()));
+    });
+});
+
+describe('scene3dSection', () => {
+    it('should name scene3d and only the 3D nodes release 3A draws', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('scene3d node (category graphics)');
+        for (const node of ['camera', 'light', 'mesh', 'model', 'group3d']) expect(text).toContain(node);
+        for (const unbuilt of ['repeat3d', 'label3d', 'transition', 'animate', 'press', 'hover']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
+    });
+
+    it('should say a scene3d needs _title and _fallback', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('Give every scene3d a _title');
+        expect(text).toContain('and a _fallback');
+    });
+
+    it('should say models are uploaded GLB files under 10 MiB, referenced as files, and that map is not drawn', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('model.src is the file reference { id, name, size, type } of a GLB (model/gltf-binary');
+        expect(text).toContain('at most 10 MiB');
+        expect(text).toContain('a person uploaded');
+        expect(text).toContain('a .gltf, a Draco, Meshopt or KTX2 compressed model');
+        expect(text).toContain('material.map is not drawn yet');
+    });
+
+    it('should say controls write the camera once on release, warn past 16 scenes, and that the screenshot waits', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('writes the active camera node\'s position and target once, when the gesture is released');
+        expect(text).toContain('at most 16 WebGL contexts');
+        expect(text).toContain('ui_validate warns past 16 scenes');
+        expect(text).toContain('ui_screenshot of its path: it waits until the scene and its models are drawn');
+    });
+
+    it('should take about ten lines and name only registered tools', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text.split('\n').length).toBeLessThanOrEqual(10);
+        expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('should be a section of the server instructions, after the painting section', () => {
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS);
+
+        // Assert
+        expect(text).toContain(scene3dSection());
+        expect(text.indexOf(scene3dSection())).toBeGreaterThan(text.indexOf(paintFieldSection()));
     });
 });
 
