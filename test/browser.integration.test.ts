@@ -5,6 +5,9 @@ import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js'
 import { call, createApp, httpHarness, shellOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { UNREFERENCED_FILE_GRACE_MS } from '../src/domain/UiFile.js';
 import { FileUiFileRepository } from '../src/infrastructure/storage/FileUiFileRepository.js';
 import { KeyedLock } from '../src/infrastructure/storage/KeyedLock.js';
@@ -1651,5 +1654,79 @@ describe.skipIf(!installed)('WebGL in the headless browser the preview starts: G
         } finally {
             await fresh.close();
         }
+    });
+});
+
+/**
+ * The model fixture of `@punyts/stateui-3d` (`test/fixtures/box.glb`, G3.7b), found beside its built chunk in the
+ * workspace: a unit box whose faces show one embedded texture, red above and green below, unlit. Undefined when the
+ * package is not there (it is an optional dependency, and its published files hold no tests)
+ */
+function modelFixturePath(): string | undefined {
+    try {
+        const manifest = createRequire(import.meta.url).resolve('@punyts/stateui-3d/runtime-chunk/manifest.json');
+        const path = join(dirname(manifest), '..', '..', 'test', 'fixtures', 'box.glb');
+        return existsSync(path) ? path : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+const MODEL_FIXTURE = modelFixturePath();
+
+describe.skipIf(!installed || MODEL_FIXTURE === undefined)('a model from an uploaded GLB file through the agent tools: G3.7b of the graphics epic 3 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    let appId = '';
+    const SCENE = '$.app.children.product';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        appId = (await createApp(harness.client, 'product', shellOf({}))).id;
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should upload the fixture GLB, draw it as a model and show its embedded texture in a screenshot', { timeout: 60_000 }, async () => {
+        // Arrange: the file is uploaded as a fileField would upload it
+        const form = new FormData();
+        form.append('file', new Blob([new Uint8Array(await readFile(MODEL_FIXTURE as string))], { type: 'model/gltf-binary' }), 'box.glb');
+        const uploaded = await fetch(`${harness.server.origin}/apps/${appId}/files`, { method: 'POST', body: form });
+        const reference = (await uploaded.json()) as { id: string; name: string; size: number; type: string };
+        const product = {
+            component: 'scene3d',
+            _title: 'Product',
+            background: '#0000ff',
+            environment: 'none',
+            children: {
+                eye: { component: 'camera', position: [0, 0, 3], target: [0, 0, 0] },
+                box: { component: 'model', src: reference }
+            }
+        };
+
+        // Act
+        const written = await writeShell(harness, 'product', 1, [{ op: 'set', path: 'root.children.product', value: product }]);
+        const validated = await call(harness.client, 'ui_validate', { app: 'product' });
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'product', path: SCENE });
+
+        // Assert: the texture's top half above the centre, its bottom half below, the background in the corner
+        expect(uploaded.status).toBe(201);
+        expect(reference.type).toBe('model/gltf-binary');
+        expect(written.isError).toBe(false);
+        expect(validated.body['errors']).toEqual([]);
+        expect(shot.isError).toBe(false);
+        expect(shot.body['pending']).toBeUndefined();
+        expectNear((await readPixelAt(blank, shot, 0.5, 0.4)).colour, [255, 0, 0]);
+        expectNear((await readPixelAt(blank, shot, 0.5, 0.6)).colour, [0, 255, 0]);
+        expectNear((await readPixelAt(blank, shot, 0.03, 0.05)).colour, [0, 0, 255]);
     });
 });
