@@ -36,6 +36,8 @@ export interface ServicesOptions {
     readonly origin: () => string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
+    /** Extra arguments for the headless Chromium, for tests (none by default; ignored with `browser`) */
+    readonly browserArgs?: readonly string[];
     /** The key that encrypts `$.server` at rest */
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
@@ -104,7 +106,7 @@ export function createServices(options: ServicesOptions): Services {
         { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: new FsAppFolderStore(folders, lock) },
         { now, newId: randomUUID, report: options.report }
     );
-    const browser = options.browser ?? new BrowserPreview(hub, options.origin);
+    const browser = options.browser ?? new BrowserPreview(hub, options.origin, options.browserArgs);
     const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId);
     const liveViews = new LiveViews(hub, browser, instanceViews);
     // Every part change reaches the open views of the apps that show it

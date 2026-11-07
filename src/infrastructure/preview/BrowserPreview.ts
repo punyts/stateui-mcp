@@ -165,7 +165,12 @@ export class BrowserPreview {
     constructor(
         private readonly hub: PreviewHub,
         /** The origin the server listens on, such as `http://127.0.0.1:4100`. Read on each call, because the port may be chosen at listen time */
-        private readonly baseUrl: () => string
+        private readonly baseUrl: () => string,
+        /**
+         * Extra Chromium arguments, for tests (such as `--disable-3d-apis` for a browser without WebGL). The server
+         * passes none: G3.1 found that headless Chromium draws WebGL2 on SwiftShader without any (G3.10)
+         */
+        private readonly launchArgs: readonly string[] = []
     ) {}
 
     /** True when a Chromium build is installed for Playwright. It does not start one */
@@ -210,8 +215,7 @@ export class BrowserPreview {
                     this.hub.publish(appId, { type: 'theme', kind: 'mode', name: options.mode }, 'headless');
                 }
                 // The resize and the mode switch both start a redraw of every drawing: wait for them, then settle
-                let pending = await this.waitDrawn(page);
-                await this.settle(page);
+                let pending = await this.waitSettled(page);
                 if (options.path === undefined) {
                     if (options.fullPage === true) pending = await this.growToContent(page, viewport, pending);
                     const png = await page.screenshot({ type: 'png' });
@@ -344,7 +348,7 @@ export class BrowserPreview {
             this.browser = (async () => {
                 try {
                     const { chromium } = await import('playwright');
-                    return await chromium.launch({ headless: true });
+                    return await chromium.launch({ headless: true, ...(this.launchArgs.length > 0 && { args: [...this.launchArgs] }) });
                 } catch (error) {
                     this.browser = undefined;
                     throw new BrowserUnavailableError(error instanceof Error ? (error.message.split('\n')[0] ?? 'launch failed') : 'launch failed');
@@ -803,8 +807,7 @@ export class BrowserPreview {
             viewport.height = Math.min(MAX_FULL_PAGE_HEIGHT, viewport.height + extra);
             await page.setViewportSize(viewport);
             // A resize redraws every drawing
-            stillPending = await this.waitDrawn(page);
-            await this.settle(page);
+            stillPending = await this.waitSettled(page);
         }
         return stillPending;
     }
@@ -838,6 +841,19 @@ export class BrowserPreview {
             if (error instanceof Error && DETACHED.test(error.message)) return [];
             throw error;
         }
+    }
+
+    /**
+     * Waits for the drawings (`waitDrawn`), lets the page settle, and looks again: a drawing can turn pending while
+     * the page settles. A scene whose WebGL context is lost is pending until it has drawn again after the restore
+     * (G3.10), and Chromium loses the contexts made early in the first page after it starts (G3.1), so a capture taken
+     * then would show the broken canvas. Gives the state paths still pending when a wait ran out
+     */
+    private async waitSettled(page: Page): Promise<readonly string[]> {
+        const pending = await this.waitDrawn(page);
+        await this.settle(page);
+        if (pending.length > 0) return pending;
+        return this.waitDrawn(page);
     }
 
     private async settle(page: Page): Promise<void> {

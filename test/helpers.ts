@@ -93,8 +93,12 @@ export interface HttpHarness {
     readonly client: Client;
     close(): Promise<void>;
 }
-/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` sets a port, a key or the 3D chunk folder */
-export async function httpHarness(dataDir: string, browser?: PreviewBrowser, extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'serverKey' | 'chunk3dDir'>> = {}): Promise<HttpHarness> {
+/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` sets a port, a key, the 3D chunk folder or Chromium arguments */
+export async function httpHarness(
+    dataDir: string,
+    browser?: PreviewBrowser,
+    extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'serverKey' | 'chunk3dDir' | 'browserArgs'>> = {}
+): Promise<HttpHarness> {
     const server = await startServer({
         dataDir,
         host: '127.0.0.1',

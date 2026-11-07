@@ -31,6 +31,8 @@ export interface ServerOptions {
     readonly chunk3dDir?: string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
+    /** Extra arguments for the headless Chromium, for tests (none by default) */
+    readonly browserArgs?: readonly string[];
     /** The key that encrypts `$.server` at rest */
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent (`ui_call_answer`) */
@@ -66,6 +68,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         report: options.report,
         origin: () => origin,
         ...(options.browser !== undefined && { browser: options.browser }),
+        ...(options.browserArgs !== undefined && { browserArgs: options.browserArgs }),
         ...(options.serverKey !== undefined && { serverKey: options.serverKey }),
         ...(options.procedures !== undefined && { procedures: options.procedures }),
         ...(options.toolLog !== undefined && { toolLog: options.toolLog })

@@ -1327,3 +1327,329 @@ describe.skipIf(!installed)('a drawImage of an uploaded file through the agent t
         }
     });
 });
+
+/** A pure red box lit head-on by a directional light of intensity 1 (G3.5's render test): red, plus a little white */
+const LIT_RED = [252, 27, 27] as const;
+/** How far a pixel of a WebGL capture may be from the expected colour, per channel: software rendering differs a little by machine */
+const WEBGL_TOLERANCE = 12;
+
+/** True when a colour is within `WEBGL_TOLERANCE` of the expected one in every channel */
+function isNear(actual: readonly number[], expected: readonly number[]): boolean {
+    return expected.every((value, channel) => Math.abs((actual[channel] ?? -1) - value) <= WEBGL_TOLERANCE);
+}
+
+/** Asserts that a colour is within `WEBGL_TOLERANCE` of the expected one in every channel */
+function expectNear(actual: readonly number[], expected: readonly number[]): void {
+    expect(isNear(actual, expected), `[${actual.join(', ')}], expected [${expected.join(', ')}] within ${WEBGL_TOLERANCE}`).toBe(true);
+}
+
+/**
+ * The release 3A scene an agent writes from the kit vocabulary: a titled `scene3d` with orbit controls, a light and a
+ * red box, no camera (the default camera frames the box) and no environment light, so the box's centre is `LIT_RED`.
+ * The background is left unset, so it is the `scene3d.background` token
+ */
+const VIEWER = {
+    component: 'scene3d',
+    _title: 'Red box',
+    controls: 'orbit',
+    environment: 'none',
+    children: {
+        sun: { component: 'light', kind: 'directional', position: [0, 0, 10], target: [0, 0, 0] },
+        box: { component: 'mesh', geometry: { kind: 'box' }, material: { color: '#ff0000' } }
+    }
+};
+
+/** One thing the instrumented page saw of a scene: a context event with `data-render` at that moment, or a change of `data-render` */
+interface SceneLogEntry {
+    readonly kind: 'lost' | 'restored' | 'render';
+    readonly render: string | null;
+    readonly at: number;
+}
+
+/**
+ * A page script that records, in every frame, the WebGL context events of each canvas that gets a WebGL context and
+ * the `data-render` changes of the element whose shadow root holds it (the `scene3d`), in `window.__sceneLog`
+ */
+function recordSceneLog(): void {
+    const log: { kind: string; render: string | null; at: number }[] = [];
+    (window as unknown as { __sceneLog: typeof log }).__sceneLog = log;
+    const original = HTMLCanvasElement.prototype.getContext;
+    const watched = new WeakSet<HTMLCanvasElement>();
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+        const context = (original as (...args: unknown[]) => unknown).call(this, type, ...rest);
+        if (context !== null && type.startsWith('webgl') && !watched.has(this)) {
+            watched.add(this);
+            const root = this.getRootNode();
+            const host = root instanceof ShadowRoot ? root.host : undefined;
+            const render = (): string | null => host?.getAttribute('data-render') ?? null;
+            this.addEventListener('webglcontextlost', () => log.push({ kind: 'lost', render: render(), at: performance.now() }));
+            this.addEventListener('webglcontextrestored', () => log.push({ kind: 'restored', render: render(), at: performance.now() }));
+            if (host !== undefined) {
+                new MutationObserver(() => log.push({ kind: 'render', render: render(), at: performance.now() })).observe(host, { attributes: true, attributeFilter: ['data-render'] });
+            }
+        }
+        return context;
+    } as typeof original;
+}
+
+/** A PNG as the tools return it, for `readPixelAt` */
+function asResult(png: Buffer): ToolResult {
+    return { isError: false, body: {}, images: [{ data: png.toString('base64'), mimeType: 'image/png' }] };
+}
+
+describe.skipIf(!installed)('a 3D scene through the agent tools: G3.10 of the graphics epic 3 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    let viewerId = '';
+    const SCENE = '$.app.children.viewer';
+
+    beforeAll(async () => {
+        data = await tempData();
+        // A server of its own: its headless browser starts at the first screenshot below, so that capture is of the
+        // first page after launch, whose WebGL contexts Chromium loses once and restores (G3.1)
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        viewerId = (await createApp(harness.client, 'viewer', shellOf({}))).id;
+        await createApp(harness.client, 'plain', shellOf({ note: { component: 'text', _text: 'No scene here' } }));
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should accept the scene from the kit vocabulary and validate it', async () => {
+        // Arrange: what the agent reads before it writes
+        const components = await Promise.all(['scene3d', 'light', 'mesh'].map((component) => call(harness.client, 'ui_component_get', { name: component })));
+
+        // Act
+        const written = await writeShell(harness, 'viewer', 1, [{ op: 'set', path: 'root.children.viewer', value: VIEWER }]);
+        const validated = await call(harness.client, 'ui_validate', { app: 'viewer' });
+
+        // Assert
+        expect(components.map((component) => component.isError)).toEqual([false, false, false]);
+        expect(written.isError).toBe(false);
+        expect(validated.body['valid']).toBe(true);
+        expect(validated.body['errors']).toEqual([]);
+    });
+
+    it('should screenshot the lit box on the background in the first page of the headless browser, with no pending scene', async () => {
+        // Act: the first call that starts the server's headless browser
+        const started = performance.now();
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'viewer', path: SCENE });
+        const took = performance.now() - started;
+        const centre = await readPixelAt(blank, shot, 0.5, 0.5);
+        console.log(`G3.10 performance: ui_screenshot of a scene in a newly started headless browser took ${Math.round(took)} ms`);
+
+        // Assert
+        expect(shot.isError).toBe(false);
+        expect(shot.body['target']).toBe(SCENE);
+        expect(shot.body['scenes']).toBeUndefined();
+        expect(shot.body['pending']).toBeUndefined();
+        expect(centre.colours).toBeGreaterThan(2);
+        expectNear(centre.colour, LIT_RED);
+    });
+
+    it('should capture the WebGL canvas in a page screenshot, with no preserveDrawingBuffer', async () => {
+        // Arrange: where the scene is in the page, read from a page of the same app at the same viewport
+        const own = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+        await own.goto(`${harness.server.origin}/apps/${viewerId}`);
+        const scene = own.frameLocator('iframe').locator('ui-scene3d[data-render="ready"]');
+        const box = await scene.boundingBox();
+        const preserved = await scene.evaluate((element) => {
+            const canvas = element.shadowRoot?.querySelector('canvas') as HTMLCanvasElement;
+            return (canvas.getContext('webgl2') as WebGL2RenderingContext).getContextAttributes()?.preserveDrawingBuffer;
+        });
+        await own.close();
+        if (box === null) throw new Error('the scene has no box');
+
+        // Act
+        const started = performance.now();
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'viewer' });
+        console.log(`G3.10 performance: ui_screenshot of the page with a scene, browser already started, took ${Math.round(performance.now() - started)} ms`);
+        const centre = await readPixelAt(blank, shot, (box.x + box.width / 2) / 1280, (box.y + box.height / 2) / 800);
+
+        // Assert
+        expect(preserved).toBe(false);
+        expect(shot.isError).toBe(false);
+        expect(shot.body['target']).toBe('page');
+        expect(shot.body['scenes']).toBeUndefined();
+        expectNear(centre.colour, LIT_RED);
+    });
+
+    it('should draw the background token of the dark mode in a mode: "dark" screenshot', async () => {
+        // Arrange: the light background token, as the scene's host paints it
+        const own = await browser.newPage();
+        await own.goto(`${harness.server.origin}/apps/${viewerId}`);
+        const token = rgbOf(
+            await own
+                .frameLocator('iframe')
+                .locator('ui-scene3d[data-render="ready"]')
+                .evaluate((element) => getComputedStyle(element.shadowRoot?.querySelector('.scene') as HTMLElement).backgroundColor)
+        );
+        await own.close();
+        const light = await call(harness.client, 'ui_screenshot', { app: 'viewer', path: SCENE });
+
+        // Act
+        const dark = await call(harness.client, 'ui_screenshot', { app: 'viewer', path: SCENE, mode: 'dark' });
+        const [lightCorner, darkCorner, darkCentre] = await Promise.all([readPixelAt(blank, light, 0.02, 0.05), readPixelAt(blank, dark, 0.02, 0.05), readPixelAt(blank, dark, 0.5, 0.5)]);
+
+        // Assert
+        expect(dark.isError).toBe(false);
+        expect(dark.body['mode']).toBe('dark');
+        expect(dark.body['scenes']).toBeUndefined();
+        expectNear(lightCorner.colour, token);
+        expect(isNear(darkCorner.colour, lightCorner.colour), `dark corner [${darkCorner.colour.join(', ')}] is the light background`).toBe(false);
+        expectNear(darkCentre.colour, LIT_RED);
+    });
+
+    it('should keep the scene pending from a lost context until the frame after the restore, in the first page after launch', async () => {
+        // Arrange: a browser of its own, whose first page is the scene (G3.1: its contexts are lost once and restored)
+        const fresh = await chromium.launch({ headless: true });
+        try {
+            const page = await fresh.newPage();
+            await page.addInitScript(recordSceneLog);
+            const started = performance.now();
+
+            // Act
+            await page.goto(`${harness.server.origin}/apps/${viewerId}`);
+            const scene = page.frameLocator('iframe').locator('ui-scene3d[data-render="ready"]');
+            await scene.waitFor();
+            const firstReady = performance.now() - started;
+            // Time for a loss that comes after the first frame, and for its restore and redraw
+            await page.waitForTimeout(1_000);
+            await scene.waitFor();
+            const frame = page.frames().find((candidate) => candidate !== page.mainFrame());
+            const log = ((await frame?.evaluate(() => (window as unknown as { __sceneLog: SceneLogEntry[] }).__sceneLog)) ?? []) as SceneLogEntry[];
+            const centre = await readPixelAt(blank, asResult(await scene.screenshot({ type: 'png' })), 0.5, 0.5);
+            const losses = log.filter((entry) => entry.kind === 'lost').length;
+            console.log(`G3.10 performance: a small scene in the first page after launch was ready ${Math.round(firstReady)} ms after the page load started; contexts lost and restored: ${losses}`);
+
+            // Assert: the log saw the scene; pending at each loss, never ready between a loss and its restore, ready
+            // after the last restore. Whether Chromium loses the context here depends on how soon after the start the
+            // scene makes it (measured in G3.10: a context made 60 ms after the page opened was lost and restored a second
+            // later, one made after 300 ms was not); the fake chunk test in
+            // chunk3d.integration.test.ts forces a loss through ui_screenshot
+            expect(log.some((entry) => entry.kind === 'render' && entry.render === 'ready')).toBe(true);
+            let lost = false;
+            for (const entry of log) {
+                if (entry.kind === 'lost') {
+                    expect(entry.render).toBe('pending');
+                    lost = true;
+                }
+                if (entry.kind === 'restored') lost = false;
+                if (entry.kind === 'render' && lost) expect(entry.render).toBe('pending');
+            }
+            const lastRestore = log.map((entry) => entry.kind).lastIndexOf('restored');
+            if (lastRestore >= 0) expect(log.slice(lastRestore).some((entry) => entry.kind === 'render' && entry.render === 'ready')).toBe(true);
+            expectNear(centre.colour, LIT_RED);
+        } finally {
+            await fresh.close();
+        }
+    });
+
+    it('should never load the chunk for an app with no scene, and load it for the scene', async () => {
+        // Arrange
+        const counted = async (url: string): Promise<{ chunk: string | null; requests: string[] }> => {
+            const page = await browser.newPage();
+            const requests: string[] = [];
+            page.on('request', (request) => requests.push(new URL(request.url()).pathname));
+            await page.goto(url);
+            await page.waitForSelector('body[data-status="ready"]');
+            // Time for a late request, had anything asked for the chunk
+            await page.waitForTimeout(500);
+            const chunk = await page.getAttribute('body', 'data-chunk-3d');
+            await page.close();
+            return { chunk, requests };
+        };
+        const plain = String((await call(harness.client, 'ui_preview', { app: 'plain' })).body['url']);
+
+        // Act
+        const withoutScene = await counted(plain);
+        const withScene = await counted(`${harness.server.origin}/apps/${viewerId}`);
+
+        // Assert: the workspace's built chunk is served, and asked for only by the scene
+        expect(withoutScene.chunk).toMatch(/^[0-9a-f]{16}$/);
+        expect(withoutScene.requests).not.toContain(`/runtime/${withoutScene.chunk}.js`);
+        expect(withScene.requests).toContain(`/runtime/${withScene.chunk}.js`);
+    });
+});
+
+describe.skipIf(!installed)('a 3D scene in a headless browser with no WebGL: G3.10 of the graphics epic 3 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    const SCENE = '$.app.children.viewer';
+
+    beforeAll(async () => {
+        data = await tempData();
+        // --disable-3d-apis: the browser starts, and every getContext('webgl2') and ('webgl') answers null
+        harness = await httpHarness(data.dir, undefined, { browserArgs: ['--disable-3d-apis'] });
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        await createApp(harness.client, 'viewer', shellOf({ viewer: { ...VIEWER, _fallback: 'No 3D in this browser' } }));
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should show _fallback and still return the screenshot without waiting for the scene', async () => {
+        // Arrange: a page of the app in a browser with no WebGL either, to see what the headless page shows
+        const own = await chromium.launch({ headless: true, args: ['--disable-3d-apis'] });
+        const page = await own.newPage();
+
+        // Act
+        const started = performance.now();
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'viewer', path: SCENE });
+        const took = performance.now() - started;
+        const centre = await readPixelAt(blank, shot, 0.5, 0.5);
+        await page.goto(String((await call(harness.client, 'ui_preview', { app: 'viewer' })).body['url']));
+        const scene = page.frameLocator('iframe').locator('ui-scene3d[data-render="ready"]');
+        const shown = await scene.evaluate((element) => ({
+            fallback: element.hasAttribute('data-fallback'),
+            text: element.shadowRoot?.querySelector('.fallback')?.textContent ?? '',
+            display: getComputedStyle(element.shadowRoot?.querySelector('.fallback') as HTMLElement).display,
+            canvas: element.shadowRoot?.querySelector('canvas') !== null
+        }));
+        await own.close();
+
+        // Assert: the capture did not wait for the scene, and shows the fallback text on the background, not the box
+        expect(shot.isError).toBe(false);
+        expect(shot.body['target']).toBe(SCENE);
+        expect(shot.body['scenes']).toBeUndefined();
+        expect(took).toBeLessThan(10_000);
+        expect(centre.colours).toBeGreaterThan(2);
+        expect(isNear(centre.colour, LIT_RED)).toBe(false);
+        expect(shown).toEqual({ fallback: true, text: 'No 3D in this browser', display: 'grid', canvas: false });
+    });
+});
+
+describe.skipIf(!installed)('WebGL in the headless browser the preview starts: G3.10 of the graphics epic 3 (Chromium through Playwright)', () => {
+    it('should give WebGL2 in Chromium launched as BrowserPreview launches it, with no arguments', async () => {
+        // Arrange: G3.1 found no arguments necessary; a Chromium or Playwright update that drops WebGL fails here
+        const fresh = await chromium.launch({ headless: true });
+        try {
+            const page = await fresh.newPage();
+
+            // Act
+            const webgl = await page.evaluate(() => {
+                const context = document.createElement('canvas').getContext('webgl2');
+                return { webgl2: context !== null, renderer: context === null ? '' : String(context.getParameter(context.RENDERER)) };
+            });
+
+            // Assert
+            expect(webgl.webgl2, 'headless Chromium gives no WebGL2: 3D scenes would show their fallback in ui_screenshot').toBe(true);
+            expect(webgl.renderer).not.toBe('');
+        } finally {
+            await fresh.close();
+        }
+    });
+});
