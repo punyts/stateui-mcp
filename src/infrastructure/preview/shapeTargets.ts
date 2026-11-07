@@ -7,8 +7,8 @@
 
 import type { InteractAction } from './BrowserPreview.js';
 
-/** The actions `ui_interact` takes on a shape; `drag` is added with draggable shapes (G1.10b) */
-export const SHAPE_ACTIONS: readonly InteractAction[] = ['click', 'press', 'hover', 'focus', 'key'];
+/** The actions `ui_interact` takes on a shape; `drag` moves a draggable one (G1.10b) */
+export const SHAPE_ACTIONS: readonly InteractAction[] = ['click', 'press', 'hover', 'focus', 'key', 'drag'];
 
 /** The attribute that names the state path of the shape an element draws */
 export const SHAPE_PATH_ATTRIBUTE = 'data-shape-path';
@@ -18,6 +18,9 @@ export const SHAPE_KIND_ATTRIBUTE = 'data-shape-kind';
 
 /** The elements of interactive shapes: an SVG shape made a button, or the proxy button of a canvas shape */
 export const INTERACTIVE_SHAPE_SELECTOR = `[${SHAPE_PATH_ATTRIBUTE}][role="button"], button[${SHAPE_PATH_ATTRIBUTE}]`;
+
+/** The attribute an SVG renderer puts on a shape that can be dragged, naming its axes (`x`, `y`, `both`) */
+export const DRAGGABLE_ATTRIBUTE = 'data-draggable';
 
 /** A value quoted for a CSS attribute selector: backslashes, quotes and line breaks escaped */
 function cssString(value: string): string {
@@ -40,6 +43,11 @@ export function isAtOrBelow(path: string, root: string): boolean {
  * `choose` need a field or options, which a shape does not have
  */
 export function shapeActionError(statePath: string, kind: string, action: InteractAction): string | undefined {
-    if (SHAPE_ACTIONS.includes(action) || action === 'drag') return undefined;
+    if (SHAPE_ACTIONS.includes(action)) return undefined;
     return `${statePath} is a shape (${kind}), which takes ${SHAPE_ACTIONS.join(', ')}, not ${action}`;
+}
+
+/** Why a drag of a shape did not run: its position is left as it was, and the message says what makes a shape draggable */
+export function notDraggableError(statePath: string, kind: string): string {
+    return `${statePath} is a shape (${kind}) that is not draggable, so it was not dragged and its position is unchanged. A shape drags when it has interactive: true and draggable "x", "y" or "both" (a repeat copy also needs that axis linked to its record, "<-x": "$row.x")`;
 }

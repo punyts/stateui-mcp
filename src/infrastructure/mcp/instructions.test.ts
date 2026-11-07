@@ -125,13 +125,22 @@ describe('graphicsSection', () => {
         expect(text).toContain('once, on release');
     });
 
+    it('should say draggable needs interactive: true and how ui_interact drags a shape by an offset', () => {
+        // Act
+        const text = graphicsSection();
+
+        // Assert
+        expect(text).toContain('moves a shape that also has interactive: true (without it draggable does nothing)');
+        expect(text).toContain('drag value "+dx,+dy" moves it by page pixels');
+    });
+
     it('should say shapes are reached with ui_tree rendered and ui_interact, in about ten lines', () => {
         // Act
         const text = graphicsSection();
 
         // Assert
         expect(text).toContain('ui_tree with rendered: true lists its interactive shapes');
-        expect(text).toContain('ui_interact takes click, press, hover, focus and key');
+        expect(text).toContain('ui_interact takes click, press, hover, focus, key and drag');
         expect(text.split('\n').length).toBeLessThanOrEqual(12);
         expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
     });

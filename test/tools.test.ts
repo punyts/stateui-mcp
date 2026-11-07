@@ -355,6 +355,37 @@ describe('live tools', () => {
         expect(browser['interact']).not.toHaveBeenCalled();
     });
 
+    it('should refuse a malformed drag offset before opening the page, showing the accepted form', async () => {
+        const app = await createForm();
+
+        const result = await call(harness.client, 'ui_interact', {
+            app: app.name,
+            actions: [
+                { action: 'click', path: '$.app' },
+                { action: 'drag', path: '$.app.children.map.children.block', value: '+40' }
+            ]
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.body).toMatchObject({ error: 'invalid-argument', argument: 'actions.1.value', form: '+dx,+dy' });
+        expect(String(result.body['message'])).toContain('drag value "+40" is not an offset: write +dx,+dy');
+        expect(browser['interact']).not.toHaveBeenCalled();
+    });
+
+    it('should pass a drag offset and a drag onto a path to the page as they were given', async () => {
+        const app = await createForm();
+        browser['interact']?.mockResolvedValueOnce({ results: [], errors: [], events: [], cursor: 0 });
+        const actions = [
+            { action: 'drag', path: '$.app.children.map.children.block', value: '+40,-10' },
+            { action: 'drag', path: '$.app.children.board.cols.k_open.body.main.slots.0', value: '$.app.children.board.cols.k_done' }
+        ];
+
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions });
+
+        expect(result.isError).toBe(false);
+        expect(browser['interact']).toHaveBeenCalledWith(app.id, 1, actions);
+    });
+
     it('should read the queued emit events after a cursor', async () => {
         const app = await createForm();
         openView(app.id);

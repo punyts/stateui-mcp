@@ -633,7 +633,7 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
         expect((acted.body['results'] as { ok: boolean }[]).map((result) => result.ok)).toEqual([true, true, true]);
         expect(JSON.stringify(pressed.body)).toContain('"chosen":"yes"');
         expect(filled.isError).toBe(true);
-        expect((filled.body['results'] as { error?: string }[])[0]?.error).toBe(`${DOT} is a shape (circle), which takes click, press, hover, focus, key, not fill`);
+        expect((filled.body['results'] as { error?: string }[])[0]?.error).toBe(`${DOT} is a shape (circle), which takes click, press, hover, focus, key, drag, not fill`);
     });
 
     it('should name the path when no shape is drawn there', async () => {
@@ -672,6 +672,274 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
         expect(dark.center).not.toEqual(light.center);
     });
 });
+
+describe.skipIf(!installed)('dragging shapes with ui_interact: G1.10b of the graphics epic 1 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    const MAP = '$.app.children.map';
+    const PLAN = '$.app.children.plan';
+
+    /**
+     * A drawing on a renderer: a draggable blue block whose x and y link a record of $.data.pos, and an interactive
+     * wall that is not draggable and whose press sets the record's pressed field. The SVG one also has a repeat of
+     * draggable seats whose x and y link their records
+     */
+    const drawingOf = (renderer: 'svg' | 'canvas', record: string): Record<string, unknown> => ({
+        component: 'drawing',
+        _title: `Floor plan (${renderer})`,
+        renderer,
+        viewBox: { x: 0, y: 0, width: 200, height: 100 },
+        children: {
+            block: {
+                component: 'rect',
+                '<-x': `$.data.pos.${record}.x`,
+                '<-y': `$.data.pos.${record}.y`,
+                width: 20,
+                height: 20,
+                fill: '#3366ff',
+                interactive: true,
+                draggable: 'both',
+                _label: 'Block'
+            },
+            wall: {
+                component: 'rect',
+                x: 150,
+                y: 60,
+                width: 20,
+                height: 20,
+                fill: '#888888',
+                interactive: true,
+                _label: 'Wall',
+                on: { press: [{ command: 'set', target: `$.data.pos.${record}.pressed`, value: 'yes' }] }
+            },
+            ...(renderer === 'svg' && {
+                seats: {
+                    component: 'drawRepeat',
+                    '<-records': '$.data.seats',
+                    row: { component: 'rect', width: 10, height: 10, '<-x': '$row.x', '<-y': '$row.y', fill: '#00aa00', interactive: true, draggable: 'both', '<-_label': '$row.name' }
+                }
+            })
+        }
+    });
+
+    /** The value at a path of the running instance */
+    async function valueAt(path: string): Promise<Record<string, unknown>> {
+        return (await step(harness, 'ui_state_get', { app: 'floor', path })).body['value'] as Record<string, unknown>;
+    }
+
+    /** Waits until the value at a path passes the check, and gives it */
+    async function valueWhen(path: string, check: (value: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
+        const result = await eventually(harness, 'ui_state_get', { app: 'floor', path }, (found) => check((found.body['value'] ?? {}) as Record<string, unknown>));
+        return result.body['value'] as Record<string, unknown>;
+    }
+
+    /**
+     * Page pixels per drawing unit of a drawing, measured on the block (20 units wide) in a page of the app at the
+     * headless page's viewport: its SVG element, or its proxy button on canvas
+     */
+    async function scaleOf(drawing: string): Promise<number> {
+        const preview = await call(harness.client, 'ui_preview', { app: 'floor' });
+        const own = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+        try {
+            await own.goto(String(preview.body['url']));
+            const drawings = own.frameLocator('iframe').locator('ui-drawing[data-render="ready"]');
+            await drawings.nth(1).waitFor();
+            const width = await drawings.evaluateAll((hosts, path: string) => {
+                    for (const host of hosts) {
+                        const block = host.shadowRoot?.querySelector(`[data-shape-path="${path}.children.block"]`);
+                        if (block) return block.getBoundingClientRect().width;
+                    }
+                    return 0;
+                }, drawing);
+            return width / 20;
+        } finally {
+            await own.close();
+        }
+    }
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        await step(harness, 'ui_model_write', {
+            model: 'spot',
+            operations: [
+                { op: 'set', field: 'x', type: 'number' },
+                { op: 'set', field: 'y', type: 'number' },
+                { op: 'set', field: 'writes', type: 'number' },
+                { op: 'set', field: 'pressed', type: 'string' }
+            ]
+        });
+        await step(harness, 'ui_data_write', {
+            dataset: 'spots',
+            model: 'spot',
+            operations: [
+                { op: 'set', path: 'b1', value: { x: 20, y: 20, writes: 0, pressed: 'no' } },
+                { op: 'set', path: 'c1', value: { x: 20, y: 20, writes: 0, pressed: 'no' } }
+            ]
+        });
+        await step(harness, 'ui_model_write', {
+            model: 'seat',
+            operations: [
+                { op: 'set', field: 'name', type: 'string' },
+                { op: 'set', field: 'x', type: 'number' },
+                { op: 'set', field: 'y', type: 'number' }
+            ]
+        });
+        await step(harness, 'ui_data_write', {
+            dataset: 'seats',
+            model: 'seat',
+            operations: [
+                { op: 'set', path: 's1', value: { name: 'One', x: 100, y: 20 } },
+                { op: 'set', path: 's2', value: { name: 'Two', x: 140, y: 20 } }
+            ]
+        });
+        await createApp(harness.client, 'floor', shellOf({ map: drawingOf('svg', 'b1'), plan: drawingOf('canvas', 'c1') }), {
+            data: { pos: { dataset: 'spots' }, seats: { dataset: 'seats' } }
+        });
+        // Counts the writes of each block's x, so a drag that wrote while it moved would count more than one
+        await step(harness, 'ui_logic_write', {
+            app: 'floor',
+            expectedRevision: 1,
+            operations: ['b1', 'c1'].map((record) => ({
+                op: 'set',
+                unit: `rules.count_${record}`,
+                value: { when: { path: `$.data.pos.${record}.x` }, do: [{ command: 'increment', target: `$.data.pos.${record}.writes` }] }
+            }))
+        });
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should validate the drawings with their draggable shapes', async () => {
+        // Act
+        const validated = await call(harness.client, 'ui_validate', { app: 'floor' });
+
+        // Assert
+        expect(validated.body['valid']).toBe(true);
+        expect(validated.body['errors']).toEqual([]);
+    });
+
+    it('should drag the draggable SVG rect by an offset, move it and write its position once', async () => {
+        // Arrange
+        const scale = await scaleOf(MAP);
+
+        // Act
+        const dragged = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'drag', path: `${MAP}.children.block`, value: '+40,+20' }] });
+        const moved = await valueWhen('$.data.pos.b1', (value) => value['writes'] === 1);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const settled = await valueAt('$.data.pos.b1');
+
+        // Assert: a real pointer is not rounded, so the position is near 20 + offset / scale
+        expect(dragged.isError).toBe(false);
+        expect(dragged.body['errors']).toEqual([]);
+        expect(scale).toBeGreaterThan(0);
+        expect(Math.abs((moved['x'] as number) - (20 + 40 / scale))).toBeLessThan(0.5);
+        expect(Math.abs((moved['y'] as number) - (20 + 20 / scale))).toBeLessThan(0.5);
+        expect(settled['writes']).toBe(1);
+        expect(settled['pressed']).toBe('no');
+    });
+
+    it('should drag a repeat copy by an offset and change its record, not the other records', async () => {
+        // Arrange
+        const scale = await scaleOf(MAP);
+
+        // Act
+        const dragged = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'drag', path: `${MAP}.children.seats.rows.s2`, value: '+0,+30' }] });
+        const seats = await valueWhen('$.data.seats', (value) => ((value['s2'] as { y?: number } | undefined)?.y ?? 20) > 21);
+
+        // Assert
+        expect(dragged.isError).toBe(false);
+        const two = seats['s2'] as { name: string; x: number; y: number };
+        expect(two.name).toBe('Two');
+        expect(Math.abs(two.x - 140)).toBeLessThan(0.5);
+        expect(Math.abs(two.y - (20 + 30 / scale))).toBeLessThan(0.5);
+        expect(seats['s1']).toEqual({ name: 'One', x: 100, y: 20 });
+    });
+
+    it('should refuse to drag a shape that is not draggable, say so, and write nothing', async () => {
+        // Arrange
+        const before = await valueAt('$.data.pos');
+
+        // Act
+        const svg = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'drag', path: `${MAP}.children.wall`, value: '-40,-20' }] });
+        const canvas = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'drag', path: `${PLAN}.children.wall`, value: '-40,-20' }] });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const after = await valueAt('$.data.pos');
+
+        // Assert
+        for (const [result, path] of [
+            [svg, `${MAP}.children.wall`],
+            [canvas, `${PLAN}.children.wall`]
+        ] as const) {
+            expect(result.isError).toBe(true);
+            const error = (result.body['results'] as { error?: string }[])[0]?.error ?? '';
+            expect(error).toContain(`${path} is a shape (rect) that is not draggable, so it was not dragged and its position is unchanged`);
+            expect(error).toContain('interactive: true and draggable');
+        }
+        // No write, and no press either (the wall's press would set pressed)
+        expect(after).toEqual(before);
+    });
+
+    it('should drag the draggable canvas rect by an offset, pressing on the canvas beneath its proxy, and write its position once', async () => {
+        // Arrange
+        const scale = await scaleOf(PLAN);
+
+        // Act
+        const dragged = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'drag', path: `${PLAN}.children.block`, value: '+40,+0' }] });
+        const moved = await valueWhen('$.data.pos.c1', (value) => value['writes'] === 1);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const settled = await valueAt('$.data.pos.c1');
+
+        // Assert
+        expect(dragged.isError).toBe(false);
+        expect(scale).toBeGreaterThan(0);
+        expect(Math.abs((moved['x'] as number) - (20 + 40 / scale))).toBeLessThan(0.5);
+        expect(Math.abs((moved['y'] as number) - 20)).toBeLessThan(0.5);
+        expect(settled['writes']).toBe(1);
+        expect(settled['pressed']).toBe('no');
+    });
+
+    it('should press a canvas shape with ui_interact click through its proxy', async () => {
+        // Act
+        const clicked = await call(harness.client, 'ui_interact', { app: 'floor', actions: [{ action: 'click', path: `${PLAN}.children.wall` }] });
+        const pressed = await valueWhen('$.data.pos.c1', (value) => value['pressed'] === 'yes');
+
+        // Assert
+        expect(clicked.isError).toBe(false);
+        expect(pressed['pressed']).toBe('yes');
+        expect((await valueAt('$.data.pos.b1'))['pressed']).toBe('no');
+    });
+});
+
+/** The colour at a point of a PNG given as fractions of its width and height, and its number of different colours */
+async function readPixelAt(page: Page, result: ToolResult, fx: number, fy: number): Promise<{ colour: [number, number, number]; colours: number }> {
+    const data = result.images[0]?.data ?? '';
+    return page.evaluate(
+        async ({ base64, fx, fy }) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${base64}`;
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext('2d') as CanvasRenderingContext2D;
+            context.drawImage(image, 0, 0);
+            const { data: pixels } = context.getImageData(0, 0, image.width, image.height);
+            const colours = new Set<number>();
+            for (let index = 0; index < pixels.length; index += 4) colours.add(((pixels[index] as number) << 16) | ((pixels[index + 1] as number) << 8) | (pixels[index + 2] as number));
+            const at = (Math.floor(fy * image.height) * image.width + Math.floor(fx * image.width)) * 4;
+            const colour: [number, number, number] = [pixels[at] as number, pixels[at + 1] as number, pixels[at + 2] as number];
+            return { colour, colours: colours.size };
+        },
+        { base64: data, fx, fy }
+    );
+}
 
 describe.skipIf(!installed)('live sync between pages and the server (Chromium through Playwright)', () => {
     let data: TempData;

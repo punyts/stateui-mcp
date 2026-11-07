@@ -3,6 +3,7 @@ import type { RunCommandInput, RunCommandResult } from '../../application/use-ca
 import { NO_PREVIEW_MESSAGE } from '../../application/use-cases/RunCommand.js';
 import { BrowserUnavailableError, INTERACT_ACTIONS, MAX_FULL_PAGE_HEIGHT, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
 import type { InteractStep, PreviewBrowser, PreviewScreen } from '../preview/BrowserPreview.js';
+import { DRAG_OFFSET_FORM, dragTargetOf } from '../preview/dragTarget.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
@@ -60,12 +61,12 @@ const INTERACT = defineInput({
                 required: true,
                 enum: INTERACT_ACTIONS,
                 description:
-                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick an option by its value or label (radioField, segmented, select). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value; both must fit on screen together. A shape of a drawing (path from ui_tree with rendered: true) takes click, press, hover, focus and key (key with its path focuses it first); fill, select and choose are refused'
+                    'click, hover: the control of the node. fill: type value into a field. press: send the key value to the control of the node. select: pick an option of a select field. choose: pick an option by its value or label (radioField, segmented, select). focus: focus the control inside the node, or else its nearest focusable ancestor (a board card, a list row). key: press the key value on whatever has focus; no path (Space then ArrowRight moves a picked board card). drag: drag the node with the mouse onto the node whose path is value (both must fit on screen together), or by the offset value "+dx,+dy" (page pixels, signed whole numbers such as "+40,-10") from the middle of its box. A shape of a drawing (path from ui_tree with rendered: true) takes click, press, hover, focus, key (key with its path focuses it first) and drag; fill, select and choose are refused. A drag of a shape that is not draggable (interactive: true and draggable) is refused and moves nothing; a draggable shape writes its position once, on release'
             },
             path: { type: 'string', description: 'The node, such as "$.app.children.form.children.email"; every action but key needs one. ui_tree shows the paths, and with rendered: true the paths of rows and cards' },
             value: {
                 type: 'string',
-                description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, the path of the drop target for drag'
+                description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, for drag the path of the drop target or an offset "+dx,+dy" in page pixels ("+40,-10": 40 right, 10 up)'
             }
         }
     }
@@ -233,7 +234,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag on nodes by path, and key on whatever has focus. The interactive shapes of a drawing are reached by their paths too (ui_tree with rendered: true lists them). An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
+                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag (onto another node, or by an offset "+dx,+dy" in page pixels) on nodes by path, and key on whatever has focus. The interactive shapes of a drawing are reached by their paths too (ui_tree with rendered: true lists them). An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -241,6 +242,12 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if (!parsed.ok) return invalidArgument(parsed);
                 const pathless = parsed.value.actions.findIndex((item) => item.path === undefined && !PATHLESS_ACTIONS.includes(item.action));
                 if (pathless >= 0) return fail('invalid-argument', `Action ${pathless} (${parsed.value.actions[pathless]?.action}) needs a path`, { argument: `actions.${pathless}.path` });
+                // A drag value that starts like an offset must be a whole one: refused here, before the page is opened
+                for (const [index, item] of parsed.value.actions.entries()) {
+                    if (item.action !== 'drag' || item.value === undefined) continue;
+                    const dragTarget = dragTargetOf(item.value);
+                    if ('error' in dragTarget) return fail('invalid-argument', dragTarget.error, { argument: `actions.${index}.value`, form: DRAG_OFFSET_FORM });
+                }
                 const target = await resolve(parsed.value);
                 if (!isRunTarget(target)) return target;
                 const { appId, revision } = target;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderedUnder } from './BrowserPreview.js';
-import { INTERACTIVE_SHAPE_SELECTOR, isAtOrBelow, shapeActionError, shapeSelector } from './shapeTargets.js';
+import { INTERACTIVE_SHAPE_SELECTOR, SHAPE_ACTIONS, isAtOrBelow, notDraggableError, shapeActionError, shapeSelector } from './shapeTargets.js';
 
 describe('shapeSelector', () => {
     it('should select the element whose data-shape-path is the state path', () => {
@@ -32,6 +32,17 @@ describe('shapeSelector', () => {
     });
 });
 
+describe('notDraggableError', () => {
+    it('should say the shape was not dragged and what makes a shape draggable', () => {
+        // Act
+        const message = notDraggableError('$.app.children.map.children.wall', 'rect');
+
+        // Assert
+        expect(message).toContain('$.app.children.map.children.wall is a shape (rect) that is not draggable, so it was not dragged and its position is unchanged');
+        expect(message).toContain('interactive: true and draggable "x", "y" or "both"');
+    });
+});
+
 describe('isAtOrBelow', () => {
     it('should hold the path itself and the paths below it', () => {
         expect(isAtOrBelow('$.app.children.map', '$.app.children.map')).toBe(true);
@@ -46,6 +57,10 @@ describe('isAtOrBelow', () => {
 });
 
 describe('shapeActionError', () => {
+    it('should list drag among the actions a shape takes', () => {
+        expect(SHAPE_ACTIONS).toEqual(['click', 'press', 'hover', 'focus', 'key', 'drag']);
+    });
+
     it('should accept click, press, hover, focus, key and drag', () => {
         for (const action of ['click', 'press', 'hover', 'focus', 'key', 'drag'] as const) {
             expect(shapeActionError('$.app.children.map.children.seat', 'circle', action)).toBeUndefined();
@@ -58,7 +73,7 @@ describe('shapeActionError', () => {
             const message = shapeActionError('$.app.children.map.children.seat', 'circle', action);
 
             // Assert
-            expect(message).toBe(`$.app.children.map.children.seat is a shape (circle), which takes click, press, hover, focus, key, not ${action}`);
+            expect(message).toBe(`$.app.children.map.children.seat is a shape (circle), which takes click, press, hover, focus, key, drag, not ${action}`);
         }
     });
 });

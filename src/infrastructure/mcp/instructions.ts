@@ -72,8 +72,8 @@ export function graphicsSection(): string {
             '- A shape value is a literal, a theme token ("fill": "{color.accent.base}") or a link ("<-cx": "$.data.chart.x"). No expressions: a value that changes is linked to state that logic writes.',
             '- A colour that depends on a record comes from the record: in a drawRepeat row, "<-fill": "$row.fill", where a rule or table writes the record\'s fill field. $row links read the record, as in a list row.',
             '- interactive: true makes a shape pressable and focusable; give it a _label (its accessible name). Its "on" entries run on press and hover (once each time the pointer enters), like a button\'s.',
-            '- draggable ("x", "y" or "both") moves a shape; the drag writes the final position once, on release, through its <-x and <-y links when it has them.',
-            '- Check a drawing with ui_screenshot of its path. ui_tree with rendered: true lists its interactive shapes with their paths (...rows.<recordKey> for a repeat copy), and ui_interact takes click, press, hover, focus and key on those paths.'
+            '- draggable ("x", "y" or "both") moves a shape that also has interactive: true (without it draggable does nothing); the drag writes the final position once, on release, through its <-x and <-y links when it has them (a drawRepeat row links "<-x": "$row.x").',
+            '- Check a drawing with ui_screenshot of its path. ui_tree with rendered: true lists its interactive shapes with their paths (...rows.<recordKey> for a repeat copy), and ui_interact takes click, press, hover, focus, key and drag on those paths (drag value "+dx,+dy" moves it by page pixels, such as "+40,0").'
         ].join('\n')
     ].join('\n');
 }

@@ -2,7 +2,9 @@ import type { Browser, ElementHandle, Frame, Page } from 'playwright';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
 import type { PreviewHub, UiEvent } from './PreviewHub.js';
-import { INTERACTIVE_SHAPE_SELECTOR, isAtOrBelow, shapeActionError, shapeSelector } from './shapeTargets.js';
+import { DRAG_OFFSET_FORM, dragTargetOf, formatDragOffset } from './dragTarget.js';
+import type { DragOffset } from './dragTarget.js';
+import { DRAGGABLE_ATTRIBUTE, INTERACTIVE_SHAPE_SELECTOR, isAtOrBelow, notDraggableError, shapeActionError, shapeSelector } from './shapeTargets.js';
 
 /** Chromium could not be started: not installed, or the sandbox refused. The message says what to run */
 export class BrowserUnavailableError extends Error {
@@ -34,7 +36,7 @@ export interface InteractStep {
     readonly path?: string;
     /**
      * The text for `fill`, the key for `press` and `key` (`Enter`, `Space`), the option value or label for `select`
-     * and `choose`, the state path of the drop target for `drag`
+     * and `choose`, the state path of the drop target for `drag` or an offset `+dx,+dy` in page pixels (`dragTarget.ts`)
      */
     readonly value?: string;
 }
@@ -528,6 +530,59 @@ export class BrowserPreview {
         await page.mouse.up();
     }
 
+    /**
+     * Drags with the mouse from the middle of a node's box by an offset in page pixels, in steps, as a user does
+     * (G1.10b). A shape on canvas is pressed through its proxy's box: the proxy takes no pointer events, so the press
+     * lands on the canvas beneath it, where the drawing starts its drag
+     */
+    private async dragBy(page: Page, from: string, offset: DragOffset): Promise<void> {
+        await this.centerOf(page, from);
+        const start = await this.centerOf(page, from, false);
+        const end = { x: start.x + offset.dx, y: start.y + offset.dy };
+        const viewport = page.viewportSize();
+        if (viewport !== null && (end.x < 0 || end.y < 0 || end.x > viewport.width || end.y > viewport.height)) {
+            throw new InteractionError(`${from} dragged by ${formatDragOffset(offset)} would end off the screen, so it was not dragged; try a smaller offset or a larger viewport`);
+        }
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps: 12 });
+        await page.waitForTimeout(100);
+        await page.mouse.up();
+    }
+
+    /**
+     * Refuses the drag of a shape that is not draggable, before the mouse goes down, so its position stays as it was.
+     * An SVG shape that can be dragged carries `data-draggable`; on canvas the mouse is moved onto the proxy's box,
+     * and the canvas beneath shows the `move` cursor over a draggable shape. A node that is not a shape passes
+     */
+    private async ensureDraggable(page: Page, statePath: string): Promise<void> {
+        const element = await this.elementAt(page, statePath);
+        try {
+            const shape = await this.shapeOf(element);
+            if (shape === undefined) return;
+            if (shape.via === 'svg') {
+                const draggable = await element.evaluate((node: HTMLElement, attribute: string) => node.hasAttribute(attribute), DRAGGABLE_ATTRIBUTE);
+                if (!draggable) throw new InteractionError(notDraggableError(statePath, shape.kind));
+                return;
+            }
+            await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+            const box = await element.boundingBox();
+            if (box === null || box.width === 0 || box.height === 0) throw new InteractionError(`${statePath} is drawn but has no box on screen, so it cannot be dragged`);
+            const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+            // From a point beside the centre, so the canvas sees a move even when the mouse was there already
+            await page.mouse.move(center.x - 1, center.y - 1);
+            await page.mouse.move(center.x, center.y);
+            const cursor = await element.evaluate((proxy: HTMLElement) => {
+                const beside = proxy.parentElement?.nextElementSibling;
+                const canvas = beside instanceof HTMLCanvasElement ? beside : (proxy.getRootNode() as ParentNode).querySelector('canvas');
+                return canvas?.style.cursor ?? '';
+            });
+            if (cursor !== 'move') throw new InteractionError(notDraggableError(statePath, shape.kind));
+        } finally {
+            await element.dispose();
+        }
+    }
+
     /** How the element is reached when it draws a shape; undefined for the host of a node */
     private async shapeOf(element: ElementHandle<HTMLElement>): Promise<ShapeTarget | undefined> {
         return element.evaluate((node: HTMLElement) => {
@@ -591,8 +646,12 @@ export class BrowserPreview {
         if (step.path === undefined) throw new InteractionError(`${step.action} needs a path`);
         const statePath = toStatePath(step.path);
         if (step.action === 'drag') {
-            if (step.value === undefined) throw new InteractionError('drag needs the state path of the drop target as value');
-            await this.drag(page, statePath, toStatePath(step.value));
+            if (step.value === undefined) throw new InteractionError(`drag needs a value: the state path of the drop target, or an offset ${DRAG_OFFSET_FORM} in page pixels`);
+            const target = dragTargetOf(step.value);
+            if ('error' in target) throw new InteractionError(target.error);
+            await this.ensureDraggable(page, statePath);
+            if ('offset' in target) await this.dragBy(page, statePath, target.offset);
+            else await this.drag(page, statePath, toStatePath(target.path));
             return;
         }
         const element = await this.elementAt(page, statePath);
