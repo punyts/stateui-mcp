@@ -6,7 +6,7 @@ import { treePath } from '../../domain/nodeOperations.js';
 import type { NodeOperation, TreeTarget } from '../../domain/nodeOperations.js';
 import { PART_KIND_WORDS } from '../../domain/partReferences.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import { WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const SHELL = 'shell';
@@ -190,7 +190,7 @@ export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' |
                     operations.push(converted);
                 }
                 const result = await writeNodes.execute({ app, target, expectedRevision, operations });
-                if (result.kind === 'written') return succeed({ app, screen, revision: result.revision, warnings: result.warnings, added: result.added });
+                if (result.kind === 'written') return succeed({ app, screen, revision: result.revision, warnings: withGuides(result.warnings), added: result.added });
                 return sharedOutcome(result, app, screen);
             }
         },
@@ -218,7 +218,7 @@ export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' |
                     }
                 }
                 const result = await writeLocale.execute({ app, language, target, expectedRevision, operations });
-                if (result.kind === 'written') return succeed({ app, screen, language, revision: result.revision, warnings: result.warnings });
+                if (result.kind === 'written') return succeed({ app, screen, language, revision: result.revision, warnings: withGuides(result.warnings) });
                 if (result.kind === 'invalid-language') return fail('invalid-argument', 'language must be a code such as "de" or "pt-BR"', { argument: 'language' });
                 return sharedOutcome(result, app, screen);
             }

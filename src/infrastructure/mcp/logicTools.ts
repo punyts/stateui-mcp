@@ -3,7 +3,7 @@ import { LOGIC_GROUPS } from '../../application/use-cases/WriteLogic.js';
 import type { LogicGroup, LogicOperation, LogicTarget } from '../../application/use-cases/WriteLogic.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const UNIT = /^(machines|rules|tables)\.([A-Za-z_][A-Za-z0-9_-]*)$/;
@@ -107,7 +107,7 @@ export function createLogicTools(useCases: Pick<UiBuilderUseCases, 'writeLogic'>
                             revision: result.revision,
                             created: result.created,
                             units: result.units,
-                            warnings: target.kind === 'app' ? result.warnings : result.appWarnings,
+                            warnings: target.kind === 'app' ? withGuides(result.warnings) : withGuides(result.appWarnings),
                             ...(result.moreApps > 0 && { moreApps: result.moreApps })
                         });
                     case 'invalid-name':

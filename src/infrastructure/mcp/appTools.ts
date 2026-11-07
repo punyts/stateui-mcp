@@ -3,7 +3,7 @@ import { formatRenderedTree } from '../../application/outline/formatRenderedTree
 import { BrowserUnavailableError } from '../preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../preview/BrowserPreview.js';
 import { PART_APP_FIELDS, SHELL_ARGUMENT, USES_TEXT, runPartAppCreate } from './partAppTools.js';
-import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed } from './toolKit.js';
+import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed, withGuides } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 import { isRunTarget, RUN_APP_FIELDS, runName, runTargets } from './runTarget.js';
 import type { RunTargetDependencies } from './runTarget.js';
@@ -80,7 +80,7 @@ export function createAppTools(
                 const { app } = parsed.value;
                 const part = await useCases.validatePartApp.execute(app);
                 if (part.kind === 'not-found') return fail('not-found', `No app named "${app}"; ui_list lists the apps`, { app });
-                return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: part.errors, warnings: part.warnings, uses: part.uses });
+                return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: withGuides(part.errors), warnings: withGuides(part.warnings), uses: part.uses });
             }
         },
         {

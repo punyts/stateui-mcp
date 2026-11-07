@@ -1,6 +1,7 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonValue } from '../../domain/JsonValue.js';
+import { guideFor } from './guide.js';
 
 /**
  * Building blocks of the ui-builder tools: one field table gives both the JSON Schema the model sees and the check
@@ -245,9 +246,42 @@ export function statePath(path: string): string {
     return path.startsWith('$') ? path : `$.${path}`;
 }
 
-/** An error result: `error` is a stable code, `message` says what to change, `details` carries the use case own fields */
+/** One entry with `guide`: an entry with a code the guide has a topic for gains it, a group with its own `errors` (the warnings of one app a part write reaches) has them guided; any other entry is passed as it is */
+function withGuide<T extends object>(entry: T): T {
+    const record = entry as Record<string, unknown>;
+    const code = record['code'];
+    if (typeof code === 'string') {
+        const topic = guideFor(code);
+        return topic === undefined ? entry : { ...entry, guide: topic };
+    }
+    const errors = record['errors'];
+    return Array.isArray(errors) ? { ...entry, errors: withGuides(errors as object[]) } : entry;
+}
+
+/**
+ * The entries of `errors` or `warnings` of a validation answer, each with `guide: '<topic>'` when the guide has a
+ * topic for its code (`guideFor`); an entry without such a topic is passed as it is
+ */
+export function withGuides<T extends object>(entries: readonly T[]): T[] {
+    return entries.map(withGuide);
+}
+
+/** `errors` and `warnings` of a body, with `withGuides`, when they are lists; the rest of the body as it is */
+function guidedEntries(details: object): object {
+    const record = details as Record<string, unknown>;
+    const lists = (['errors', 'warnings'] as const).filter((key) => Array.isArray(record[key]));
+    if (lists.length === 0) return details;
+    return { ...details, ...Object.fromEntries(lists.map((key) => [key, withGuides(record[key] as object[])])) };
+}
+
+/**
+ * An error result: `error` is a stable code, `message` says what to change, `details` carries the use case own fields.
+ * When the guide has a topic for the code the body gains `guide: '<topic>'`, and the entries of `errors` and `warnings`
+ * in the details gain theirs (`withGuides`)
+ */
 export function fail(code: string, message: string, details: object = {}): ToolOutcome {
-    return { isError: true, body: { error: code, message, ...details } };
+    const topic = guideFor(code);
+    return { isError: true, body: { error: code, message, ...guidedEntries(details), ...(topic !== undefined && { guide: topic }) } };
 }
 
 export interface ToolAnnotations {

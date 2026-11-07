@@ -547,8 +547,9 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
     });
 
     it('should accept the drawing from the kit vocabulary and validate it', async () => {
-        // Arrange: what the agent reads before it writes
+        // Arrange: what the agent reads before it writes: the pointer line of the instructions, then the guide topic
         const instructions = harness.client.getInstructions() ?? '';
+        const guide = await call(harness.client, 'ui_guide', { topic: 'drawing' });
         const components = await Promise.all(['drawing', 'rect', 'circle', 'drawText'].map((component) => call(harness.client, 'ui_component_get', { name: component })));
 
         // Act
@@ -556,7 +557,8 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
         const validated = await call(harness.client, 'ui_validate', { app: 'seats' });
 
         // Assert
-        expect(instructions).toContain('ui_tree with rendered: true lists its interactive shapes');
+        expect(instructions).toContain('read ui_guide topic drawing.');
+        expect(guide.body['text']).toContain('ui_tree with rendered: true lists its interactive shapes');
         expect(components.map((component) => component.isError)).toEqual([false, false, false, false]);
         expect(written.isError).toBe(false);
         expect(validated.body['valid']).toBe(true);

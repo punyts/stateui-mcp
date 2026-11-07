@@ -144,27 +144,28 @@ function fixed(text: string): (context: GuideContext) => string {
 }
 
 /**
- * The topics, in the order the server instructions give them. Every topic is always on for now, so the instructions
- * still carry every text in full; the shorter instructions (K1.2 of the guide-tool epic) turn most of them into
- * pointer lines, and the graphics topics stay always on until K1.4
+ * The topics, in index order. The server instructions give the always-on ones in full in this order (K1.2 of the
+ * guide-tool epic): the build steps with the category index and presets (start, sections) and the rules that cost a
+ * failed call (keys); every other topic, the graphics ones included, is one pointer line there. ui_guide answers the
+ * topic start with the whole instructions, for a client that does not show them
  */
 export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
-    { name: 'start', when: 'you build or change an app (the build steps from the plan to the screens)', text: startText, alwaysOn: true },
+    { name: 'start', when: 'you build or change an app, when your client does not show the server instructions (the same text: the build steps, the rules that cost a failed call and the topic pointers)', text: startText, alwaysOn: true },
     { name: 'sections', when: 'you fill the sections of a screen, add logic or check an app (the later build steps, the theme presets and the component categories)', text: sectionsText, alwaysOn: true },
-    { name: 'parts', when: 'you plan the parts of an app (what a part is, how apps share them, build time and run time)', text: fixed(PARTS), alwaysOn: true },
-    { name: 'paths', when: 'you write a node, screen or route path, or look at a running app with ui_tree', text: fixed(PATHS), alwaysOn: true },
-    { name: 'revisions', when: 'you change a part that exists', text: fixed(REVISIONS), alwaysOn: true },
+    { name: 'parts', when: 'you plan the parts of an app (what a part is, how apps share them, build time and run time)', text: fixed(PARTS), alwaysOn: false },
+    { name: 'paths', when: 'you write a node, screen or route path, or look at a running app with ui_tree', text: fixed(PATHS), alwaysOn: false },
+    { name: 'revisions', when: 'you change a part that exists', text: fixed(REVISIONS), alwaysOn: false },
     { name: 'keys', when: 'you name an icon or token, give a record key or set a value under a path', text: fixed(KEYS), alwaysOn: true },
-    { name: 'modules', when: 'a logic module or the params of a screen', text: fixed(MODULES), alwaysOn: true },
-    { name: 'logic', when: 'a machine, rule or table', text: fixed(LOGIC), alwaysOn: true },
-    { name: 'live-view', when: 'you preview, test or watch a running app', text: fixed(LIVE_VIEW), alwaysOn: true },
-    { name: 'files', when: 'you read a file a user uploaded', text: fixed(FILES), alwaysOn: true },
-    { name: 'drawing', when: 'a drawing and its shapes', text: fixed(DRAWING), alwaysOn: true },
-    { name: 'paint-field', when: 'a paintField (a painted signature or sketch)', text: fixed(PAINT_FIELD), alwaysOn: true },
-    { name: 'scene3d', when: 'a scene3d, its node values and its camera', text: fixed(SCENE3D), alwaysOn: true },
-    { name: 'scene3d-models', when: 'a 3D model file, a texture or a repeat3d', text: fixed(SCENE3D_MODELS), alwaysOn: true },
-    { name: 'scene3d-behavior', when: 'a pressable 3D node, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: true },
-    { name: 'safety', when: 'you delete or rename a part', text: fixed(SAFETY), alwaysOn: true }
+    { name: 'modules', when: 'a logic module or the params of a screen', text: fixed(MODULES), alwaysOn: false },
+    { name: 'logic', when: 'a machine, rule or table', text: fixed(LOGIC), alwaysOn: false },
+    { name: 'live-view', when: 'you preview, test or watch a running app', text: fixed(LIVE_VIEW), alwaysOn: false },
+    { name: 'files', when: 'you read a file a user uploaded', text: fixed(FILES), alwaysOn: false },
+    { name: 'drawing', when: 'a drawing and its shapes', text: fixed(DRAWING), alwaysOn: false },
+    { name: 'paint-field', when: 'a paintField (a painted signature or sketch)', text: fixed(PAINT_FIELD), alwaysOn: false },
+    { name: 'scene3d', when: 'a scene3d, its node values and its camera', text: fixed(SCENE3D), alwaysOn: false },
+    { name: 'scene3d-models', when: 'a 3D model file, a texture or a repeat3d', text: fixed(SCENE3D_MODELS), alwaysOn: false },
+    { name: 'scene3d-behavior', when: 'a pressable 3D node, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: false },
+    { name: 'safety', when: 'you delete or rename a part', text: fixed(SAFETY), alwaysOn: false }
 ] satisfies GuideTopic[]);
 
 /** The topic names, in table order */
@@ -182,4 +183,66 @@ export function guideText(name: string, context: GuideContext): string {
     return topic.text(context);
 }
 
-// The map from error code to topic (K1.3 of the guide-tool epic) goes here, next to the table it points into.
+/**
+ * The topic that explains each tool error code `fail()` gives (K1.3 of the guide-tool epic). A code with no topic that
+ * explains it (such as `invalid-argument` or `not-found`, whose message says it all) is left out, and its error body
+ * gets no `guide` field
+ */
+export const TOOL_CODE_TOPICS: Readonly<Record<string, string>> = Object.freeze({
+    'conflict': 'revisions',
+    'duplicate-name': 'revisions',
+    'in-use': 'revisions',
+    'missing-parts': 'parts',
+    'missing-path': 'paths',
+    'invalid-path': 'paths',
+    'unknown-path': 'paths',
+    'not-a-node': 'paths',
+    'invalid-target': 'paths',
+    'unknown-screen': 'paths',
+    'not-rendered': 'paths',
+    'logic-guard': 'logic',
+    'not-waiting': 'logic',
+    'no-logic': 'live-view',
+    'unknown-command': 'live-view',
+    'browser-unavailable': 'live-view'
+});
+
+/**
+ * The topic that explains each family of validation codes of the app's error catalog (`ERROR_CATALOG`): a prefix is a
+ * family of `ERROR_PREFIXES` or a longer part of one, down to a single code, and the longest prefix a code starts
+ * with wins. A family with no topic that explains it (such as `SUI-LAYOUT` or `SUI-ON`) is left out
+ */
+export const VALIDATION_PREFIX_TOPICS: Readonly<Record<string, string>> = Object.freeze({
+    'SUI-LOGIC': 'logic',
+    'SUI-MODULE': 'modules',
+    'SUI-USES': 'parts',
+    'SUI-USES-NEEDS': 'modules',
+    'SUI-ROUTE': 'paths',
+    'SUI-NODE-MISSING': 'paths',
+    'SUI-INSTANCE': 'live-view',
+    'SUI-DOC-ORDER': 'keys',
+    'SUI-STATE-TOKEN': 'keys',
+    'SUI-THEME-TOKEN': 'keys',
+    'SUI-RUN-ICON': 'keys',
+    'SUI-STATE-PAINT': 'drawing',
+    'SUI-STATE-LABEL': 'drawing',
+    'SUI-RUN-DRAW': 'drawing',
+    'SUI-DOC-LIMIT-SCENES': 'scene3d',
+    'SUI-RUN-3D': 'scene3d-models',
+    'SUI-RUN-CAP': 'scene3d-models'
+});
+
+/** True when `code` is `prefix` or starts with `prefix` and a dash: "SUI-LOGIC" covers "SUI-LOGIC-PATH", not "SUI-LOGICAL" */
+function inFamily(code: string, prefix: string): boolean {
+    return code === prefix || code.startsWith(`${prefix}-`);
+}
+
+/** The topic that explains an error code: a tool code by name, a validation code by its longest mapped prefix; undefined when none does */
+export function guideFor(code: string): string | undefined {
+    if (Object.hasOwn(TOOL_CODE_TOPICS, code)) return TOOL_CODE_TOPICS[code];
+    let best: string | undefined;
+    for (const prefix of Object.keys(VALIDATION_PREFIX_TOPICS)) {
+        if (inFamily(code, prefix) && (best === undefined || prefix.length > best.length)) best = prefix;
+    }
+    return best === undefined ? undefined : VALIDATION_PREFIX_TOPICS[best];
+}

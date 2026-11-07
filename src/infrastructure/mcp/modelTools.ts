@@ -3,7 +3,7 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { ModelOperation } from '../../application/use-cases/WriteModel.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 const VALIDATOR_NAMES = Object.keys(VALIDATORS).sort();
@@ -81,7 +81,7 @@ export function createModelTools(useCases: Pick<UiBuilderUseCases, 'writeModel'>
                             model,
                             revision: result.revision,
                             created: result.created,
-                            warnings: result.warnings,
+                            warnings: withGuides(result.warnings),
                             ...(result.moreApps > 0 && { moreApps: result.moreApps }),
                             datasetWarnings: result.datasetWarnings,
                             readers: result.readers

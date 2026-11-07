@@ -126,18 +126,45 @@ describe('the registered tools', () => {
     });
 });
 
+/**
+ * The length of the server instructions with the library's catalog (nine categories) and its four theme presets just
+ * before K1.2 of the guide-tool epic made them short (commit 10a0343, every topic in full, the graphics ones included).
+ * The catalog and presets are those the K1.5 measurement runs serve (`scripts/measurement`, this library's server)
+ */
+const INSTRUCTIONS_BEFORE_K1_2 = 15_669;
+
 describe('the server instructions', () => {
-    it('should describe the owner tree, build and run time, paths, modules, revisions and the build steps', async () => {
+    it('should give the build steps and the rules that cost a failed call, and point to the owner tree, paths, modules, revisions and the live view', async () => {
         // Act
         const instructions = harness.client.getInstructions() ?? '';
 
         // Assert
-        for (const text of ['Build time:', 'Run time:', '$.route', '$.screens', 'Modules and params', 'Revisions and warnings', 'Build steps', 'Icon names come from ui_icons_list', 'no preview is open; the command was not delivered', 'ui_events_read']) {
+        for (const text of ['Build steps', 'Icon names come from ui_icons_list', 'must not be integer-like', 'A set through a missing parent fails']) {
             expect(instructions, text).toContain(text);
         }
-        for (const name of ['ui_theme_create', 'ui_model_write', 'ui_data_write', 'ui_logic_write', 'ui_app_create', 'ui_screen_create', 'ui_nodes_write', 'ui_validate']) {
+        for (const topic of ['parts', 'paths', 'modules', 'revisions', 'live-view', 'logic']) expect(instructions, topic).toContain(`read ui_guide topic ${topic}.`);
+        for (const name of ['ui_guide', 'ui_theme_create', 'ui_model_write', 'ui_data_write', 'ui_logic_write', 'ui_app_create', 'ui_screen_create', 'ui_nodes_write', 'ui_validate']) {
             expect(instructions, name).toContain(name);
         }
+    });
+
+    it('should be at most half as long as before the short instructions (K1.2 of the guide-tool epic)', async () => {
+        // Act
+        const instructions = harness.client.getInstructions() ?? '';
+
+        // Assert: the served text with the library catalog and presets; it fails once the instructions grow past half
+        expect(harness.services.presets.length).toBeGreaterThan(0);
+        expect(instructions.length).toBeLessThanOrEqual(Math.floor(INSTRUCTIONS_BEFORE_K1_2 / 2));
+    });
+
+    it('should be what ui_guide answers for the topic start', async () => {
+        // Act
+        const instructions = harness.client.getInstructions() ?? '';
+        const start = await call(harness.client, GUIDE_TOOL, { topic: 'start' });
+
+        // Assert
+        expect(start.isError).toBe(false);
+        expect(start.body['text']).toBe(instructions);
     });
 
     it('should name no removed tool and only registered tools, and list every category of the catalog', async () => {
@@ -161,7 +188,7 @@ describe('the server instructions', () => {
 });
 
 describe('ui_guide on the server', () => {
-    it('should list the topic names in its description and answer every topic under the cap with the library catalog', async () => {
+    it('should list the topic names in its description and answer every topic under the cap with the library catalog, start excepted', async () => {
         // Arrange
         const { tools } = await harness.client.listTools();
         const description = tools.find((tool) => tool.name === GUIDE_TOOL)?.description ?? '';
@@ -177,7 +204,9 @@ describe('ui_guide on the server', () => {
             expect(description, name).toContain(name);
             const result = await call(harness.client, GUIDE_TOOL, { topic: name });
             expect(result.isError, name).toBe(false);
-            expect((result.body['text'] as string).length, name).toBeLessThan(2000);
+            // start is the fallback copy of the whole server instructions, not a topic of its own: its rules are
+            // written once, in the topics start, sections and keys, each under the cap (guide.test.ts)
+            if (name !== 'start') expect((result.body['text'] as string).length, name).toBeLessThan(2000);
         }
     });
 

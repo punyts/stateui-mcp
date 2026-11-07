@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
-import { buildServerInstructions, graphicsSection, paintFieldSection, scene3dSection, searchWorkflowSection, START_HERE } from './instructions.js';
+import { GUIDE_TOPICS, guideTopic } from './guide.js';
+import { buildServerInstructions, GUIDE_INTRO, graphicsSection, paintFieldSection, pointerLine, scene3dSection, searchWorkflowSection, START_HERE } from './instructions.js';
 
 /** The tool names of each step, in the order the steps list them */
 const STEP_TOOLS = [
@@ -155,8 +156,13 @@ describe('graphicsSection', () => {
         expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
     });
 
-    it('should be a section of the server instructions', () => {
-        expect(buildServerInstructions(INDEX, PRESETS)).toContain(graphicsSection());
+    it('should be a pointer line of the server instructions, not its text (K1.2 of the guide-tool epic)', () => {
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS);
+
+        // Assert
+        expect(text).not.toContain(graphicsSection());
+        expect(text).toContain('Before a drawing and its shapes, read ui_guide topic drawing.');
     });
 });
 
@@ -175,13 +181,13 @@ describe('paintFieldSection', () => {
         expect(toolNames(text)).toEqual([]);
     });
 
-    it('should be a section of the server instructions, after the drawing section', () => {
+    it('should be a pointer line of the server instructions, after the drawing one', () => {
         // Act
         const text = buildServerInstructions(INDEX, PRESETS);
 
         // Assert
-        expect(text).toContain(paintFieldSection());
-        expect(text.indexOf(paintFieldSection())).toBeGreaterThan(text.indexOf(graphicsSection()));
+        expect(text).not.toContain(paintFieldSection());
+        expect(text.indexOf('read ui_guide topic paint-field.')).toBeGreaterThan(text.indexOf('read ui_guide topic drawing.'));
     });
 });
 
@@ -308,13 +314,15 @@ describe('scene3dSection', () => {
         expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
     });
 
-    it('should be a section of the server instructions, after the painting section', () => {
+    it('should be three pointer lines of the server instructions, after the painting one', () => {
         // Act
         const text = buildServerInstructions(INDEX, PRESETS);
 
         // Assert
-        expect(text).toContain(scene3dSection());
-        expect(text.indexOf(scene3dSection())).toBeGreaterThan(text.indexOf(paintFieldSection()));
+        expect(text).not.toContain(scene3dSection().split('\n')[0]);
+        const at = ['paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior'].map((name) => text.indexOf(`read ui_guide topic ${name}.`));
+        expect(at.every((position) => position >= 0)).toBe(true);
+        expect(at).toEqual([...at].sort((left, right) => left - right));
     });
 });
 
@@ -336,5 +344,59 @@ ${START_HERE}`;
         // Assert
         expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
         for (const removed of ['ui_app_write', 'ui_components_list', 'ui_outline']) expect(text).not.toContain(removed);
+    });
+
+    it('should introduce ui_guide in the second paragraph, right after the opening line (K1.2 of the guide-tool epic)', () => {
+        // Act
+        const [opening, second] = buildServerInstructions(INDEX, PRESETS).split('\n\n');
+
+        // Assert
+        expect(opening).toMatch(/^StateUI app builder\./);
+        expect(second).toBe(GUIDE_INTRO);
+        expect(second).toMatch(/^ui_guide is the guide/);
+        expect(second).toContain('its description lists the topics');
+        expect(second).toContain('Read a topic before the step it names');
+    });
+
+    it('should give the build steps, the index, the presets and the rules that cost a failed call in full', () => {
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS);
+
+        // Assert
+        expect(text).toContain(searchWorkflowSection(INDEX, PRESETS));
+        expect(text).toContain('Icon names come from ui_icons_list. Never guess an icon name.');
+        expect(text).toContain('Token names for "theme" overrides');
+        expect(text).toContain('must not be integer-like: use "o42", not "42"');
+        expect(text).toContain('A set through a missing parent fails.');
+    });
+
+    it('should give every other topic one pointer line, in table order, as one block at the end', () => {
+        // Arrange
+        const pointed = GUIDE_TOPICS.filter((topic) => !topic.alwaysOn);
+
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS);
+
+        // Assert
+        expect(pointed.map((topic) => topic.name)).toEqual(['parts', 'paths', 'revisions', 'modules', 'logic', 'live-view', 'files', 'drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'safety']);
+        expect(text.endsWith(`\n\n${pointed.map(pointerLine).join('\n')}`)).toBe(true);
+        expect(pointerLine(guideTopic('logic')!)).toBe('Before a machine, rule or table, read ui_guide topic logic.');
+        for (const topic of pointed) expect(text).not.toContain(topic.text({ index: INDEX, presets: PRESETS }));
+    });
+
+    it('should leave out the pointer block when every topic is always on', () => {
+        // Act
+        const text = buildServerInstructions(INDEX, PRESETS, GUIDE_TOPICS.map((topic) => ({ ...topic, alwaysOn: true })));
+
+        // Assert
+        expect(text).not.toContain('read ui_guide topic');
+        for (const topic of GUIDE_TOPICS) expect(text).toContain(topic.text({ index: INDEX, presets: PRESETS }));
+    });
+});
+
+describe('START_HERE', () => {
+    it('should name ui_guide once', () => {
+        expect(START_HERE.match(/\bui_guide\b/g)).toHaveLength(1);
+        expect(START_HERE).toContain('ui_guide topic start');
     });
 });

@@ -6,7 +6,7 @@ import type { JsonObject } from '../../domain/JsonValue.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { PART_KIND_WORDS } from '../../domain/partReferences.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import { WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 /** What the descriptions of the app and screen tools teach about `uses` */
@@ -160,7 +160,7 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
         ...(args.logic !== undefined && { logic: args.logic })
     });
     if (result.kind === 'created') {
-        return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', slots: result.slots, warnings: result.warnings });
+        return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', slots: result.slots, warnings: withGuides(result.warnings) });
     }
     return sharedOutcome(result, 'shell', 'created');
 }
@@ -188,7 +188,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
                 });
                 switch (result.kind) {
                     case 'configured':
-                        return succeed({ name, revision: result.revision, warnings: result.warnings });
+                        return succeed({ name, revision: result.revision, warnings: withGuides(result.warnings) });
                     case 'nothing-to-change':
                         return fail('invalid-argument', 'Give title, uses or start', { argument: 'title' });
                     case 'not-found':
@@ -227,7 +227,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
                     ...(title !== undefined && { title }),
                     ...(params !== undefined && { params })
                 });
-                if (result.kind === 'created') return succeed({ app, name, revision: result.revision, slots: result.slots, warnings: result.warnings });
+                if (result.kind === 'created') return succeed({ app, name, revision: result.revision, slots: result.slots, warnings: withGuides(result.warnings) });
                 return sharedOutcome(result, pattern !== undefined ? 'pattern' : 'root', 'created');
             }
         }

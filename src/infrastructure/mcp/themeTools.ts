@@ -1,7 +1,7 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { ThemeOperation, ThemeReport } from '../../application/use-cases/WriteTheme.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { CREATES, WRITES, defineInput, fail, succeed } from './toolKit.js';
+import { CREATES, WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 import type { ThemePresetSummary } from '../../application/ports/PatternCatalog.js';
 
@@ -80,7 +80,7 @@ function reportBody(name: string, report: ThemeReport): Record<string, unknown> 
     return {
         theme: name,
         revision: report.revision,
-        warnings: report.warnings,
+        warnings: withGuides(report.warnings),
         ...(report.moreApps > 0 && { moreApps: report.moreApps }),
         contrast: report.contrast,
         reaches: report.reaches

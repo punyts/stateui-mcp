@@ -1,7 +1,14 @@
 import { GUIDE_TOPIC_NAMES, GUIDE_TOPICS } from './guide.js';
 import type { GuideContext } from './guide.js';
+import { buildServerInstructions } from './instructions.js';
 import { READ_ONLY, defineInput, fail, succeed } from './toolKit.js';
 import type { UiToolDefinition } from './toolKit.js';
+
+/**
+ * The topic that answers the whole server instructions. It is the one answer longer than a topic's cap: it is the
+ * instructions, not a topic of its own, and every rule in it is written once, in its topic of the table
+ */
+export const GUIDE_FALLBACK_TOPIC = 'start';
 
 const GUIDE = defineInput({
     topic: { type: 'string', description: 'The topic to read, such as "logic"; leave it out for the index of topics with when to read each' }
@@ -10,10 +17,11 @@ const GUIDE = defineInput({
 /**
  * The guide tool: one topic of how-to guidance by name, or the index of topics. It reads nothing from storage and
  * changes nothing; the texts are made once from the catalog the server was built with, so a topic always gives the
- * same text for one server build
+ * same text for one server build. The topic start answers the whole server instructions (the always-on topics and
+ * the pointer lines), the fallback for a client that does not show them; its own table text is their build steps 1 to 5
  */
 export function createGuideTools(context: GuideContext): readonly UiToolDefinition[] {
-    const texts = new Map(GUIDE_TOPICS.map((topic) => [topic.name, topic.text(context)]));
+    const texts = new Map(GUIDE_TOPICS.map((topic) => [topic.name, topic.name === GUIDE_FALLBACK_TOPIC ? buildServerInstructions(context.index, context.presets) : topic.text(context)]));
     const index = GUIDE_TOPICS.map((topic) => ({ name: topic.name, when: topic.when }));
     return [
         {

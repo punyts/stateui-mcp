@@ -1,7 +1,8 @@
 /**
  * What the model is told about this server. The MCP server is the only place it sees this guidance, so the working
- * loop and the rules that cost a failed call live here (in the server `instructions`, built from the guide's topics in
- * `guide.ts`) and, for the two tools a build starts with, in their descriptions
+ * loop and the rules that cost a failed call live here (in the server `instructions`, built from the guide's always-on
+ * topics in `guide.ts`) and, for the tools a build starts with, in their descriptions. Every other topic gets one
+ * pointer line, and the agent reads it with ui_guide before the step it names
  */
 
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
@@ -11,12 +12,14 @@ import type { GuideContext, GuideTopic } from './guide.js';
 /** The opening line of the instructions, before the topics */
 const OPENING = 'StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.';
 
+/** The second paragraph of the instructions: what ui_guide is and when to read a topic (K1.2 of the guide-tool epic) */
+export const GUIDE_INTRO = 'ui_guide is the guide to these tools: it answers one topic of how-to guidance by name, and its description lists the topics. This text holds the build steps and the rules that cost a failed call; the rest is in topics. Read a topic before the step it names: the lines at the end say which, and the topic start repeats this text for a client that does not show it.';
+
 /**
- * Topics that continue the section of the topic before them, so the instructions join the two with one line break
- * instead of a blank line. A section longer than one topic was split at a line, not a paragraph: the build steps after
- * step 5 and the 3D lines after the camera and after repeat3d
+ * Always-on topics that continue the section of the topic before them, so the instructions join the two with one line
+ * break instead of a blank line: the build steps were split after step 5
  */
-const CONTINUES = new Set(['sections', 'scene3d-models', 'scene3d-behavior']);
+const CONTINUES = new Set(['sections']);
 
 function contextOf(index: readonly CategoryIndexEntry[], presets: readonly string[]): GuideContext {
     return { index, presets };
@@ -52,21 +55,24 @@ export function scene3dSection(): string {
     return ['scene3d', 'scene3d-models', 'scene3d-behavior'].map((name) => guideText(name, NO_CATALOG)).join('\n');
 }
 
-/** What the instructions say for one topic: its text when it is always on, else one line pointing to it */
-function topicSection(topic: GuideTopic, context: GuideContext): string {
-    return topic.alwaysOn ? topic.text(context) : `Before ${topic.when}, read ui_guide topic ${topic.name}.`;
+/** The line the instructions give a topic that is not always on */
+export function pointerLine(topic: Pick<GuideTopic, 'name' | 'when'>): string {
+    return `Before ${topic.when}, read ui_guide topic ${topic.name}.`;
 }
 
 /**
  * The `instructions` field of the server, shown by the client to the model, built from the guide's topics with the
- * catalog's category index and presets: the opening line, then each topic in table order
+ * catalog's category index and presets: the opening line, the paragraph on ui_guide, the always-on topics in full in
+ * table order, then one pointer line for each other topic, in table order, as one block at the end. The guide topic
+ * start answers the same text
  */
 export function buildServerInstructions(index: readonly CategoryIndexEntry[], presets: readonly string[] = [], topics: readonly GuideTopic[] = GUIDE_TOPICS): string {
     const context = contextOf(index, presets);
-    let text = OPENING;
-    for (const topic of topics) text += `${CONTINUES.has(topic.name) ? '\n' : '\n\n'}${topicSection(topic, context)}`;
-    return text;
+    let text = `${OPENING}\n\n${GUIDE_INTRO}`;
+    for (const topic of topics.filter((entry) => entry.alwaysOn)) text += `${CONTINUES.has(topic.name) ? '\n' : '\n\n'}${topic.text(context)}`;
+    const pointers = topics.filter((entry) => !entry.alwaysOn).map(pointerLine);
+    return pointers.length > 0 ? `${text}\n\n${pointers.join('\n')}` : text;
 }
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
-export const START_HERE = 'Start of the working loop: ui_list, ui_theme_create, ui_model_write, ui_patterns_search, ui_app_create, ui_screen_create, ui_components_search, ui_nodes_write, ui_validate, ui_preview (see the build steps in the server instructions). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (add the parent first or use merge).';
+export const START_HERE = 'Start of the working loop: ui_list, ui_theme_create, ui_model_write, ui_patterns_search, ui_app_create, ui_screen_create, ui_components_search, ui_nodes_write, ui_validate, ui_preview (see the build steps in the server instructions, or ui_guide topic start when they are not shown). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (add the parent first or use merge).';

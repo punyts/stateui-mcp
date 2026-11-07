@@ -3,7 +3,7 @@ import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalo
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
 import { GUIDE_TOPIC_NAMES, GUIDE_TOPICS, MAX_TOPIC_CHARS, guideText, guideTopic } from './guide.js';
 import type { GuideContext, GuideTopic } from './guide.js';
-import { createGuideTools } from './guideTools.js';
+import { createGuideTools, GUIDE_FALLBACK_TOPIC } from './guideTools.js';
 import { buildServerInstructions, graphicsSection, paintFieldSection, scene3dSection } from './instructions.js';
 
 /** A catalog the size of the library's: ten categories with long member names, and the four presets */
@@ -82,27 +82,43 @@ describe('the guide topics', () => {
 });
 
 describe('buildServerInstructions from the topics', () => {
+    it('should keep only the build steps and the rules that cost a failed call always on (K1.2 of the guide-tool epic)', () => {
+        expect(GUIDE_TOPICS.filter((topic) => topic.alwaysOn).map((topic) => topic.name)).toEqual(['start', 'sections', 'keys']);
+    });
+
     it('should give every always-on topic in full, in table order', () => {
         // Act
         const text = buildServerInstructions(CATALOG.index, CATALOG.presets);
 
         // Assert
-        const at = GUIDE_TOPICS.map((topic) => text.indexOf(topic.text(CATALOG)));
-        expect(GUIDE_TOPICS.every((topic) => topic.alwaysOn)).toBe(true);
+        const at = GUIDE_TOPICS.filter((topic) => topic.alwaysOn).map((topic) => text.indexOf(topic.text(CATALOG)));
         expect(at.every((position) => position >= 0)).toBe(true);
         expect(at).toEqual([...at].sort((left, right) => left - right));
     });
 
-    it('should give a topic that is not always on as one pointer line', () => {
+    it('should give a topic that is not always on as one pointer line, and no line for an always-on one', () => {
         // Arrange
-        const topics: readonly GuideTopic[] = GUIDE_TOPICS.map((topic) => (topic.name === 'logic' ? { ...topic, alwaysOn: false } : topic));
+        const topics: readonly GuideTopic[] = GUIDE_TOPICS.map((topic) => ({ ...topic, alwaysOn: topic.name !== 'logic' }));
 
         // Act
         const text = buildServerInstructions(CATALOG.index, CATALOG.presets, topics);
 
         // Assert
         expect(text).not.toContain(guideText('logic', CATALOG));
-        expect(text).toContain('\n\nBefore a machine, rule or table, read ui_guide topic logic.\n\n');
+        expect(text.endsWith('\n\nBefore a machine, rule or table, read ui_guide topic logic.')).toBe(true);
+        expect(text.match(/read ui_guide topic/g)).toHaveLength(1);
+    });
+
+    it('should hold every rule once: each topic is in full or one pointer line, never both', () => {
+        // Act
+        const text = buildServerInstructions(CATALOG.index, CATALOG.presets);
+
+        // Assert
+        for (const topic of GUIDE_TOPICS) {
+            const full = text.split(topic.text(CATALOG)).length - 1;
+            const pointed = text.split(`read ui_guide topic ${topic.name}.`).length - 1;
+            expect([full, pointed], topic.name).toEqual(topic.alwaysOn ? [1, 0] : [0, 1]);
+        }
     });
 });
 
@@ -127,13 +143,24 @@ describe('ui_guide', () => {
         expect(outcome.body).toEqual({ topics: GUIDE_TOPICS.map((topic) => ({ name: topic.name, when: topic.when })) });
     });
 
-    it.each(GUIDE_TOPIC_NAMES.map((name) => [name]))('should answer the %s topic with its text for the catalog of the build', async (name) => {
+    it.each(GUIDE_TOPIC_NAMES.filter((name) => name !== GUIDE_FALLBACK_TOPIC).map((name) => [name]))('should answer the %s topic with its text for the catalog of the build', async (name) => {
         // Act
         const outcome = await guideTool().run({ topic: name });
 
         // Assert
         expect(outcome.isError).toBe(false);
         expect(outcome.body).toEqual({ topic: name, text: guideText(name, CATALOG) });
+    });
+
+    it('should answer the start topic with the whole server instructions, for a client that does not show them', async () => {
+        // Act
+        const outcome = await guideTool().run({ topic: 'start' });
+
+        // Assert
+        expect(GUIDE_FALLBACK_TOPIC).toBe('start');
+        expect(outcome.isError).toBe(false);
+        expect(outcome.body).toEqual({ topic: 'start', text: buildServerInstructions(CATALOG.index, CATALOG.presets) });
+        expect((outcome.body as { text: string }).text).toContain(guideText('start', CATALOG));
     });
 
     it('should fail an unknown topic with unknown-topic and the topic names', async () => {
