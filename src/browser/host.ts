@@ -55,6 +55,8 @@ interface ViewState {
     app: JsonRecord;
     screens: JsonRecord;
     route?: Json;
+    /** An instance's `{ active }`: the persona's choice of theme and overlays (`$.theme.active`) */
+    theme?: Json;
 }
 
 type ChangeOp = 'set' | 'replace' | 'merge' | 'delete';
@@ -145,13 +147,21 @@ function articulation(value: Json): Json | undefined {
 /**
  * The part of a runtime change that is synced, or undefined: `$.data`, and below `$.app` the articulation (no `_`
  * content, no `component`, `on`, `layout`, `placement` or `theme` of a node). An instance also syncs the articulation
- * below `$.screens.{name}` and `$.route`. `$.theme` and `$.locale` stay in the view
+ * below `$.screens.{name}`, `$.route` and `$.theme.active` (the persona's choice of theme and overlays, never the
+ * tokens). `$.locale` stays in the view
  */
 function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined, instance: boolean): { path: string; op: ChangeOp; value?: Json } | undefined {
     const segments = path.split('.');
     const branch = segments[1];
-    const branches = instance ? ['data', 'app', 'screens', 'route'] : ['data', 'app'];
+    const branches = instance ? ['data', 'app', 'screens', 'route', 'theme'] : ['data', 'app'];
     if (segments[0] !== '$' || branch === undefined || !branches.includes(branch) || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
+    if (branch === 'theme') {
+        // Only the active names, one string per kind (and theme), as the instance keeps them
+        if (segments[2] !== 'active' || segments.length > 4) return undefined;
+        if (op === 'delete') return { path, op };
+        if (segments.length === 4 ? typeof value !== 'string' : !isRecord(value) || !Object.values(value).every((name) => typeof name === 'string')) return undefined;
+        return { path, op, value: value as Json };
+    }
     let kept = value;
     if (branch === 'app' || branch === 'screens') {
         const below = segments.slice(branch === 'app' ? 2 : 3);
@@ -182,6 +192,10 @@ function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | und
         if (op === 'delete') return;
         state.route = {};
     }
+    if (branch === 'theme' && !isRecord(state.theme)) {
+        if (op === 'delete') return;
+        state.theme = {};
+    }
     let container: Record<string, unknown> = state[branch] as Record<string, unknown>;
     for (const segment of rest.slice(0, -1)) {
         let child = container[segment];
@@ -203,13 +217,28 @@ function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | und
     }
 }
 
+/**
+ * The writes that show another view's choice of theme: `$.theme.active.theme` first, since switching the theme looks the
+ * overlay names up again in the new theme, then each overlay kind that changed. A name removed is left as the view has it
+ */
+function themeWrites(before: Json | undefined, after: Json | undefined, writes: PathWrite[]): void {
+    const was = isRecord(before) && isRecord(before['active']) ? before['active'] : {};
+    const now = isRecord(after) && isRecord(after['active']) ? after['active'] : {};
+    const kinds = Object.keys(now).sort((left, right) => (left === 'theme' ? -1 : right === 'theme' ? 1 : 0));
+    for (const kind of kinds) {
+        const name = now[kind];
+        if (typeof name === 'string' && SEGMENT.test(kind) && name !== was[kind]) writes.push({ path: `$.theme.active.${kind}`, value: name });
+    }
+}
+
 function viewState(state: SyncState): ViewState {
     const route = state['route'];
     return {
         data: isRecord(state['data']) ? copy(state['data']) : {},
         app: isRecord(state['app']) ? copy(state['app']) : {},
         screens: isRecord(state['screens']) ? copy(state['screens']) : {},
-        ...(route !== undefined && { route: copy(route) })
+        ...(route !== undefined && { route: copy(route) }),
+        ...(isRecord(state['theme']) && { theme: copy(state['theme']) })
     };
 }
 
@@ -276,6 +305,11 @@ class LiveView {
     /** Counts the loads and in-place renders, so the server can drop the errors an earlier one reported */
     private load = 0;
     private mode: string | undefined;
+    /**
+     * The overlay this view applied for the server (a screenshot's mode, `?mode=`), by kind: the change it causes stays
+     * in this view and is not synced as the persona's choice. Any other change of that kind clears it
+     */
+    private readonly viewThemes = new Map<string, string>();
     private locale: string | undefined;
     private readonly queuedCommands: Extract<ServerMessage, { type: 'command' }>[] = [];
     private readonly uploads = new Map<number, XMLHttpRequest>();
@@ -431,7 +465,7 @@ class LiveView {
                 break;
             case 'theme':
                 if (message.kind === 'mode') this.mode = message.name;
-                if (this.ready) this.post({ type: 'theme', kind: message.kind, name: message.name });
+                if (this.ready) this.postViewTheme(message.kind, message.name);
                 break;
             case 'deleted':
                 this.client?.stop();
@@ -502,6 +536,7 @@ class LiveView {
             return;
         }
         const moved = this.instance && !deepEqual(this.shown.route, next.route) && isRecord(next.route) && typeof next.route['screen'] === 'string';
+        if (this.instance) themeWrites(this.shown.theme, next.theme, writes);
         this.shown = copy(next);
         if (writes.length > 0) this.post({ type: 'write', writes });
         // The runtime protects $.route: a route another view moved is followed with navigate
@@ -552,7 +587,13 @@ class LiveView {
 
     /** The synced state as the runtime's `instance`: the shell, the screens, the data and the route */
     private instanceOf(state: ViewState): JsonRecord {
-        return { app: state.app, screens: state.screens, data: state.data, ...(isRecord(state.route) && { route: state.route }) };
+        return {
+            app: state.app,
+            screens: state.screens,
+            data: state.data,
+            ...(isRecord(state.route) && { route: state.route }),
+            ...(isRecord(state.theme) && { theme: state.theme })
+        };
     }
 
     private markRendered(revision: number): void {
@@ -615,7 +656,7 @@ class LiveView {
         this.body.dataset['revision'] = String(this.revision);
         this.setStatus('ready');
         // A load mounts the app again from the document, so the language and the theme are sent again after it
-        if (this.mode !== undefined) this.post({ type: 'theme', kind: 'mode', name: this.mode });
+        if (this.mode !== undefined) this.postViewTheme('mode', this.mode);
         if (this.locale !== undefined) this.post({ type: 'locale', locale: this.locale });
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
@@ -633,12 +674,29 @@ class LiveView {
         if (op !== 'set' && op !== 'replace' && op !== 'merge' && op !== 'delete') return;
         const value = change['value'];
         if (value !== undefined && !isJson(value)) return;
+        if (this.isViewTheme(change['path'], value)) return;
         const synced = toSyncedChange(change['path'], op, value, this.instance);
         if (synced === undefined) return;
         applyTo(this.shown, synced.path, synced.op, synced.value);
         if (this.synced !== undefined) applyTo(this.synced, synced.path, synced.op, synced.value);
         const local: LocalChange = { id: crypto.randomUUID(), ...synced };
         for (const listener of [...this.listeners]) listener([local]);
+    }
+
+    /** Applies an overlay in this view only: the change it causes is not synced */
+    private postViewTheme(kind: string, name: string): void {
+        this.viewThemes.set(kind, name);
+        this.post({ type: 'theme', kind, name });
+    }
+
+    /** True for the change a view-only overlay caused (and forgets it); any other change of that kind clears it */
+    private isViewTheme(path: string, value: unknown): boolean {
+        const match = /^\$\.theme\.active\.([^.]+)$/.exec(path);
+        const kind = match?.[1];
+        if (kind === undefined || !this.viewThemes.has(kind)) return false;
+        const expected = this.viewThemes.get(kind);
+        this.viewThemes.delete(kind);
+        return value === expected;
     }
 
     private onFile(message: RuntimeMessage): void {

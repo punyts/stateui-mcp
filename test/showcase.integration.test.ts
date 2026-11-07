@@ -45,6 +45,34 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
         expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
     });
 
+    it('should keep the theme and mode the user picks in the instance, across a reload, and not a screenshot mode', async () => {
+        // Arrange
+        const at = '$.app.header.children.actions.children';
+        const active = async (): Promise<unknown> => {
+            const state = await call(harness.client, 'ui_state_get', { app: SHOWCASE_APP });
+            return (state.body['state'] as { theme?: { active?: unknown } }).theme?.active;
+        };
+
+        // Act
+        const picked = await call(harness.client, 'ui_interact', {
+            app: SHOWCASE_APP,
+            actions: [
+                { action: 'choose', path: `${at}.theme`, value: 'Moody' },
+                { action: 'choose', path: `${at}.mode`, value: 'dark' }
+            ]
+        });
+        await expect.poll(active).toEqual({ theme: 'showcase-moody', mode: 'dark' });
+        await call(harness.client, 'ui_screenshot', { app: SHOWCASE_APP, mode: 'light' });
+        const afterCapture = await active();
+        await call(harness.client, 'ui_preview', { app: SHOWCASE_APP });
+        const afterReload = await active();
+
+        // Assert
+        expect(picked.isError, JSON.stringify(picked.body)).toBe(false);
+        expect(afterCapture).toEqual({ theme: 'showcase-moody', mode: 'dark' });
+        expect(afterReload).toEqual({ theme: 'showcase-moody', mode: 'dark' });
+    });
+
     it('should report no runtime error for the whole visit', async () => {
         // Act
         const state = await call(harness.client, 'ui_state_get', { app: SHOWCASE_APP, path: '$.route' });
