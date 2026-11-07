@@ -186,14 +186,13 @@ describe('paintFieldSection', () => {
 });
 
 describe('scene3dSection', () => {
-    it('should name scene3d and only the 3D nodes that draw (release 3A, repeat3d of G3.6, press and hover of G3.8)', () => {
+    it('should name scene3d and only the 3D nodes that draw (release 3A, repeat3d of G3.6, press and hover of G3.8, label3d of G3.6b)', () => {
         // Act
         const text = scene3dSection();
 
         // Assert
         expect(text).toContain('scene3d node (category graphics)');
-        for (const node of ['camera', 'light', 'mesh', 'model', 'group3d', 'repeat3d']) expect(text).toContain(node);
-        for (const unbuilt of ['label3d', 'animate']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
+        for (const node of ['camera', 'light', 'mesh', 'model', 'label3d', 'group3d', 'repeat3d']) expect(text).toContain(node);
     });
 
     it('should say an interactive 3D node raises press and hover and the agent tools act on its path (G3.8)', () => {
@@ -251,6 +250,26 @@ describe('scene3dSection', () => {
         expect(text).toContain('A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity');
         expect(text).toContain('a light\'s intensity and a camera\'s position and target when state changes them');
         expect(text).toContain('with reduced motion it jumps');
+    });
+
+    it('should say label3d draws plain text in the page font facing the camera, its fontSize and default colour (G3.6b)', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('label3d draws its _text (plain text, linkable) in the page font, always facing the camera');
+        expect(text).toContain('fontSize is in scene units (0.3 by default) and color defaults to the theme text colour');
+        expect(text).toContain('An empty _text draws nothing');
+    });
+
+    it('should say animate and model clips play without writing state, the unknown clip error and reduced motion (G3.9b)', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('animate ({ name: spin, bob or pulse, duration, loop, delay }) plays on a node');
+        expect(text).toContain('a model plays its GLB clip named by animation while playing is true');
+        expect(text).toContain('neither writes state, an unknown clip is SUI-RUN-3D naming the file\'s clips, and with reduced motion neither plays');
     });
 
     it('should say repeat3d draws one instanced mesh from records, what varies per record and its cap (G3.6)', () => {

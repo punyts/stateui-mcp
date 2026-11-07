@@ -92,23 +92,24 @@ export function paintFieldSection(): string {
 
 /**
  * 3D scenes (G3.11 of the graphics epic 3, first pass for release 3A), in about ten lines. Names only the nodes whose
- * renderer exists; the second pass (release 3B) adds label3d and animate. `transition` (G3.9) is named since the
- * renderer eases it, `repeat3d` (G3.6) since it draws as one instanced mesh, and press and hover (G3.8) since the
- * scene raises them and gives each interactive node a proxy button the agent tools act on
+ * renderer exists; the second pass (release 3B) adds label3d. `transition` (G3.9) is named since the renderer eases
+ * it, `animate` and model clips (G3.9b) in its line since they play there too, `repeat3d` (G3.6) since it draws as
+ * one instanced mesh, and press and hover (G3.8) since the scene raises them and gives each interactive node a proxy
+ * button the agent tools act on
  */
 export function scene3dSection(): string {
     return [
-        '3D: a scene3d node (category graphics) draws a WebGL scene of camera, light, mesh, model, group3d and repeat3d nodes in its children (group3d holds nodes in its own children). A 3D node is accepted only inside a scene3d or a group3d; ui_component_get gives the properties of each.',
+        '3D: a scene3d node (category graphics) draws a WebGL scene of camera, light, mesh, model, label3d, group3d and repeat3d nodes in its children (group3d holds nodes in its own children). A 3D node is accepted only inside a scene3d or a group3d; ui_component_get gives the properties of each.',
         [
             '- Give every scene3d a _title (the scene\'s accessible name) and a _fallback (the text shown where the scene cannot draw: no WebGL, or the renderer did not load).',
             '- position, target, rotation (degrees) and scale are [x, y, z]. A mesh has a geometry ({ kind: box, sphere, cylinder, cone, plane, torus or capsule, and its sizes }) and a material ({ color, metalness, roughness, opacity, emissive, map }); colours are literals or theme tokens. With no camera node the scene frames what it draws; environment (studio by default, daylight, neutral, none) adds preset lights and a background to the light nodes.',
             '- model.src is the file reference { id, name, size, type } of a GLB (model/gltf-binary, binary glTF 2.0, at most 10 MiB) a person uploaded to the app\'s files, as listed by ui_state_get. Its embedded textures draw; a .gltf, a Draco, Meshopt or KTX2 compressed model or one with external files is refused (SUI-RUN-3D), and a file that cannot be read is SUI-RUN-FILE. material.map is the file reference of an uploaded png, jpeg, gif or webp image, wrapped around the mesh and tinted by its color; another type is SUI-STATE-INVALID, and a file that cannot be read is SUI-RUN-FILE with the colour drawn.',
             '- controls: "orbit" (turn and zoom) or "pan" lets a person move the camera with a pointer or the arrow keys; the scene writes the active camera node\'s position and target once, when the gesture is released (through their links when they have them), so a reload keeps the view. Give the scene a camera node: the default camera moves but keeps nothing.',
-            '- A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity, a light\'s intensity and a camera\'s position and target when state changes them; with reduced motion it jumps, and ui_screenshot waits until it arrives.',
+            '- A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity, a light\'s intensity and a camera\'s position and target when state changes them; with reduced motion it jumps, and ui_screenshot waits until it arrives. animate ({ name: spin, bob or pulse, duration, loop, delay }) plays on a node, and a model plays its GLB clip named by animation while playing is true; neither writes state, an unknown clip is SUI-RUN-3D naming the file\'s clips, and with reduced motion neither plays.',
             '- repeat3d draws its row (one mesh) once per record of records (a list or a keyed map) as one instanced mesh, linked like a list row ("<-position": "$row.at", "<-material": "$row.paint"). Each record has its own position, rotation, scale, visible and material.color; geometry and the rest of material are shared, so records that differ there are SUI-RUN-DRAW. At most 20,000 records (more are cut, SUI-RUN-CAP); keep them small, as an app\'s data is at most 512 KiB.',
             '- interactive: true on a 3D node (with a _label) makes it pressable: its "on" entries run on press (a click, not a drag that turns the camera) and hover (once each time the pointer enters), and on a repeat3d copy with $row at its record. ui_tree with rendered: true lists those nodes (...rows.<recordKey> for a copy) and ui_interact clicks, hovers, focuses and presses keys on their paths; drag turns the camera of a scene with controls.',
-            '- Chromium keeps at most 16 WebGL contexts a page: ui_validate warns past 16 scenes on one page, and the oldest show _fallback.',
-            '- Check a scene with ui_screenshot of its path: it waits until the scene and its models are drawn.'
+            '- label3d draws its _text (plain text, linkable) in the page font, always facing the camera, at its position; fontSize is in scene units (0.3 by default) and color defaults to the theme text colour. An empty _text draws nothing.',
+            '- Chromium keeps at most 16 WebGL contexts a page: ui_validate warns past 16 scenes on one page, and the oldest show _fallback. Check a scene with ui_screenshot of its path: it waits until the scene and its models are drawn.'
         ].join('\n')
     ].join('\n');
 }

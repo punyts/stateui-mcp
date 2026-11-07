@@ -293,10 +293,11 @@ describe('StateUiComponentCatalog categoryIndex', () => {
         expect(index.every((entry) => entry.typical.length === Math.min(3, entry.count))).toBe(true);
     });
 
-    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3), and scene3d and its six 3D nodes (G3.4, repeat3d G3.6)', () => {
+    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3), and scene3d and its seven 3D nodes (G3.4, repeat3d G3.6, label3d G3.6b)', () => {
         const graphics = catalog.categoryIndex().find((entry) => entry.category === 'graphics');
 
-        expect(graphics?.count).toBe(19);
+        expect(graphics?.count).toBe(20);
+        expect(catalog.search({ need: 'label a part of a 3D model', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toContain('label3d');
         expect(catalog.search({ need: 'draw one 3D mesh per record', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toContain('repeat3d');
         expect(catalog.search({ need: 'show a 3D product model', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['scene3d', 'model']));
         expect(catalog.search({ need: 'draw a seat map', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['drawing', 'drawRepeat']));
