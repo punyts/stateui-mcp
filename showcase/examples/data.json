@@ -1,0 +1,202 @@
+{
+    "title": "Data",
+    "icon": "table",
+    "description": "Tables, lists, charts, boards and calendars over the records of a dataset.",
+    "components": {
+        "table": {
+            "wide": true,
+            "example": {
+                "component": "table",
+                "striped": true,
+                "selectable": "single",
+                "sortBy": "name",
+                "<-items": "$.data.people",
+                "columns": {
+                    "name": { "_title": "Name", "field": "name", "sortable": true },
+                    "role": { "_title": "Role", "field": "role" },
+                    "team": { "_title": "Team", "field": "team", "sortable": true },
+                    "projects": { "_title": "Projects", "field": "projects", "align": "end", "format": "number", "sortable": true }
+                }
+            }
+        },
+        "chart": {
+            "wide": true,
+            "example": {
+                "component": "chart",
+                "type": "bar",
+                "_title": "Revenue and costs by month",
+                "x": "month",
+                "format": "currency",
+                "currency": "EUR",
+                "fractionDigits": 0,
+                "series": { "revenue": { "field": "revenue", "_label": "Revenue" }, "costs": { "field": "costs", "_label": "Costs" } },
+                "<-records": "$.data.sales"
+            }
+        },
+        "stat": {
+            "example": {
+                "component": "panel",
+                "padding": "none",
+                "layout": { "type": "grid", "cols": 2 },
+                "children": {
+                    "revenue": { "component": "stat", "_label": "Revenue", "format": "currency", "currency": "EUR", "fractionDigits": 0, "value": 31200, "delta": 3300, "trend": "up", "tone": "success" },
+                    "churn": { "component": "stat", "_label": "Churn", "format": "percent", "value": 0.042, "delta": 0.006, "trend": "up", "tone": "danger" }
+                }
+            }
+        },
+        "list": {
+            "example": {
+                "component": "list",
+                "divided": true,
+                "selectable": "single",
+                "rowHeight": "lg",
+                "<-items": "$.data.people",
+                "row": {
+                    "component": "toolbar",
+                    "children": {
+                        "avatar": { "component": "avatar", "size": "sm", "<-_name": "$row.name" },
+                        "name": { "component": "text", "<-_text": "$row.name" },
+                        "role": { "component": "text", "textRole": "caption", "<-_text": "$row.role" }
+                    }
+                }
+            }
+        },
+        "descriptionList": {
+            "example": {
+                "component": "descriptionList",
+                "<-record": "$.data.people.p1",
+                "items": {
+                    "name": { "_term": "Name", "field": "name" },
+                    "role": { "_term": "Role", "field": "role" },
+                    "email": { "_term": "Email", "field": "email" },
+                    "city": { "_term": "City", "field": "city" },
+                    "projects": { "_term": "Projects", "field": "projects", "format": "number" }
+                }
+            }
+        },
+        "board": {
+            "wide": true,
+            "example": {
+                "component": "board",
+                "columnField": "column",
+                "orderField": "order",
+                "labelField": "title",
+                "columns": { "todo": { "_title": "To do" }, "doing": { "_title": "In progress", "limit": 3 }, "done": { "_title": "Done" } },
+                "<-records": "$.data.tasks",
+                "card": {
+                    "component": "panel",
+                    "padding": "sm",
+                    "children": {
+                        "title": { "component": "text", "<-_text": "$row.title" },
+                        "assignee": { "component": "text", "textRole": "caption", "<-_text": "$row.assignee" }
+                    }
+                }
+            }
+        },
+        "calendar": {
+            "wide": true,
+            "example": {
+                "component": "calendar",
+                "view": "month",
+                "date": "2026-11-01",
+                "<-records": "$.data.events"
+            }
+        },
+        "tree": {
+            "example": {
+                "component": "tree",
+                "labelField": "label",
+                "expanded": ["src", "components"],
+                "selectable": "single",
+                "<-records": "$.data.folders",
+                "row": { "component": "text", "<-_text": "$row.label" }
+            }
+        },
+        "recordList": {
+            "example": {
+                "component": "recordList",
+                "rowHeight": "sm",
+                "<-records": "$.data.sales",
+                "row": {
+                    "component": "toolbar",
+                    "align": "between",
+                    "children": {
+                        "month": { "component": "text", "<-_text": "$row.month" },
+                        "revenue": { "component": "text", "textRole": "label", "<-_text": "$row.revenue" }
+                    }
+                }
+            }
+        },
+        "recordGrid": {
+            "example": {
+                "component": "recordGrid",
+                "<-records": "$.data.people",
+                "row": {
+                    "component": "card",
+                    "elevation": "flat",
+                    "padding": "sm",
+                    "<-_title": "$row.name",
+                    "<-_subtitle": "$row.city"
+                }
+            }
+        },
+        "tableRow": {
+            "wide": true,
+            "example": {
+                "component": "tableRow",
+                "cells": {
+                    "name": { "value": "Margaret Hamilton" },
+                    "role": { "value": "Software architect" },
+                    "projects": { "value": 11, "format": "number", "align": "end" }
+                }
+            }
+        },
+        "crudTable": {
+            "wide": true,
+            "example": {
+                "component": "crudTable",
+                "children": {
+                    "table": {
+                        "<-items": "$.data.people",
+                        "columns": {
+                            "role": { "_title": "Role", "field": "role" },
+                            "city": { "_title": "City", "field": "city", "sortable": true }
+                        }
+                    },
+                    "form": {
+                        "_title": "Edit person",
+                        "body": { "children": { "role": { "component": "textField", "_label": "Role" } } }
+                    },
+                    "confirm": { "_title": "Delete this person?" }
+                }
+            }
+        },
+        "masterDetail": {
+            "wide": true,
+            "example": {
+                "component": "masterDetail",
+                "children": {
+                    "list": { "<-items": "$.data.people" },
+                    "detail": {
+                        "children": {
+                            "view": {
+                                "items": {
+                                    "description": null,
+                                    "role": { "_term": "Role", "field": "role" },
+                                    "email": { "_term": "Email", "field": "email" },
+                                    "team": { "_term": "Team", "field": "team" }
+                                }
+                            },
+                            "form": {
+                                "children": {
+                                    "description": null,
+                                    "role": { "component": "textField", "_label": "Role", "<-value": "^masterDetail.children.list.current.role" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

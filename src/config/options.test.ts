@@ -16,6 +16,7 @@ describe('parseOptions', () => {
             secretKeyFile: undefined,
             secretKey: undefined,
             toolLog: undefined,
+            showcase: true,
             help: false
         });
     });
@@ -44,6 +45,14 @@ describe('parseOptions', () => {
         expect(parseOptions(['--runtime-port', '5001'], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(5001);
         expect(parseOptions([], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(4300);
         expect(() => parseOptions(['--runtime-port', 'x'], {})).toThrow('Invalid port');
+    });
+
+    it('should turn the component showcase off with the flag or the environment', () => {
+        expect(parseOptions(['--no-showcase'], {}).showcase).toBe(false);
+        expect(parseOptions([], { STATEUI_MCP_SHOWCASE: 'off' }).showcase).toBe(false);
+        expect(parseOptions([], { STATEUI_MCP_SHOWCASE: 'FALSE' }).showcase).toBe(false);
+        expect(parseOptions([], { STATEUI_MCP_SHOWCASE: 'on' }).showcase).toBe(true);
+        expect(parseOptions([], { STATEUI_MCP_SHOWCASE: '' }).showcase).toBe(true);
     });
 
     it('should turn on stdio and help', () => {

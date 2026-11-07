@@ -1,0 +1,179 @@
+{
+    "title": "Forms",
+    "icon": "forms",
+    "description": "Buttons, fields and whole forms that collect, check and submit what the user enters.",
+    "components": {
+        "button": {
+            "example": {
+                "component": "toolbar",
+                "wrap": true,
+                "children": {
+                    "solid": { "component": "button", "icon": "plus", "_title": "Create" },
+                    "soft": { "component": "button", "variant": "soft", "_title": "Save draft" },
+                    "outline": { "component": "button", "variant": "outline", "tone": "neutral", "_title": "Cancel" },
+                    "danger": { "component": "button", "tone": "danger", "icon": "trash", "_title": "Delete" },
+                    "busy": { "component": "button", "busy": true, "_title": "Uploading" },
+                    "link": { "component": "button", "variant": "link", "_title": "Learn more" }
+                }
+            }
+        },
+        "form": {
+            "example": {
+                "component": "form",
+                "validateOn": "blur",
+                "children": {
+                    "name": { "component": "textField", "_label": "Full name", "required": true, "_placeholder": "Ada Lovelace" },
+                    "email": { "component": "textField", "_label": "Email address", "inputType": "email", "pattern": "email", "required": true },
+                    "topic": { "component": "selectField", "_label": "Topic", "value": "support", "options": { "support": { "_label": "Support" }, "sales": { "_label": "Sales" }, "press": { "_label": "Press" } } },
+                    "message": { "component": "textareaField", "_label": "Message", "rows": 3, "required": true }
+                },
+                "actions": {
+                    "component": "toolbar",
+                    "align": "end",
+                    "children": {
+                        "reset": { "component": "button", "variant": "ghost", "_title": "Reset", "on": { "press": { "command": "reset", "target": "$card.children.example" } } },
+                        "send": { "component": "button", "icon": "send", "_title": "Send", "on": { "press": { "command": "submit", "target": "$card.children.example" } } }
+                    }
+                },
+                "on": { "submitted": { "command": "show", "target": "$.app.toasts", "value": "sent" } }
+            }
+        },
+        "textField": {
+            "children": {
+                "name": { "component": "textField", "_label": "Project name", "value": "Moonshot", "_help": "Shown on the dashboard" },
+                "website": { "component": "textField", "_label": "Website", "inputType": "url", "icon": "world", "_placeholder": "https://example.com" },
+                "code": { "component": "textField", "_label": "Invite code", "required": true, "_help": "Six letters from your invitation" }
+            }
+        },
+        "textareaField": {
+            "example": { "component": "textareaField", "_label": "Bio", "rows": 3, "autoGrow": true, "maxLength": 280, "value": "Engineer, writer and occasional baker.", "_help": "At most 280 characters" }
+        },
+        "numberField": {
+            "children": {
+                "quantity": { "component": "numberField", "_label": "Quantity", "value": 2, "min": 1, "max": 99, "step": 1 },
+                "price": { "component": "numberField", "_label": "Price", "format": "currency", "currency": "EUR", "value": 24.5, "stepper": false }
+            }
+        },
+        "selectField": {
+            "example": {
+                "component": "selectField",
+                "_label": "Country",
+                "value": "uk",
+                "options": { "uk": { "_label": "United Kingdom" }, "de": { "_label": "Germany" }, "fr": { "_label": "France" }, "us": { "_label": "United States" } }
+            }
+        },
+        "comboboxField": {
+            "example": {
+                "component": "comboboxField",
+                "_label": "Assign to",
+                "_placeholder": "Type a name",
+                "optionValue": "id",
+                "optionLabel": "name",
+                "<-options": "$.data.people"
+            }
+        },
+        "multiSelectField": {
+            "example": {
+                "component": "multiSelectField",
+                "_label": "Labels",
+                "allowCustom": true,
+                "value": ["bug", "ui"],
+                "options": { "bug": { "_label": "Bug" }, "feature": { "_label": "Feature" }, "ui": { "_label": "User interface" }, "docs": { "_label": "Documentation" } }
+            }
+        },
+        "radioField": {
+            "example": {
+                "component": "radioField",
+                "_label": "Delivery",
+                "value": "standard",
+                "options": { "standard": { "_label": "Standard, 3 to 5 days" }, "express": { "_label": "Express, next day" }, "pickup": { "_label": "Pick up in store" } }
+            }
+        },
+        "checkField": {
+            "children": {
+                "terms": { "component": "checkField", "_label": "I accept the terms of service", "required": true },
+                "news": { "component": "checkField", "_label": "Send me the monthly newsletter", "checked": true, "_help": "One email a month, no more" }
+            }
+        },
+        "switchField": {
+            "children": {
+                "notify": { "component": "switchField", "_label": "Email notifications", "checked": true },
+                "beta": { "component": "switchField", "_label": "Try beta features", "_help": "Things may break" }
+            }
+        },
+        "sliderField": {
+            "children": {
+                "volume": { "component": "sliderField", "_label": "Volume", "value": 60, "format": "percent", "min": 0, "max": 100 },
+                "budget": { "component": "sliderField", "_label": "Budget", "range": true, "value": [200, 800], "min": 0, "max": 1000, "step": 50 }
+            }
+        },
+        "dateField": {
+            "example": { "component": "dateField", "_label": "Due date", "value": "2026-11-20", "min": "2026-11-01", "_help": "Not before November" }
+        },
+        "dateRangeField": {
+            "example": { "component": "dateRangeField", "_label": "Stay", "value": { "start": "2026-12-18", "end": "2026-12-27" }, "minDays": 1 }
+        },
+        "fileField": {
+            "example": { "component": "fileField", "_label": "Attachments", "maxFiles": 3, "accept": ["image/png", "image/jpeg", "application/pdf"], "_help": "Pictures or PDFs, up to 10 MB each" }
+        },
+        "paintField": {
+            "example": { "component": "paintField", "_label": "Signature", "width": 360, "height": 140, "tools": ["brush", "eraser", "line"] }
+        },
+        "searchBox": {
+            "example": { "component": "searchBox", "_placeholder": "Search people", "value": "Ada" }
+        },
+        "segmented": {
+            "children": {
+                "view": { "component": "segmented", "_label": "View", "value": "month", "options": { "day": { "_label": "Day" }, "week": { "_label": "Week" }, "month": { "_label": "Month" } } },
+                "align": { "component": "segmented", "_label": "Text alignment", "iconOnly": true, "value": "left", "options": { "left": { "_label": "Align left", "icon": "align-left" }, "center": { "_label": "Center", "icon": "align-center" }, "right": { "_label": "Align right", "icon": "align-right" } } }
+            }
+        },
+        "input": {
+            "example": { "component": "input", "_label": "Coupon code", "_placeholder": "SPRING26", "size": "sm" }
+        },
+        "textarea": {
+            "example": { "component": "textarea", "_label": "Quick note", "rows": 2, "_placeholder": "Write a note" }
+        },
+        "select": {
+            "example": { "component": "select", "_label": "Sort by", "value": "newest", "options": { "newest": { "_label": "Newest first" }, "oldest": { "_label": "Oldest first" }, "name": { "_label": "Name" } } }
+        },
+        "checkbox": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "check": { "component": "checkbox", "_label": "Select row", "checked": true },
+                    "label": { "component": "text", "_text": "A bare checkbox, as in a table row" }
+                }
+            }
+        },
+        "switch": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "toggle": { "component": "switch", "_label": "Wi-Fi", "checked": true },
+                    "label": { "component": "text", "_text": "Wi-Fi" }
+                }
+            }
+        },
+        "formDialog": {
+            "children": {
+                "open": { "component": "button", "icon": "user-plus", "_title": "Add a person", "on": { "press": { "command": "open", "target": "$card.children.dialog" } } },
+                "dialog": {
+                    "component": "formDialog",
+                    "_title": "Add a person",
+                    "body": {
+                        "children": {
+                            "name": { "_label": "Full name" },
+                            "email": { "component": "textField", "_label": "Email address", "inputType": "email", "pattern": "email" }
+                        },
+                        "on": { "submitted": [{ "command": "close", "target": "^formDialog" }, { "command": "show", "target": "$.app.toasts", "value": "saved" }] }
+                    }
+                }
+            }
+        },
+        "wizard": {
+            "wide": true,
+            "example": { "component": "wizard" }
+        }
+    }
+}

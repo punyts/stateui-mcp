@@ -1,0 +1,94 @@
+{
+    "title": "Feedback",
+    "icon": "bell",
+    "description": "Messages, statuses and placeholders that tell the user what is happening.",
+    "components": {
+        "alert": {
+            "children": {
+                "info": { "component": "alert", "tone": "info", "icon": "info-circle", "_title": "Scheduled maintenance", "_text": "The service is read-only on Sunday from 02:00 to 04:00." },
+                "success": { "component": "alert", "tone": "success", "dismissible": true, "_text": "Your profile was updated." },
+                "danger": {
+                    "component": "alert",
+                    "tone": "danger",
+                    "variant": "outline",
+                    "_title": "Payment failed",
+                    "_text": "The card was declined.",
+                    "actions": { "component": "button", "size": "sm", "tone": "danger", "variant": "soft", "_title": "Try again" }
+                }
+            }
+        },
+        "badge": {
+            "example": {
+                "component": "toolbar",
+                "wrap": true,
+                "children": {
+                    "new": { "component": "badge", "tone": "accent", "_text": "New" },
+                    "paid": { "component": "badge", "tone": "success", "variant": "solid", "_text": "Paid" },
+                    "overdue": { "component": "badge", "tone": "danger", "icon": "clock", "_text": "Overdue" },
+                    "count": { "component": "badge", "tone": "info", "count": 128, "max": 99 },
+                    "dot": { "component": "badge", "tone": "success", "dot": true, "_text": "Online" }
+                }
+            }
+        },
+        "progress": {
+            "children": {
+                "upload": { "component": "progress", "_label": "Uploading photos", "value": 64 },
+                "storage": { "component": "progress", "_label": "Storage used", "value": 92, "tone": "warning" },
+                "sync": { "component": "progress", "_label": "Syncing", "indeterminate": true, "size": "sm" }
+            }
+        },
+        "spinner": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "small": { "component": "spinner", "size": "sm", "_label": "Loading" },
+                    "medium": { "component": "spinner", "tone": "accent", "_label": "Loading" },
+                    "large": { "component": "spinner", "size": "lg", "tone": "success", "_label": "Loading" }
+                }
+            }
+        },
+        "skeleton": {
+            "children": {
+                "avatar": { "component": "skeleton", "shape": "circle", "width": "6ch" },
+                "lines": { "component": "skeleton", "lines": 3 },
+                "block": { "component": "skeleton", "shape": "rect", "width": "30%" }
+            }
+        },
+        "emptyState": {
+            "example": {
+                "component": "emptyState",
+                "icon": "folder",
+                "_title": "No projects yet",
+                "_text": "Projects you create or join show here.",
+                "actions": { "component": "button", "icon": "plus", "_title": "New project" }
+            }
+        },
+        "toast": {
+            "children": {
+                "saved": { "component": "toast", "tone": "success", "dismissible": false, "_title": "Saved", "_text": "Your changes are safe." },
+                "offline": {
+                    "component": "toast",
+                    "tone": "warning",
+                    "dismissible": false,
+                    "_title": "You are offline",
+                    "_text": "Changes will sync when you are back.",
+                    "action": { "component": "button", "size": "sm", "variant": "link", "_title": "Retry" }
+                }
+            }
+        },
+        "toastRegion": {
+            "children": {
+                "text": { "component": "text", "element": "p", "_text": "The shell of this showcase has a toast region at the bottom corner. Each button shows one of its named messages." },
+                "buttons": {
+                    "component": "toolbar",
+                    "wrap": true,
+                    "children": {
+                        "saved": { "component": "button", "tone": "success", "variant": "soft", "_title": "Show saved", "on": { "press": { "command": "show", "target": "$.app.toasts", "value": "saved" } } },
+                        "deleted": { "component": "button", "tone": "danger", "variant": "soft", "_title": "Show deleted", "on": { "press": { "command": "show", "target": "$.app.toasts", "value": "deleted" } } },
+                        "sent": { "component": "button", "tone": "info", "variant": "soft", "_title": "Show sent", "on": { "press": { "command": "show", "target": "$.app.toasts", "value": "sent" } } }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -9,6 +9,7 @@ import { McpHttpSessions } from '../infrastructure/mcp/McpHttpSessions.js';
 import { createStateUiMcpServer } from '../infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
 import { createServices } from './createServices.js';
+import { installShowcase } from './showcase.js';
 import type { ServicesOptions } from './createServices.js';
 import type { Services } from './createServices.js';
 
@@ -39,6 +40,8 @@ export interface ServerOptions {
     readonly procedures?: ServicesOptions['procedures'];
     /** A file that gets one JSON line per tool call */
     readonly toolLog?: string;
+    /** Install the component showcase when the data directory holds no parts at all (the CLI does, unless --no-showcase); default false */
+    readonly showcase?: boolean;
 }
 
 export interface RunningServer {
@@ -62,6 +65,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     const runtime = loadRuntimeBundle(options.runtimeDir);
     const chunk3d = loadChunk3d(options.chunk3dDir);
     const hostScript = loadHostScript();
+    // Before anything reads a part: a new data directory gets the showcase app
+    if (options.showcase === true) await installShowcase({ dataDir: options.dataDir, report: options.report });
     let origin = '';
     const services = createServices({
         dataDir: options.dataDir,

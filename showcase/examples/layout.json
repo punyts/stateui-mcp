@@ -1,0 +1,142 @@
+{
+    "title": "Layout",
+    "icon": "layout",
+    "description": "Boxes, rows, folding sections and whole page frames that hold other components.",
+    "components": {
+        "panel": {
+            "example": {
+                "component": "panel",
+                "bordered": true,
+                "collapsible": true,
+                "_title": "Shipping address",
+                "_description": "Where we send your order",
+                "actions": { "component": "button", "variant": "ghost", "size": "sm", "icon": "edit", "_title": "Edit" },
+                "children": {
+                    "street": { "component": "text", "_text": "221B Baker Street" },
+                    "city": { "component": "text", "_text": "London NW1 6XE" },
+                    "country": { "component": "text", "textRole": "caption", "_text": "United Kingdom" }
+                }
+            }
+        },
+        "toolbar": {
+            "example": {
+                "component": "toolbar",
+                "align": "between",
+                "wrap": true,
+                "children": {
+                    "search": { "component": "searchBox", "_placeholder": "Filter orders" },
+                    "actions": {
+                        "component": "toolbar",
+                        "align": "end",
+                        "children": {
+                            "export": { "component": "button", "variant": "outline", "icon": "download", "_title": "Export" },
+                            "add": { "component": "button", "icon": "plus", "_title": "New order" }
+                        }
+                    }
+                }
+            }
+        },
+        "accordion": {
+            "example": {
+                "component": "accordion",
+                "bordered": true,
+                "open": "shipping",
+                "children": {
+                    "shipping": {
+                        "component": "disclosure",
+                        "_title": "How long does shipping take?",
+                        "children": { "answer": { "component": "text", "_text": "Orders leave our warehouse within two working days and arrive two to four days later." } }
+                    },
+                    "returns": {
+                        "component": "disclosure",
+                        "_title": "Can I return an item?",
+                        "children": { "answer": { "component": "text", "_text": "Yes, within 30 days, as long as it is unused and in its box." } }
+                    },
+                    "payment": {
+                        "component": "disclosure",
+                        "_title": "Which payment methods do you take?",
+                        "children": { "answer": { "component": "text", "_text": "Cards, bank transfer and invoices for business accounts." } }
+                    }
+                }
+            }
+        },
+        "disclosure": {
+            "example": {
+                "component": "disclosure",
+                "icon": "settings",
+                "_title": "Advanced settings",
+                "_summary": "Caching on, 3 retries",
+                "children": {
+                    "cache": { "component": "switchField", "_label": "Cache responses", "checked": true },
+                    "retries": { "component": "numberField", "_label": "Retries", "value": 3, "min": 0, "max": 10, "step": 1 }
+                }
+            }
+        },
+        "splitPane": {
+            "wide": true,
+            "example": {
+                "component": "splitPane",
+                "split": 35,
+                "collapsible": true,
+                "start": {
+                    "component": "panel",
+                    "_title": "Inbox",
+                    "children": {
+                        "first": { "component": "text", "_text": "Quarterly report" },
+                        "second": { "component": "text", "_text": "Design review notes" },
+                        "third": { "component": "text", "_text": "Team offsite" }
+                    }
+                },
+                "end": {
+                    "component": "panel",
+                    "_title": "Quarterly report",
+                    "children": {
+                        "from": { "component": "text", "textRole": "caption", "_text": "From Katherine Johnson, today at 09:30" },
+                        "body": { "component": "text", "element": "p", "_text": "Revenue grew by 12% this quarter. Drag the divider to give this pane more room, or fold the inbox away." }
+                    }
+                }
+            }
+        },
+        "page": {
+            "wide": true,
+            "example": {
+                "component": "page",
+                "navPosition": "none",
+                "_title": "Mini app",
+                "header": {
+                    "component": "toolbar",
+                    "align": "between",
+                    "children": {
+                        "title": { "component": "text", "textRole": "heading", "_text": "Mini app" },
+                        "account": { "component": "avatar", "size": "sm", "_name": "Ada Lovelace" }
+                    }
+                },
+                "children": {
+                    "body": { "component": "text", "element": "p", "_text": "A page is the root of an app: a header, navigation, the main content and a footer. This showcase itself is a page with a side menu." }
+                },
+                "footer": {
+                    "component": "toolbar",
+                    "children": { "note": { "component": "text", "textRole": "caption", "_text": "Footer: version 1.0" } }
+                }
+            }
+        },
+        "dashboardGrid": {
+            "wide": true,
+            "example": {
+                "component": "dashboardGrid",
+                "children": {
+                    "revenue": { "_title": "Revenue", "children": { "stat": { "_label": "November", "format": "currency", "currency": "EUR", "fractionDigits": 0, "value": 31200, "delta": 3300, "trend": "up", "tone": "success" } } },
+                    "orders": { "_title": "Orders", "children": { "stat": { "_label": "November", "value": 1284, "delta": 64, "trend": "up", "tone": "success" } } },
+                    "customers": { "_title": "Customers", "children": { "stat": { "_label": "Active", "value": 412, "delta": -6, "trend": "down", "tone": "danger" } } }
+                }
+            }
+        },
+        "settingsPage": {
+            "wide": true,
+            "example": {
+                "component": "settingsPage",
+                "_title": "Account settings"
+            }
+        }
+    }
+}

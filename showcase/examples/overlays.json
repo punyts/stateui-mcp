@@ -1,0 +1,91 @@
+{
+    "title": "Overlays",
+    "icon": "stack-2",
+    "description": "Dialogs, drawers, popovers and tooltips that open above the page.",
+    "components": {
+        "modal": {
+            "children": {
+                "open": { "component": "button", "_title": "Open the dialog", "on": { "press": { "command": "open", "target": "$card.children.dialog" } } },
+                "dialog": {
+                    "component": "modal",
+                    "_title": "Invite a teammate",
+                    "body": {
+                        "component": "panel",
+                        "padding": "none",
+                        "children": {
+                            "text": { "component": "text", "element": "p", "_text": "They get an email with a link that is valid for seven days." },
+                            "email": { "component": "textField", "_label": "Email address", "inputType": "email" }
+                        }
+                    },
+                    "footer": {
+                        "component": "toolbar",
+                        "align": "end",
+                        "children": {
+                            "cancel": { "component": "button", "variant": "ghost", "_title": "Cancel", "on": { "press": { "command": "close", "target": "$card.children.dialog" } } },
+                            "send": { "component": "button", "icon": "send", "_title": "Send invite", "on": { "press": [{ "command": "close", "target": "$card.children.dialog" }, { "command": "show", "target": "$.app.toasts", "value": "sent" }] } }
+                        }
+                    }
+                }
+            }
+        },
+        "drawer": {
+            "children": {
+                "open": { "component": "button", "variant": "outline", "icon": "filter", "_title": "Filters", "on": { "press": { "command": "open", "target": "$card.children.drawer" } } },
+                "drawer": {
+                    "component": "drawer",
+                    "side": "end",
+                    "_title": "Filters",
+                    "body": {
+                        "component": "form",
+                        "children": {
+                            "team": { "component": "selectField", "_label": "Team", "value": "all", "options": { "all": { "_label": "All teams" }, "platform": { "_label": "Platform" }, "insights": { "_label": "Insights" }, "flight": { "_label": "Flight" } } },
+                            "active": { "component": "switchField", "_label": "Only active people", "checked": true }
+                        }
+                    },
+                    "footer": {
+                        "component": "toolbar",
+                        "align": "end",
+                        "children": { "apply": { "component": "button", "_title": "Apply", "on": { "press": { "command": "close", "target": "$card.children.drawer" } } } }
+                    }
+                }
+            }
+        },
+        "popover": {
+            "example": {
+                "component": "popover",
+                "width": "sm",
+                "_label": "Ada Lovelace",
+                "trigger": { "component": "button", "variant": "soft", "icon": "user", "_title": "Ada Lovelace" },
+                "body": {
+                    "component": "panel",
+                    "padding": "sm",
+                    "children": {
+                        "avatar": { "component": "avatar", "_name": "Ada Lovelace", "size": "lg" },
+                        "role": { "component": "text", "_text": "Engineering lead, Platform" },
+                        "email": { "component": "text", "textRole": "caption", "_text": "ada@example.com" }
+                    }
+                }
+            }
+        },
+        "tooltip": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "copy": { "component": "tooltip", "_text": "Copy the link to this page", "trigger": { "component": "button", "variant": "outline", "icon": "link", "iconPosition": "only", "_title": "Copy link" } },
+                    "help": { "component": "tooltip", "side": "end", "_text": "Shown on hover and on keyboard focus", "trigger": { "component": "button", "variant": "ghost", "icon": "info-circle", "iconPosition": "only", "_title": "Help" } }
+                }
+            }
+        },
+        "confirmDialog": {
+            "children": {
+                "open": { "component": "button", "tone": "danger", "variant": "soft", "icon": "trash", "_title": "Delete project", "on": { "press": { "command": "open", "target": "$card.children.confirm" } } },
+                "confirm": {
+                    "component": "confirmDialog",
+                    "_title": "Delete the project?",
+                    "body": { "_text": "Moonshot and its 14 tasks will be deleted. This cannot be undone." },
+                    "footer": { "children": { "confirm": { "_title": "Delete project", "on": { "press": [{ "command": "close", "target": "^confirmDialog" }, { "command": "show", "target": "$.app.toasts", "value": "deleted" }] } } } }
+                }
+            }
+        }
+    }
+}

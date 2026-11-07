@@ -1,0 +1,110 @@
+{
+    "title": "Navigation",
+    "icon": "compass",
+    "description": "Menus, tabs, trails and steps that move the user between screens and views.",
+    "components": {
+        "nav": {
+            "example": {
+                "component": "nav",
+                "orientation": "horizontal",
+                "active": "navigation",
+                "_label": "Showcase sections",
+                "children": {
+                    "home": { "component": "menuItem", "icon": "home", "_label": "Home", "screen": "home" },
+                    "navigation": { "component": "menuItem", "icon": "compass", "_label": "Navigation", "screen": "navigation" },
+                    "forms": { "component": "menuItem", "icon": "forms", "_label": "Forms", "screen": "forms" },
+                    "data": { "component": "menuItem", "icon": "table", "_label": "Data", "screen": "data" }
+                }
+            }
+        },
+        "menuItem": {
+            "example": {
+                "component": "panel",
+                "padding": "none",
+                "children": {
+                    "profile": { "component": "menuItem", "icon": "user", "_label": "Profile", "_description": "Your name, picture and bio", "shortcut": "Ctrl+P" },
+                    "billing": { "component": "menuItem", "icon": "credit-card", "_label": "Billing", "_description": "Plans and invoices", "selected": true },
+                    "archived": { "component": "menuItem", "icon": "lock", "_label": "Archive", "_description": "Not on your plan", "disabled": true }
+                }
+            }
+        },
+        "menu": {
+            "example": {
+                "component": "menu",
+                "_label": "Order actions",
+                "trigger": { "component": "button", "variant": "outline", "icon": "dots", "_title": "Actions" },
+                "children": {
+                    "edit": { "component": "menuItem", "icon": "edit", "_label": "Edit order", "shortcut": "E" },
+                    "share": { "component": "menuItem", "icon": "share", "_label": "Share link" },
+                    "delete": { "component": "menuItem", "icon": "trash", "_label": "Delete", "_description": "This cannot be undone" }
+                }
+            }
+        },
+        "tabs": {
+            "example": {
+                "component": "tabs",
+                "active": "overview",
+                "children": {
+                    "overview": { "component": "panel", "placement": { "_tab": "Overview" }, "children": { "text": { "component": "text", "_text": "A summary of the project: three open tasks and one release this month." } } },
+                    "activity": { "component": "panel", "placement": { "_tab": "Activity" }, "children": { "text": { "component": "text", "_text": "Grace moved \"Review the date picker\" to In progress." } } },
+                    "settings": { "component": "panel", "placement": { "_tab": "Settings" }, "children": { "public": { "component": "switchField", "_label": "Public project" } } }
+                }
+            }
+        },
+        "breadcrumb": {
+            "example": {
+                "component": "breadcrumb",
+                "current": "invoice",
+                "items": {
+                    "home": { "_label": "Home" },
+                    "customers": { "_label": "Customers" },
+                    "acme": { "_label": "Acme Corporation" },
+                    "invoices": { "_label": "Invoices" },
+                    "invoice": { "_label": "Invoice 2026-114" }
+                }
+            }
+        },
+        "link": {
+            "example": {
+                "component": "panel",
+                "padding": "none",
+                "children": {
+                    "home": { "component": "link", "_text": "Back to the overview", "screen": "home" },
+                    "forms": { "component": "link", "_text": "See the form components", "screen": "forms" }
+                }
+            }
+        },
+        "pagination": {
+            "example": {
+                "component": "pagination",
+                "total": 248,
+                "pageSize": 10,
+                "page": 4,
+                "pageSizes": [10, 25, 50]
+            }
+        },
+        "stepper": {
+            "example": {
+                "component": "stepper",
+                "active": "shipping",
+                "completed": ["cart"],
+                "steps": {
+                    "cart": { "_label": "Cart", "_description": "3 items" },
+                    "shipping": { "_label": "Shipping", "_description": "Address and speed" },
+                    "payment": { "_label": "Payment" },
+                    "review": { "_label": "Review" }
+                }
+            }
+        },
+        "outlet": {
+            "example": {
+                "component": "panel",
+                "padding": "none",
+                "children": {
+                    "text": { "component": "text", "element": "p", "_text": "The outlet is where the screens of an app show. The shell of this showcase holds one: every screen you open from the menu, this one too, appears in it." },
+                    "home": { "component": "link", "_text": "Open another screen in the outlet", "screen": "home" }
+                }
+            }
+        }
+    }
+}

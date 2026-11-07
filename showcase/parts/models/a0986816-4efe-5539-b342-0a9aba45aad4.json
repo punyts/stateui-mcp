@@ -1,0 +1,27 @@
+{
+  "id": "a0986816-4efe-5539-b342-0a9aba45aad4",
+  "kind": "models",
+  "name": "showcase-folder",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "label": {
+        "type": "string",
+        "required": true
+      },
+      "parentId": {
+        "type": "string"
+      },
+      "hasChildren": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}

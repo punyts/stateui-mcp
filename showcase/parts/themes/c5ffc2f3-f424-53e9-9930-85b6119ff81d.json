@@ -1,0 +1,92 @@
+{
+  "id": "c5ffc2f3-f424-53e9-9930-85b6119ff81d",
+  "kind": "themes",
+  "name": "showcase-moody",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "tokens": {
+      "text": {
+        "display": {
+          "size": "3.125rem",
+          "family": "{font.family.serif}"
+        },
+        "title": {
+          "size": "1.75rem",
+          "family": "{font.family.serif}"
+        },
+        "heading": {
+          "size": "1.375rem",
+          "family": "{font.family.serif}"
+        },
+        "body": {
+          "size": "1rem",
+          "family": "{font.family.sans}"
+        },
+        "label": {
+          "size": "0.75rem",
+          "family": "{font.family.sans}"
+        },
+        "caption": {
+          "size": "0.625rem",
+          "family": "{font.family.sans}"
+        }
+      },
+      "radius": {
+        "sm": "2px",
+        "md": "4px",
+        "lg": "8px"
+      },
+      "density": {
+        "factor": "1"
+      },
+      "motion": {
+        "duration": {
+          "fast": "150ms",
+          "base": "300ms",
+          "slow": "500ms"
+        }
+      }
+    },
+    "overlays": {
+      "light": {
+        "kind": "mode",
+        "tokens": {
+          "color": {
+            "accent": {
+              "base": "{palette.amber.700}",
+              "on": "{palette.white}"
+            },
+            "surface": {
+              "base": "{palette.neutral.50}",
+              "raised": "{palette.white}",
+              "sunken": "{palette.neutral.100}"
+            },
+            "text": {
+              "base": "{palette.neutral.900}"
+            }
+          }
+        }
+      },
+      "dark": {
+        "kind": "mode",
+        "tokens": {
+          "color": {
+            "accent": {
+              "base": "{palette.amber.400}",
+              "on": "{palette.neutral.950}"
+            },
+            "surface": {
+              "base": "{palette.neutral.950}",
+              "raised": "{palette.neutral.900}"
+            },
+            "text": {
+              "base": "{palette.neutral.50}"
+            }
+          }
+        }
+      }
+    }
+  }
+}

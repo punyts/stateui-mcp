@@ -1,0 +1,31 @@
+{
+  "id": "dfbbb3e4-af92-501f-97aa-d60c10875818",
+  "kind": "models",
+  "name": "showcase-marker",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "x": {
+        "type": "number",
+        "default": 0
+      },
+      "y": {
+        "type": "number",
+        "default": 0
+      },
+      "r": {
+        "type": "number",
+        "default": 1
+      },
+      "fill": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "f4269edd-558a-542d-95d8-a5189382b2e0",
+  "kind": "models",
+  "name": "showcase-bar",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "at": {
+        "type": "array"
+      },
+      "size": {
+        "type": "array"
+      },
+      "paint": {
+        "type": "object"
+      }
+    }
+  }
+}

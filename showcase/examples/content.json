@@ -1,0 +1,64 @@
+{
+    "title": "Content",
+    "icon": "file-text",
+    "description": "Text, pictures, icons and surfaces that show content.",
+    "components": {
+        "text": {
+            "children": {
+                "display": { "component": "text", "textRole": "display", "_text": "Display" },
+                "title": { "component": "text", "textRole": "title", "element": "h3", "_text": "A title" },
+                "body": { "component": "text", "element": "p", "_text": "Body text for paragraphs. Each text has a typographic role; the theme sets its size and family." },
+                "caption": { "component": "text", "textRole": "caption", "tone": "accent", "_text": "A caption in the accent tone" },
+                "code": { "component": "text", "textRole": "code", "_text": "npm run showcase:build" }
+            }
+        },
+        "markdown": {
+            "example": {
+                "component": "markdown",
+                "_text": "### Release notes\n\nThis release adds **3D scenes** and a *component showcase*.\n\n- Tables keep their header while you scroll\n- Charts format currency without cents\n\n> Run `npm run showcase:build` after adding a component."
+            }
+        },
+        "card": {
+            "example": {
+                "component": "card",
+                "_title": "Weekend in the hills",
+                "_subtitle": "2 nights from 180 EUR",
+                "media": { "component": "image", "src": "@image:landscape", "_alt": "Green hills under a dusk sky", "ratio": "16:9" },
+                "children": { "text": { "component": "text", "_text": "A quiet cottage with a view of the valley." } },
+                "actions": { "component": "button", "size": "sm", "_title": "Book" }
+            }
+        },
+        "image": {
+            "example": { "component": "image", "src": "@image:landscape", "_alt": "Green hills under a dusk sky", "ratio": "16:9", "radius": "md" }
+        },
+        "avatar": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "ada": { "component": "avatar", "_name": "Ada Lovelace", "size": "sm" },
+                    "grace": { "component": "avatar", "_name": "Grace Hopper" },
+                    "alan": { "component": "avatar", "_name": "Alan Turing", "size": "lg" },
+                    "team": { "component": "avatar", "_name": "Platform team", "shape": "square", "size": "lg" }
+                }
+            }
+        },
+        "icon": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "home": { "component": "icon", "name": "home" },
+                    "star": { "component": "icon", "name": "star", "filled": true, "tone": "warning" },
+                    "heart": { "component": "icon", "name": "heart", "filled": true, "tone": "danger", "size": "lg" },
+                    "check": { "component": "icon", "name": "circle-check", "tone": "success", "size": "lg", "decorative": false, "_label": "Done" }
+                }
+            }
+        },
+        "divider": {
+            "children": {
+                "before": { "component": "text", "_text": "Sign in with your email address" },
+                "divider": { "component": "divider", "_label": "or" },
+                "after": { "component": "text", "_text": "Continue with a passkey" }
+            }
+        }
+    }
+}

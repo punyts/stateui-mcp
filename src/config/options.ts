@@ -14,6 +14,8 @@ export interface CliOptions {
     readonly secretKey: string | undefined;
     /** A file that gets one JSON line per tool call (the tool, the outcome and sizes, never arguments or bodies) */
     readonly toolLog: string | undefined;
+    /** Install the component showcase app on a data directory that holds no parts */
+    readonly showcase: boolean;
     readonly help: boolean;
 }
 
@@ -42,6 +44,9 @@ Options:
   --tool-log <file>    Append one JSON line per tool call to this file: the tool, whether
                        it failed, the error code, request and response sizes and the app.
                        Never arguments or response bodies (env STATEUI_MCP_TOOL_LOG)
+  --no-showcase        Do not install the component showcase app on a new data directory
+                       (env STATEUI_MCP_SHOWCASE=off). It is installed only when the data
+                       directory holds no parts at all, and never again after that
   -h, --help           Show this help
 
 Without --stdio the server speaks streamable HTTP at http://<host>:<port>/mcp.
@@ -116,6 +121,9 @@ function parsePort(text: string): number {
     return port;
 }
 
+/** The values of STATEUI_MCP_SHOWCASE that turn the showcase off */
+const SHOWCASE_OFF: readonly string[] = Object.freeze(['off', 'false', 'no', '0']);
+
 /** Reads the command line and the environment. A flag wins over its environment variable */
 export function parseOptions(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): CliOptions {
     let dataDir = env['STATEUI_MCP_DATA_DIR'] ?? './data';
@@ -125,6 +133,7 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
     let runtimeDir = env['STATEUI_MCP_RUNTIME_DIR'];
     let secretKeyFile = env['STATEUI_MCP_SECRET_KEY_FILE'];
     let toolLog = env['STATEUI_MCP_TOOL_LOG'];
+    let showcase = !SHOWCASE_OFF.includes((env['STATEUI_MCP_SHOWCASE'] ?? '').trim().toLowerCase());
     let stdio = false;
     let help = false;
 
@@ -162,6 +171,9 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
             case '--stdio':
                 stdio = true;
                 break;
+            case '--no-showcase':
+                showcase = false;
+                break;
             case '-h':
             case '--help':
                 help = true;
@@ -180,6 +192,7 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
         secretKeyFile: secretKeyFile === undefined || secretKeyFile === '' ? undefined : resolve(secretKeyFile),
         secretKey: env['STATEUI_MCP_SECRET_KEY'],
         toolLog: toolLog === undefined || toolLog === '' ? undefined : resolve(toolLog),
+        showcase,
         help
     };
 }

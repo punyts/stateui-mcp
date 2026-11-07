@@ -58,7 +58,8 @@ async function main(): Promise<void> {
         report: reporter.report,
         ...(options.runtimeDir !== undefined && { runtimeDir: options.runtimeDir }),
         ...(serverKey !== undefined && { serverKey }),
-        ...(options.toolLog !== undefined && { toolLog: options.toolLog })
+        ...(options.toolLog !== undefined && { toolLog: options.toolLog }),
+        showcase: options.showcase
     });
     // Always stderr: in stdio mode stdout is the protocol
     process.stderr.write(`stateui-mcp: apps at ${server.origin}/  MCP at ${server.origin}/mcp${options.stdio ? '  and on stdio' : ''}\n`);

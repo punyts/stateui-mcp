@@ -1,0 +1,24 @@
+{
+  "id": "bb5055e5-f9f5-57de-90bc-32c3ccca655e",
+  "kind": "models",
+  "name": "showcase-share",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "label": {
+        "type": "string",
+        "required": true
+      },
+      "count": {
+        "type": "integer",
+        "default": 0
+      }
+    }
+  }
+}

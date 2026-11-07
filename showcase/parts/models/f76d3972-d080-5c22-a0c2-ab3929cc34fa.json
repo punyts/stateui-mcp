@@ -1,0 +1,31 @@
+{
+  "id": "f76d3972-d080-5c22-a0c2-ab3929cc34fa",
+  "kind": "models",
+  "name": "showcase-task",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "title": {
+        "type": "string",
+        "required": true
+      },
+      "column": {
+        "type": "string",
+        "default": "todo"
+      },
+      "order": {
+        "type": "number",
+        "default": 0
+      },
+      "assignee": {
+        "type": "string"
+      }
+    }
+  }
+}
