@@ -1730,3 +1730,138 @@ describe.skipIf(!installed || MODEL_FIXTURE === undefined)('a model from an uplo
         expectNear((await readPixelAt(blank, shot, 0.03, 0.05)).colour, [0, 0, 255]);
     });
 });
+
+describe.skipIf(!installed)('press on a 3D node through its proxy with the agent tools: G3.8 of the graphics epic 3 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    const SCENE = '$.app.children.parts';
+    const LID = `${SCENE}.children.lid`;
+    const BASE = `${SCENE}.children.base`;
+    const EYE = `${SCENE}.children.eye`;
+
+    /**
+     * A scene with orbit controls: an interactive, labelled box at the origin whose press sets a state value, and a box
+     * to its right that is not interactive, with a press entry that would set another
+     */
+    const parts = {
+        component: 'scene3d',
+        _title: 'Parts',
+        controls: 'orbit',
+        environment: 'none',
+        children: {
+            eye: { component: 'camera', position: [0, 0, 5], target: [0, 0, 0] },
+            sun: { component: 'light', kind: 'directional', position: [0, 0, 10], target: [0, 0, 0] },
+            lid: {
+                component: 'mesh',
+                geometry: { kind: 'box' },
+                material: { color: '#ff0000' },
+                interactive: true,
+                _label: 'Lid',
+                on: { press: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'lid' }] }
+            },
+            base: { component: 'mesh', position: [2, 0, 0], geometry: { kind: 'box' }, on: { press: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'base' }] } }
+        }
+    };
+
+    /** The value at a path of the running instance */
+    async function valueAt(path: string): Promise<unknown> {
+        return (await step(harness, 'ui_state_get', { app: 'parts', path })).body['value'];
+    }
+
+    /** Waits until the value at a path passes the check, and gives it */
+    async function valueWhen(path: string, check: (value: unknown) => boolean): Promise<unknown> {
+        return (await eventually(harness, 'ui_state_get', { app: 'parts', path }, (found) => check(found.body['value']))).body['value'];
+    }
+
+    /** Sets the chosen part back to none, and waits until the instance has it */
+    async function reset(): Promise<void> {
+        await step(harness, 'ui_data_write', { dataset: 'picks', operations: [{ op: 'set', path: 'p1.chosen', value: 'none' }] });
+        await valueWhen('$.data.ui.p1.chosen', (value) => value === 'none');
+    }
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        await step(harness, 'ui_model_write', { model: 'pick', operations: [{ op: 'set', field: 'chosen', type: 'string' }] });
+        await step(harness, 'ui_data_write', { dataset: 'picks', model: 'pick', operations: [{ op: 'set', path: 'p1', value: { chosen: 'none' } }] });
+        await createApp(harness.client, 'parts', shellOf({}), { data: { ui: { dataset: 'picks' } } });
+        const written = await writeShell(harness, 'parts', 1, [{ op: 'set', path: 'root.children.parts', value: parts }]);
+        if (written.isError) throw new Error(JSON.stringify(written.body));
+    });
+
+    afterAll(async () => {
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should validate the scene and list the interactive mesh in ui_tree rendered, and not the other one', async () => {
+        // Act
+        const validated = await call(harness.client, 'ui_validate', { app: 'parts' });
+        const tree = await call(harness.client, 'ui_tree', { app: 'parts', rendered: true, path: SCENE });
+
+        // Assert
+        expect(validated.body['errors']).toEqual([]);
+        expect(tree.isError).toBe(false);
+        const text = String(tree.body['text']);
+        expect(text).toContain(`lid (mesh) ${LID}`);
+        expect(text).not.toContain(BASE);
+    });
+
+    it('should press the interactive mesh with ui_interact click through its proxy and set the state value', async () => {
+        // Act
+        const clicked = await call(harness.client, 'ui_interact', { app: 'parts', actions: [{ action: 'click', path: LID }] });
+        const chosen = await valueWhen('$.data.ui.p1.chosen', (value) => value === 'lid');
+
+        // Assert
+        expect(clicked.isError).toBe(false);
+        expect(clicked.body['errors']).toEqual([]);
+        expect(chosen).toBe('lid');
+    });
+
+    it('should hover, focus and press Enter on the mesh through its proxy', async () => {
+        // Arrange
+        await reset();
+
+        // Act
+        const acted = await call(harness.client, 'ui_interact', {
+            app: 'parts',
+            actions: [
+                { action: 'hover', path: LID },
+                { action: 'focus', path: LID },
+                { action: 'key', path: LID, value: 'Enter' }
+            ]
+        });
+        const chosen = await valueWhen('$.data.ui.p1.chosen', (value) => value === 'lid');
+
+        // Assert
+        expect((acted.body['results'] as { ok: boolean }[]).map((result) => result.ok)).toEqual([true, true, true]);
+        expect(chosen).toBe('lid');
+    });
+
+    it('should name the path of a mesh that is not interactive, which has no proxy', async () => {
+        // Act
+        const result = await call(harness.client, 'ui_interact', { app: 'parts', actions: [{ action: 'click', path: BASE }] });
+
+        // Assert
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.body)).toContain(BASE);
+        expect(await valueAt('$.data.ui.p1.chosen')).not.toBe('base');
+    });
+
+    it('should drag from the mesh by an offset to orbit the camera, raising no press', async () => {
+        // Arrange: the instance holds no camera position until a user moves the camera
+        await reset();
+        const before = await call(harness.client, 'ui_state_get', { app: 'parts', path: `${EYE}.position` });
+
+        // Act
+        const dragged = await call(harness.client, 'ui_interact', { app: 'parts', actions: [{ action: 'drag', path: LID, value: '+40,+0' }] });
+        const after = await valueWhen(`${EYE}.position`, (value) => Array.isArray(value));
+
+        // Assert: the camera turned around the box on its sphere of radius 5, and the drag was not a press
+        expect(dragged.isError).toBe(false);
+        expect(before.isError).toBe(true);
+        expect(Math.hypot(...(after as number[]))).toBeCloseTo(5, 3);
+        expect((after as number[])[0]).not.toBeCloseTo(0, 2);
+        expect(await valueAt('$.data.ui.p1.chosen')).toBe('none');
+    });
+});

@@ -186,14 +186,26 @@ describe('paintFieldSection', () => {
 });
 
 describe('scene3dSection', () => {
-    it('should name scene3d and only the 3D nodes that draw (release 3A and repeat3d, G3.6)', () => {
+    it('should name scene3d and only the 3D nodes that draw (release 3A, repeat3d of G3.6, press and hover of G3.8)', () => {
         // Act
         const text = scene3dSection();
 
         // Assert
         expect(text).toContain('scene3d node (category graphics)');
         for (const node of ['camera', 'light', 'mesh', 'model', 'group3d', 'repeat3d']) expect(text).toContain(node);
-        for (const unbuilt of ['label3d', 'animate', 'press', 'hover']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
+        for (const unbuilt of ['label3d', 'animate']) expect(text).not.toMatch(new RegExp(`\\b${unbuilt}\\b`));
+    });
+
+    it('should say an interactive 3D node raises press and hover and the agent tools act on its path (G3.8)', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('interactive: true on a 3D node (with a _label) makes it pressable');
+        expect(text).toContain('press (a click, not a drag that turns the camera) and hover (once each time the pointer enters)');
+        expect(text).toContain('repeat3d copy with $row at its record');
+        expect(text).toContain('ui_tree with rendered: true lists those nodes (...rows.<recordKey> for a copy)');
+        expect(text).toContain('ui_interact clicks, hovers, focuses and presses keys on their paths; drag turns the camera of a scene with controls');
     });
 
     it('should say a scene3d needs _title and _fallback', () => {
@@ -205,7 +217,7 @@ describe('scene3dSection', () => {
         expect(text).toContain('and a _fallback');
     });
 
-    it('should say models are uploaded GLB files under 10 MiB, referenced as files, and that map is not drawn', () => {
+    it('should say models are uploaded GLB files under 10 MiB, referenced as files, and that map is an image file (G3.7c)', () => {
         // Act
         const text = scene3dSection();
 
@@ -214,7 +226,10 @@ describe('scene3dSection', () => {
         expect(text).toContain('at most 10 MiB');
         expect(text).toContain('a person uploaded');
         expect(text).toContain('a .gltf, a Draco, Meshopt or KTX2 compressed model');
-        expect(text).toContain('material.map is not drawn yet');
+        expect(text).not.toContain('material.map is not drawn yet');
+        expect(text).toContain('a material ({ color, metalness, roughness, opacity, emissive, map })');
+        expect(text).toContain('material.map is the file reference of an uploaded png, jpeg, gif or webp image, wrapped around the mesh and tinted by its color');
+        expect(text).toContain('another type is SUI-STATE-INVALID, and a file that cannot be read is SUI-RUN-FILE with the colour drawn');
     });
 
     it('should say controls write the camera once on release, warn past 16 scenes, and that the screenshot waits', () => {
