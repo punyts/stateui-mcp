@@ -10,8 +10,8 @@ const installed = await BrowserPreview.isInstalled();
 /** The screens of the showcase: home, then one per category */
 const SCREENS: readonly string[] = ['home', ...CATEGORY_ORDER];
 
-/** The problems of severity error in a preview report; warnings, such as the contrast notes of a library preset, are left out */
-const errorsIn = (problems: unknown): unknown[] => (problems as { severity: string }[]).filter((problem) => problem.severity === 'error');
+/** The problems of a preview report, warnings included: a contrast note of a library preset is a defect of the preset */
+const problemsIn = (problems: unknown): unknown[] => problems as unknown[];
 
 describe.skipIf(!installed)('the component showcase in the headless browser', () => {
     let data: TempData;
@@ -28,7 +28,7 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
         await data.cleanup();
     });
 
-    it.each(SCREENS)('should render the %s screen with no runtime error and take a screenshot', async (screen) => {
+    it.each(SCREENS)('should render the %s screen with no runtime error or warning and take a screenshot', async (screen) => {
         // Act
         const preview = await call(harness.client, 'ui_preview', { app: SHOWCASE_APP, screen });
         const shot = await call(harness.client, 'ui_screenshot', { app: SHOWCASE_APP, screen, fullPage: true });
@@ -38,7 +38,7 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
         // Assert
         expect(preview.isError, JSON.stringify(preview.body)).toBe(false);
         expect(preview.body['rendered']).toBe(true);
-        expect(errorsIn(preview.body['errors'])).toEqual([]);
+        expect(problemsIn(preview.body['errors'])).toEqual([]);
         expect(shot.isError, JSON.stringify(shot.body)).toBe(false);
         expect(shot.images).toHaveLength(1);
         expect(Buffer.from(shot.images[0]?.data ?? '', 'base64').subarray(1, 4).toString()).toBe('PNG');
@@ -51,6 +51,6 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
 
         // Assert
         expect(state.isError, JSON.stringify(state.body)).toBe(false);
-        expect(errorsIn((state.body['preview'] as { errors: unknown[] }).errors)).toEqual([]);
+        expect(problemsIn((state.body['preview'] as { errors: unknown[] }).errors)).toEqual([]);
     });
 });
