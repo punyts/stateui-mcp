@@ -10,7 +10,7 @@ export const CLAUDE =
     process.env.CLAUDE_BIN ??
     (process.platform === 'win32' ? join(process.env.APPDATA ?? '', 'npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe') : 'claude');
 
-export const HEADINGS = { store: 'Store', finance: 'Finance dashboard', booking: 'Booking app' };
+export const HEADINGS = { store: 'Store', finance: 'Finance dashboard', booking: 'Booking app', drawing: 'Floor plan' };
 
 export function runDir(phase, request, n) {
     return join(LIB, '.measurements', phase, `${request}-${n}`);
@@ -18,7 +18,7 @@ export function runDir(phase, request, n) {
 
 /** The prompt, checklist and judging rules of one request in test/measurement/requests.md */
 export function readRequest(request) {
-    if (!HEADINGS[request]) throw new Error(`unknown request "${request}"; use store, finance or booking`);
+    if (!HEADINGS[request]) throw new Error(`unknown request "${request}"; use ${Object.keys(HEADINGS).join(', ')}`);
     const md = readFileSync(join(LIB, 'test/measurement/requests.md'), 'utf8').split('\r\n').join('\n');
     const section = md.split(`## ${HEADINGS[request]}\n`)[1].split('\n## ')[0];
     const prompt = section

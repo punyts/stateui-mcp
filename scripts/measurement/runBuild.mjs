@@ -1,4 +1,4 @@
-// One measurement build: node scripts/measurement/runBuild.mjs <phase> <store|finance|booking> <n> [port]
+// One measurement build: node scripts/measurement/runBuild.mjs <phase> <store|finance|booking|drawing> <n> [port]
 // A fresh headless claude session gets the request's prompt word for word, with this library's server as its
 // only tools, in an empty folder (no CLAUDE.md, project settings or memory). Output: .measurements/<phase>/<request>-<n>/
 // Builds can run side by side on ports 10 apart (4300, 4310, 4320); each server also takes the next port for its runtime.
@@ -16,7 +16,7 @@ const APPROVAL = 'The plan looks good. Go ahead and build it.';
 // The tools that write a definition: a successful call of one means the agent has started building
 const WRITE_TOOLS = new Set(['ui_app_create', 'ui_app_write', 'ui_app_configure', 'ui_screen_create', 'ui_nodes_write', 'ui_locale_write', 'ui_theme_create', 'ui_theme_write', 'ui_model_write', 'ui_data_write', 'ui_logic_write', 'ui_composed_write']);
 const [phase, request, n, port = '4300'] = process.argv.slice(2);
-if (!phase || !request || !n) throw new Error('usage: runBuild.mjs <phase> <store|finance|booking> <n> [port]');
+if (!phase || !request || !n) throw new Error('usage: runBuild.mjs <phase> <store|finance|booking|drawing> <n> [port]');
 const { prompt } = readRequest(request);
 
 const run = runDir(phase, request, n);

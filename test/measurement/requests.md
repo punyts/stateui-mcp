@@ -1,6 +1,6 @@
 # Measurement requests
 
-The three builds that the search-first measurement repeats before and after each epic (`knowledge-base/design/stateui-search-first-epic-1-search-on-todays-tools.md`, story S1.2, in the AI Minion repository). Each request is the exact prompt given to the agent, then the checklist the result is judged by.
+The three builds that the search-first measurement repeats before and after each epic (`knowledge-base/design/stateui-search-first-epic-1-search-on-todays-tools.md`, story S1.2, in the AI Minion repository), and a fourth, the floor plan, a drawing built from the graphics vocabulary that the guide-tool measurement adds (`stateui-guide-tool.md`, story K1.5). Each request is the exact prompt given to the agent, then the checklist the result is judged by.
 
 A build **matches the request** when every checklist item is met in the full-page screenshot and the phone-width (390 px) screenshot of the finished app. An item is met only when it is visible and works as described; a placeholder or an empty region does not count.
 
@@ -13,7 +13,7 @@ How to run one build:
 
 The scripts in `scripts/measurement/` do steps 1 to 3 headless, with Claude Code signed in (`claude auth login`) and the library built (`npm run build`):
 
-- `node scripts/measurement/runBuild.mjs <phase> <store|finance|booking> <n> [port]` runs one build: a fresh `claude -p` session (`claude-opus-5-5`, or `BUILD_MODEL`) in an empty folder, with this library's server as its only tools, a fresh data folder and a tool log. It writes `transcript.jsonl` and `run.json` (model, commit, exit code, minutes) next to `calls.jsonl`. Builds can run side by side on ports 10 apart (4300, 4310, 4320). Since the server instructions ask the agent to show the plan of a large app and wait for an OK, a first turn that ends with no successful write gets one reply, "The plan looks good. Go ahead and build it.", and `run.json` records it as `approvals`.
+- `node scripts/measurement/runBuild.mjs <phase> <store|finance|booking|drawing> <n> [port]` runs one build: a fresh `claude -p` session (`claude-opus-5-5`, or `BUILD_MODEL`) in an empty folder, with this library's server as its only tools, a fresh data folder and a tool log. It writes `transcript.jsonl` and `run.json` (model, commit, exit code, minutes) next to `calls.jsonl`. Builds can run side by side on ports 10 apart (4300, 4310, 4320). Since the server instructions ask the agent to show the plan of a large app and wait for an OK, a first turn that ends with no successful write gets one reply, "The plan looks good. Go ahead and build it.", and `run.json` records it as `approvals`.
 - `node scripts/measurement/shots.mjs <phase> <request> <n> [port]` saves every screen of every app part, full page at 1280 and 390 px, into `shots/`.
 - `node scripts/measurement/reviewBuild.mjs <phase> <request> <n> [port]` judges the checklist: a fresh `claude -p` session (`claude-sonnet-5-5`, or `REVIEW_MODEL`) with the read, screenshot and interact tools only, which writes `review.json` with met or not met and one sentence of evidence per item.
 
@@ -77,3 +77,25 @@ Set `CLAUDE_BIN` when `claude` is not on the path (on Windows the scripts defaul
 9. An owner screen, reached from the navigation, lists every booking with guest, room and dates.
 10. The owner can cancel a booking after confirming, and it leaves the list.
 11. At phone width the date picking and the room list stay usable.
+
+## Floor plan
+
+The `drawing` request of the scripts (K1.5 of the guide-tool epic): a drawing whose shapes are linked to state, pressed to change it, and fitted to a phone.
+
+**Prompt:**
+
+> Build an office floor plan for booking meeting rooms. Draw the floor with six meeting rooms as shapes, each labelled with its name, coloured green when the room is free and red when it is booked. Clicking a room on the plan selects it: it is highlighted, and a panel next to the plan shows its name, the number of seats and whether it is free, with a button to book it or to free it again. Above the plan, draw a gauge that shows how many of the six rooms are free. Use realistic sample rooms.
+
+**Checklist:**
+
+1. A drawn floor plan (shapes in a drawing, not a list or a grid of cards) shows six meeting rooms.
+2. Each room shows its name on the plan.
+3. Free and booked rooms are drawn in different colours (green for free, red for booked), and the sample data has rooms of both kinds.
+4. Clicking a room on the plan selects it, and the selected room is visibly highlighted.
+5. A panel shows the selected room's name, its number of seats and whether it is free.
+6. A button in the panel books a free room, and the room turns to the booked colour on the plan.
+7. A button in the panel frees a booked room, and the room turns back to the free colour.
+8. A drawn gauge (a shape whose size, angle or position follows the count, not only a number) shows how many rooms are free, with the count as text.
+9. The gauge follows when a room is booked or freed.
+10. Selecting another room updates the panel, and only one room is highlighted at a time.
+11. At phone width the plan fits the screen with the room names readable and the rooms clickable, and the panel sits below or beside it; nothing is cut off and no horizontal scroll.

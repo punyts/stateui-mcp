@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolCallEntry } from '../../application/ports/ToolCallLog.js';
+import type { InstructionsEntry, ToolCallEntry } from '../../application/ports/ToolCallLog.js';
 import { FileToolCallLog } from './FileToolCallLog.js';
 
 const ENTRY: ToolCallEntry = Object.freeze({
@@ -71,6 +71,19 @@ describe('FileToolCallLog', () => {
 
         // Assert
         expect(JSON.parse(await readFile(file, 'utf8')) as object).toEqual({ at: ENTRY.at, tool: 'ui_components_search', ok: true, requestChars: 2, responseChars: 50 });
+    });
+
+    it('should write the instructions entry with its length only', async () => {
+        // Arrange
+        const file = join(dir, 'calls.jsonl');
+        const log = new FileToolCallLog(file, { info: vi.fn() });
+        const smuggled = { at: ENTRY.at, instructionsChars: 5157, text: 'the instructions' } as InstructionsEntry;
+
+        // Act
+        await log.record(smuggled);
+
+        // Assert
+        expect(JSON.parse(await readFile(file, 'utf8')) as object).toEqual({ at: ENTRY.at, instructionsChars: 5157 });
     });
 
     it('should not throw when the write fails, and report it once', async () => {

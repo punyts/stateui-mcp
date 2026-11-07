@@ -140,10 +140,10 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
     const tools = createStateUiTools(dependencies);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
-    const server = new Server(
-        { name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION },
-        { capabilities: { tools: {} }, instructions: buildServerInstructions(dependencies.categoryIndex, presetNames(dependencies)) }
-    );
+    const instructions = buildServerInstructions(dependencies.categoryIndex, presetNames(dependencies));
+    const server = new Server({ name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION }, { capabilities: { tools: {} }, instructions });
+    // The log records the size of the served instructions once per session, so the measurement counts them once per build
+    server.oninitialized = () => void dependencies.toolCallLog?.record({ at: new Date().toISOString(), instructionsChars: instructions.length });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
         tools: tools.map((tool) => ({

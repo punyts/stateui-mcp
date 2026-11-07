@@ -10,7 +10,7 @@ const MODEL = process.env.REVIEW_MODEL ?? 'claude-sonnet-5-5';
 const TOOLS = ['ui_list', 'ui_get', 'ui_app_list', 'ui_app_get', 'ui_tree', 'ui_outline', 'ui_validate', 'ui_preview', 'ui_screenshot', 'ui_interact', 'ui_state_get', 'ui_state_reset', 'ui_events_read', 'ui_component_get', 'ui_data_query'];
 
 // Tools that change a definition or set state by hand: removed, so the review cannot fix what it judges
-const DENY = ['ui_app_configure', 'ui_app_create', 'ui_app_delete', 'ui_app_write', 'ui_call_answer', 'ui_command', 'ui_composed_write', 'ui_data_write', 'ui_delete', 'ui_locale_write', 'ui_logic_write', 'ui_model_write', 'ui_nodes_write', 'ui_rename', 'ui_screen_create', 'ui_state_set', 'ui_theme_create', 'ui_theme_write'];
+const DENY = ['ui_app_configure', 'ui_app_create', 'ui_app_delete', 'ui_app_write', 'ui_call_answer', 'ui_command', 'ui_composed_write', 'ui_data_write', 'ui_delete', 'ui_locale_write', 'ui_logic_write', 'ui_model_write', 'ui_nodes_write', 'ui_pattern_write', 'ui_rename', 'ui_screen_create', 'ui_state_set', 'ui_theme_create', 'ui_theme_write'];
 
 const [phase, request, n, port = '4300'] = process.argv.slice(2);
 if (!phase || !request || !n) throw new Error('usage: reviewBuild.mjs <phase> <request> <n> [port]');

@@ -1,5 +1,5 @@
 import { appendFile } from 'node:fs/promises';
-import type { ToolCallEntry, ToolCallLog } from '../../application/ports/ToolCallLog.js';
+import type { InstructionsEntry, ToolCallEntry, ToolCallLog } from '../../application/ports/ToolCallLog.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 
 /**
@@ -15,7 +15,7 @@ export class FileToolCallLog implements ToolCallLog {
         private readonly report: UseCaseReport
     ) {}
 
-    record(entry: ToolCallEntry): Promise<void> {
+    record(entry: ToolCallEntry | InstructionsEntry): Promise<void> {
         const line = `${JSON.stringify(pick(entry))}\n`;
         this.tail = this.tail.then(() =>
             appendFile(this.file, line, 'utf8').catch((error: unknown) => {
@@ -29,7 +29,8 @@ export class FileToolCallLog implements ToolCallLog {
 }
 
 /** Copies only the known fields, in a fixed order, so nothing else can reach the file */
-function pick(entry: ToolCallEntry): ToolCallEntry {
+function pick(entry: ToolCallEntry | InstructionsEntry): ToolCallEntry | InstructionsEntry {
+    if ('instructionsChars' in entry) return { at: entry.at, instructionsChars: entry.instructionsChars };
     return {
         at: entry.at,
         tool: entry.tool,

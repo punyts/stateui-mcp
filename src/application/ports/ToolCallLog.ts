@@ -16,7 +16,18 @@ export interface ToolCallEntry {
     readonly warningCount?: number;
 }
 
-/** Where tool calls are recorded for measurement. Recording never fails a call */
+/**
+ * The server instructions as the log records them, once per session when the client has initialized: their length,
+ * never their text, so the measurement can count the instructions with the tokens read (K1.5 of the guide-tool epic)
+ */
+export interface InstructionsEntry {
+    /** ISO time the client initialized */
+    readonly at: string;
+    /** Length of the served instructions */
+    readonly instructionsChars: number;
+}
+
+/** Where tool calls (and the size of the served instructions) are recorded for measurement. Recording never fails a call */
 export interface ToolCallLog {
-    record(entry: ToolCallEntry): Promise<void>;
+    record(entry: ToolCallEntry | InstructionsEntry): Promise<void>;
 }

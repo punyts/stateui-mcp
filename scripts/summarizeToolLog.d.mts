@@ -1,7 +1,10 @@
 export interface ToolLogEntry {
     readonly at?: string;
-    readonly tool: string;
-    readonly ok: boolean;
+    /** Absent on the instructions line */
+    readonly tool?: string;
+    readonly ok?: boolean;
+    /** Only on the instructions line, which the server writes once per session */
+    readonly instructionsChars?: number;
     readonly errorCode?: string;
     readonly requestChars?: number;
     readonly responseChars?: number;
@@ -11,7 +14,10 @@ export interface ToolLogEntry {
 }
 
 export interface BuildSummary {
+    readonly tokensRead: number;
+    readonly instructionsTokens: number;
     readonly catalogTokens: number;
+    readonly guideTokens: number;
     readonly failedWrites: number;
     readonly firstWriteErrors: number;
 }
@@ -23,6 +29,7 @@ export interface Spread {
 }
 
 export declare const CATALOG_TOOLS: readonly string[];
+export declare const GUIDE_TOOL: string;
 export declare function isWriteTool(tool: string): boolean;
 export declare function parseLog(text: string): ToolLogEntry[];
 export declare function summarize(entries: readonly ToolLogEntry[]): BuildSummary;

@@ -502,7 +502,11 @@ describe('tool-call log', () => {
         const file = join(data.dir, 'calls.jsonl');
         const logged = await inMemoryHarness(data.dir, noBrowser, file);
         const read = async (): Promise<Record<string, unknown>[]> =>
-            (await readFile(file, 'utf8').catch(() => '')).split('\n').filter((line) => line !== '').map((line) => JSON.parse(line) as Record<string, unknown>);
+            (await readFile(file, 'utf8').catch(() => ''))
+                .split('\n')
+                .filter((line) => line !== '')
+                .map((line) => JSON.parse(line) as Record<string, unknown>)
+                .filter((entry) => 'tool' in entry);
 
         try {
             // Act
@@ -535,13 +539,46 @@ describe('tool-call log', () => {
             const validated = await call(logged.client, 'ui_validate', { app: created.name });
 
             // Assert
-            await vi.waitFor(async () => expect((await readFile(file, 'utf8')).trim().split('\n')).toHaveLength(2));
-            const lines = (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+            // The instructions line of the session is left out: this test is about the calls
+            const calls = async (): Promise<Record<string, unknown>[]> =>
+                (await readFile(file, 'utf8'))
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line) as Record<string, unknown>)
+                    .filter((entry) => 'tool' in entry);
+            await vi.waitFor(async () => expect(await calls()).toHaveLength(2));
+            const lines = await calls();
             expect(lines[0]).toMatchObject({ tool: 'ui_app_create', ok: true });
             expect(lines[0]).not.toHaveProperty('target');
             expect(lines[1]).toMatchObject({ tool: 'ui_validate', target: created.name });
             expect(lines[1]?.['errorCount']).toBe((validated.body['errors'] as unknown[]).length);
             expect(lines[1]?.['warningCount']).toBe((validated.body['warnings'] as unknown[]).length);
+        } finally {
+            await logged.close();
+        }
+    });
+
+    it('should log the size of the served instructions once, and ui_guide calls like any other (K1.5 of the guide-tool epic)', async () => {
+        // Arrange
+        const file = join(data.dir, 'calls.jsonl');
+        const logged = await inMemoryHarness(data.dir, noBrowser, file);
+        const read = async (): Promise<Record<string, unknown>[]> =>
+            (await readFile(file, 'utf8').catch(() => ''))
+                .split('\n')
+                .filter((line) => line !== '')
+                .map((line) => JSON.parse(line) as Record<string, unknown>);
+        try {
+            // Act
+            const topic = await call(logged.client, 'ui_guide', { topic: 'logic' });
+            await call(logged.client, 'ui_guide', { topic: 'nothing' });
+
+            // Assert: one instructions line with the length only, then the two guide calls
+            await vi.waitFor(async () => expect(await read()).toHaveLength(3));
+            const [instructions, ok, failed] = await read();
+            expect(instructions).toEqual({ at: expect.any(String), instructionsChars: logged.client.getInstructions()?.length });
+            expect(ok).toMatchObject({ tool: 'ui_guide', ok: true, responseChars: JSON.stringify(topic.body).length });
+            expect(failed).toMatchObject({ tool: 'ui_guide', ok: false, errorCode: 'unknown-topic' });
+            expect(await readFile(file, 'utf8')).not.toContain('ui_guide is the guide');
         } finally {
             await logged.close();
         }
