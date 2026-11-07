@@ -1248,3 +1248,82 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
         await page.close();
     });
 });
+
+describe.skipIf(!installed)('a drawImage of an uploaded file through the agent tools: G1.9b of the graphics epic 1 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    let appId = '';
+    const SVG_PLAN = '$.app.children.plan';
+    const CANVAS_PLAN = '$.app.children.canvasPlan';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        appId = (await createApp(harness.client, 'plans', shellOf({}))).id;
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    /** A PNG of 40 by 20 pixels, green on the left half and blue on the right half, made in the blank page */
+    async function splitPng(): Promise<Buffer> {
+        const base64 = await blank.evaluate(() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 40;
+            canvas.height = 20;
+            const context = canvas.getContext('2d') as CanvasRenderingContext2D;
+            context.fillStyle = '#00ff00';
+            context.fillRect(0, 0, 20, 20);
+            context.fillStyle = '#0000ff';
+            context.fillRect(20, 0, 20, 20);
+            return canvas.toDataURL('image/png').split(',')[1] ?? '';
+        });
+        return Buffer.from(base64, 'base64');
+    }
+
+    it('should screenshot the pixels of an uploaded PNG in a drawImage, in SVG and on canvas', { timeout: 60_000 }, async () => {
+        // Arrange: the file is uploaded as a fileField would upload it
+        const form = new FormData();
+        form.append('file', new Blob([new Uint8Array(await splitPng())], { type: 'image/png' }), 'plan.png');
+        const uploaded = await fetch(`${harness.server.origin}/apps/${appId}/files`, { method: 'POST', body: form });
+        const reference = (await uploaded.json()) as { id: string; name: string; size: number; type: string };
+        const drawingOf = (renderer: string) => ({
+            component: 'drawing',
+            renderer,
+            _title: 'Floor plan',
+            viewBox: { x: 0, y: 0, width: 200, height: 100 },
+            children: { backdrop: { component: 'drawImage', src: reference, x: 0, y: 0, width: 200, height: 100, fit: 'stretch' } }
+        });
+
+        // Act
+        const written = await writeShell(harness, 'plans', 1, [
+            { op: 'set', path: 'root.children.plan', value: drawingOf('svg') },
+            { op: 'set', path: 'root.children.canvasPlan', value: drawingOf('canvas') }
+        ]);
+        const validated = await call(harness.client, 'ui_validate', { app: 'plans' });
+        const shots = [await call(harness.client, 'ui_screenshot', { app: 'plans', path: SVG_PLAN }), await call(harness.client, 'ui_screenshot', { app: 'plans', path: CANVAS_PLAN })];
+
+        // Assert
+        expect(uploaded.status).toBe(201);
+        expect(reference.type).toBe('image/png');
+        expect(written.isError).toBe(false);
+        expect(validated.body['errors']).toEqual([]);
+        // The drawing is wider than tall, so its viewBox is fitted (contain) in the middle: left and right of the centre
+        // are the picture's two halves
+        for (const shot of shots) {
+            expect(shot.isError).toBe(false);
+            expect(shot.body['pending']).toBeUndefined();
+            const left = await readPixelAt(blank, shot, 0.45, 0.5);
+            const right = await readPixelAt(blank, shot, 0.55, 0.5);
+            left.colour.forEach((channel, index) => expect(Math.abs(channel - ([0, 255, 0][index] as number))).toBeLessThanOrEqual(2));
+            right.colour.forEach((channel, index) => expect(Math.abs(channel - ([0, 0, 255][index] as number))).toBeLessThanOrEqual(2));
+        }
+    });
+});

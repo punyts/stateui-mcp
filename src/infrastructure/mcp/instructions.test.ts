@@ -125,6 +125,16 @@ describe('graphicsSection', () => {
         expect(text).toContain('once, on release');
     });
 
+    it('should say what a drawImage src may be (G1.9b)', () => {
+        // Act
+        const text = graphicsSection();
+
+        // Assert
+        expect(text).toContain('src is a data: URL of a png, jpeg, gif or webp picture, or the reference { id, name, size, type }');
+        expect(text).toContain('an SVG is refused');
+        expect(text).toContain('SUI-RUN-FILE');
+    });
+
     it('should say draggable needs interactive: true and how ui_interact drags a shape by an offset', () => {
         // Act
         const text = graphicsSection();
