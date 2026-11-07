@@ -293,10 +293,11 @@ describe('StateUiComponentCatalog categoryIndex', () => {
         expect(index.every((entry) => entry.typical.length === Math.min(3, entry.count))).toBe(true);
     });
 
-    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3)', () => {
+    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3), and scene3d and its five 3D nodes (G3.4)', () => {
         const graphics = catalog.categoryIndex().find((entry) => entry.category === 'graphics');
 
-        expect(graphics?.count).toBe(12);
+        expect(graphics?.count).toBe(18);
+        expect(catalog.search({ need: 'show a 3D product model', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['scene3d', 'model']));
         expect(catalog.search({ need: 'draw a seat map', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['drawing', 'drawRepeat']));
     });
 

@@ -1,9 +1,12 @@
 import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
+import { loadChunk3d } from '../src/infrastructure/http/runtimeBundle.js';
+import { runtimeCsp } from '../src/infrastructure/http/security.js';
 import { EXPECTED_TOOLS } from './expectedTools.js';
 import { FORM_SHELL, call, createApp, httpHarness, noBrowser, shellOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
@@ -180,6 +183,86 @@ describe('GET /apps/:appId', () => {
         expect(script.headers.get('content-type')).toContain('text/javascript');
         expect(await script.text()).toContain('/report');
         expect(css.headers.get('content-type')).toContain('text/css');
+    });
+});
+
+describe('the 3D chunk on the runtime origin', () => {
+    const CHUNK_HASH = 'fedcba9876543210';
+    const CHUNK_SCRIPT = "globalThis.__stateui3d = { version: 'fake', createScene3d: function () { return {}; } };\n";
+    let chunkData: TempData;
+    let chunkHarness: HttpHarness;
+    let chunkAppId = '';
+    let bareData: TempData;
+    let bareHarness: HttpHarness;
+    let bareAppId = '';
+
+    beforeAll(async () => {
+        chunkData = await tempData();
+        const chunkDir = join(chunkData.dir, 'chunk');
+        await mkdir(chunkDir);
+        await writeFile(join(chunkDir, 'manifest.json'), JSON.stringify({ hash: CHUNK_HASH, script: `${CHUNK_HASH}.js` }));
+        await writeFile(join(chunkDir, `${CHUNK_HASH}.js`), CHUNK_SCRIPT);
+        chunkHarness = await httpHarness(join(chunkData.dir, 'data'), noBrowser, { chunk3dDir: chunkDir });
+        chunkAppId = (await createApp(chunkHarness.client, 'scene', FORM_SHELL)).id;
+        // A folder with no manifest stands for a server without @punyts/stateui-3d
+        bareData = await tempData();
+        bareHarness = await httpHarness(join(bareData.dir, 'data'), noBrowser, { chunk3dDir: bareData.dir });
+        bareAppId = (await createApp(bareHarness.client, 'flat', FORM_SHELL)).id;
+    });
+
+    afterAll(async () => {
+        await chunkHarness.close();
+        await chunkData.cleanup();
+        await bareHarness.close();
+        await bareData.cleanup();
+    });
+
+    it('should keep the frame policy: no blob, scripts only from the runtime origin and no connections', () => {
+        const csp = runtimeCsp('http://127.0.0.1:4100');
+
+        expect(csp).toContain("script-src 'self' 'unsafe-eval'");
+        expect(csp).toContain("connect-src 'none'");
+        expect(csp).not.toContain('blob:');
+        expect(csp).not.toContain('worker-src');
+    });
+
+    it('should serve the chunk by its hash with the immutable cache of the runtime script, and 404 another hash', async () => {
+        const runtimeOrigin = `http://127.0.0.1:${chunkHarness.server.runtimePort}`;
+
+        const chunk = await fetch(`${runtimeOrigin}/runtime/${CHUNK_HASH}.js`);
+        const other = await fetch(`${runtimeOrigin}/runtime/0123456789abcdef.js`);
+        const onMain = await fetch(`${chunkHarness.server.origin}/runtime/${CHUNK_HASH}.js`);
+
+        expect(chunk.status).toBe(200);
+        expect(chunk.headers.get('content-type')).toContain('text/javascript');
+        expect(chunk.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+        expect(await chunk.text()).toBe(CHUNK_SCRIPT);
+        expect(other.status).toBe(404);
+        expect(onMain.status).toBe(404);
+    });
+
+    it('should name the chunk to the host page in data-chunk-3d', async () => {
+        const html = await (await fetch(`${chunkHarness.server.origin}/apps/${chunkAppId}`)).text();
+
+        expect(html).toMatch(new RegExp(`data-runtime-url="[^"]+" data-chunk-3d="${CHUNK_HASH}"`));
+    });
+
+    it('should start without a chunk, name none and serve none', async () => {
+        const html = await (await fetch(`${bareHarness.server.origin}/apps/${bareAppId}`)).text();
+        const runtimeOrigin = `http://127.0.0.1:${bareHarness.server.runtimePort}`;
+
+        expect(html).toContain('data-runtime-url="');
+        expect(html).not.toContain('data-chunk-3d');
+        expect((await fetch(`${runtimeOrigin}/runtime/${CHUNK_HASH}.js`)).status).toBe(404);
+    });
+
+    it('should read no chunk from a folder without a manifest, and refuse a manifest without a valid hash', async () => {
+        const badDir = join(bareData.dir, 'bad');
+        await mkdir(badDir);
+        await writeFile(join(badDir, 'manifest.json'), JSON.stringify({ hash: '../runtime' }));
+
+        expect(loadChunk3d(bareData.dir)).toBeUndefined();
+        expect(() => loadChunk3d(badDir)).toThrow(/no valid hash/);
     });
 });
 

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
     ALLOWED_FILE_TYPES,
     detectFileType,
+    detectMagicType,
+    GLB_TYPE,
     isAllowedFileType,
     isFileReferenced,
     isTextReadableType,
@@ -30,6 +32,36 @@ function zip(...names: string[]): Uint8Array {
     end[12] = directorySize;
     end[16] = directoryStart;
     return Uint8Array.from([...parts, ...end]);
+}
+
+/** The allowed file types every library keeps, in order: the same literal is in stateui-components' `files.test.ts` */
+const SHARED_FILE_TYPES = [
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'text/csv',
+    'text/markdown',
+    'application/json',
+    'model/gltf-binary'
+];
+
+/** A GLB: the `glTF` magic, the version and the length in the header (the file's own size unless given), then a JSON chunk */
+function glb(options: { version?: number; length?: number } = {}): Uint8Array {
+    const json = utf8('{"asset":{"version":"2.0"}}  ');
+    const bytes = new Uint8Array(12 + 8 + json.length);
+    const view = new DataView(bytes.buffer);
+    bytes.set([0x67, 0x6c, 0x54, 0x46]);
+    view.setUint32(4, options.version ?? 2, true);
+    view.setUint32(8, options.length ?? bytes.length, true);
+    view.setUint32(12, json.length, true);
+    view.setUint32(16, 0x4e4f534a, true);
+    bytes.set(json, 20);
+    return bytes;
 }
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
@@ -95,6 +127,51 @@ describe('detectFileType', () => {
     });
 });
 
+describe('GLB detection', () => {
+    it('should recognise a GLB 2 whose header length is the file size, whatever its name', () => {
+        expect(detectFileType('chair.glb', glb())).toBe(GLB_TYPE);
+        expect(detectFileType('chair.bin', glb())).toBe(GLB_TYPE);
+        expect(GLB_TYPE).toBe('model/gltf-binary');
+    });
+
+    it('should take the whole size apart from the head, as an upload passes only the head', () => {
+        const file = glb();
+        const head = file.subarray(0, 12);
+
+        expect(detectMagicType(head, file.length)).toBe(GLB_TYPE);
+        expect(detectMagicType(head)).toBeUndefined();
+    });
+
+    it('should refuse a GLB cut below its header length or longer than it', () => {
+        const file = glb();
+
+        expect(detectFileType('a.glb', file.subarray(0, file.length - 1))).toBeUndefined();
+        expect(detectFileType('a.glb', file.subarray(0, 8))).toBeUndefined();
+        expect(detectFileType('a.glb', Uint8Array.from([...file, 0]))).toBeUndefined();
+    });
+
+    it('should refuse a wrong version or a wrong length in the header', () => {
+        expect(detectFileType('a.glb', glb({ version: 1 }))).toBeUndefined();
+        expect(detectFileType('a.glb', glb({ length: 0 }))).toBeUndefined();
+        expect(detectFileType('a.glb', glb({ length: 1000 }))).toBeUndefined();
+    });
+
+    it('should refuse a .gltf, and HTML, SVG or text named .glb', () => {
+        expect(detectFileType('scene.gltf', utf8('{"asset":{"version":"2.0"},"buffers":[{"uri":"scene.bin"}]}'))).toBeUndefined();
+        expect(detectFileType('a.glb', utf8('<!doctype html><script>1</script>'))).toBeUndefined();
+        expect(detectFileType('a.glb', utf8('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeUndefined();
+        expect(detectFileType('a.glb', utf8('just text'))).toBeUndefined();
+        expect(detectFileType('a.txt', utf8('glTF text that starts like a model'))).toBeUndefined();
+    });
+
+    it('should leave the other types as they were', () => {
+        expect(detectFileType('a.png', PNG)).toBe('image/png');
+        expect(detectFileType('a.json', utf8('{"a":1}'))).toBe('application/json');
+        expect(detectFileType('a.svg', utf8('<svg/>'))).toBeUndefined();
+        expect(isTextReadableType(GLB_TYPE)).toBe(false);
+    });
+});
+
 describe('zipEntryNames', () => {
     it('should list entries and return undefined for non-ZIP bytes', () => {
         expect(zipEntryNames(zip('a', 'b/c'))).toEqual(['a', 'b/c']);
@@ -120,7 +197,13 @@ describe('normaliseFileName', () => {
 describe('allowed types', () => {
     it('should not allow HTML, SVG or octet-stream', () => {
         for (const type of ['text/html', 'image/svg+xml', 'application/octet-stream']) expect(isAllowedFileType(type)).toBe(false);
-        expect(ALLOWED_FILE_TYPES).toHaveLength(11);
+        expect(ALLOWED_FILE_TYPES).toHaveLength(12);
+    });
+
+    it('should be the one list the components library keeps too', () => {
+        // `@punyts/stateui-components` exports no file-type list and the server's domain cannot import it, so both
+        // libraries pin their list to this literal (its `files.test.ts` has the same one)
+        expect(ALLOWED_FILE_TYPES).toEqual(SHARED_FILE_TYPES);
     });
 
 });

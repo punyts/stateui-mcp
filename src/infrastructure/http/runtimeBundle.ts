@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -26,6 +26,37 @@ export function loadRuntimeBundle(dir: string | undefined): RuntimeBundle {
     if (resolved === undefined) {
         throw new Error('The StateUI runtime bundle was not found. Build it with "npm run build:runtime-bundle" in @punyts/stateui-app, or pass --runtime-dir');
     }
+    const manifest: unknown = JSON.parse(readFileSync(join(resolved, 'manifest.json'), 'utf8'));
+    if (typeof manifest !== 'object' || manifest === null || !('hash' in manifest) || typeof manifest.hash !== 'string' || !HASH_PATTERN.test(manifest.hash)) {
+        throw new Error(`manifest.json in ${resolved} has no valid hash`);
+    }
+    return { hash: manifest.hash, script: readFileSync(join(resolved, `${manifest.hash}.js`)) };
+}
+
+/** The built 3D renderer chunk of `@punyts/stateui-3d`: one content-hashed classic script the runtime loads on demand */
+export type RuntimeChunk = RuntimeBundle;
+
+/**
+ * The folder of the built 3D chunk: `dir` when given, else `dist/runtime-chunk` of `@punyts/stateui-3d` through its
+ * package exports. Undefined when the package (an optional dependency) is not installed or not built
+ */
+export function resolveChunk3dDir(dir: string | undefined): string | undefined {
+    if (dir !== undefined) return dir;
+    try {
+        return dirname(createRequire(import.meta.url).resolve('@punyts/stateui-3d/runtime-chunk/manifest.json'));
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Reads the 3D chunk's manifest and script, or gives undefined when there is no chunk (no package, or a folder with no
+ * `manifest.json`): the server then starts normally and names no chunk to the runtime, so a scene shows its fallback.
+ * A manifest without a valid hash, or a missing script, throws
+ */
+export function loadChunk3d(dir: string | undefined): RuntimeChunk | undefined {
+    const resolved = resolveChunk3dDir(dir);
+    if (resolved === undefined || !existsSync(join(resolved, 'manifest.json'))) return undefined;
     const manifest: unknown = JSON.parse(readFileSync(join(resolved, 'manifest.json'), 'utf8'));
     if (typeof manifest !== 'object' || manifest === null || !('hash' in manifest) || typeof manifest.hash !== 'string' || !HASH_PATTERN.test(manifest.hash)) {
         throw new Error(`manifest.json in ${resolved} has no valid hash`);

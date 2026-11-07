@@ -41,6 +41,7 @@ import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, p
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { readStoredFile } from './fileRead.js';
 import { createReleaseGate, releaseStoredFile } from './fileRelease.js';
+import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
 
 /** The app events an app server's logic sends to the views: failures and `notify.<name>` */
@@ -60,19 +61,8 @@ type ChangeOp = 'set' | 'replace' | 'merge' | 'delete';
 
 const PROTOCOL_VERSION = 1;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_FILE_TYPES = [
-    'image/png',
-    'image/jpeg',
-    'image/gif',
-    'image/webp',
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-    'text/csv',
-    'text/markdown',
-    'application/json'
-];
+/** The hash that names a chunk script beside the runtime page, as `load.chunks` takes it */
+const CHUNK_HASH = /^[0-9a-f]{16}$/;
 /** Keys of a node that belong to the document, never to the synced state */
 const NODE_KEYS: readonly string[] = ['component', 'on', 'layout', 'placement', 'theme'];
 const CONTENT_PREFIX = '_';
@@ -257,6 +247,8 @@ class LiveView {
     private readonly viewKind: string;
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
+    /** The hash of the 3D renderer chunk the runtime origin serves (`data-chunk-3d`), sent in `load` as `chunks`; undefined when there is none */
+    private readonly chunk3d: string | undefined;
     private readonly namespace: string;
     /** An owner app's view: the state is the default persona's instance */
     private readonly instance: boolean;
@@ -295,6 +287,8 @@ class LiveView {
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
         this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
+        const chunk3d = body.getAttribute('data-chunk-3d') ?? '';
+        this.chunk3d = CHUNK_HASH.test(chunk3d) ? chunk3d : undefined;
         this.namespace = body.dataset['namespace'] || `apps.${this.appId.toLowerCase()}`;
         this.instance = this.namespace.startsWith('instances.');
         this.syncStatus = { mode: 'full', status: 'connecting', waiting: 0 };
@@ -545,7 +539,8 @@ class LiveView {
             document: app.document,
             mode: 'full',
             ...(this.synced !== undefined && (this.instance ? { instance: this.instanceOf(this.synced) } : { state: { data: this.synced.data, app: this.synced.app } })),
-            ...(icons !== undefined && { icons })
+            ...(icons !== undefined && { icons }),
+            ...(this.chunk3d !== undefined && { chunks: { '3d': this.chunk3d } })
         });
         this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
         this.loaded = true;

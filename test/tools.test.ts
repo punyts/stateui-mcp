@@ -170,6 +170,22 @@ describe('catalog tools', () => {
         expect((shapes.body['results'] as { tier: string }[]).every((hit) => hit.tier === 'shape')).toBe(true);
     });
 
+    it('should return scene3d and the 3D nodes with their properties and find them by need (graphics G3.4)', async () => {
+        const scene = await call(harness.client, 'ui_component_get', { name: 'scene3d' });
+        const mesh = await call(harness.client, 'ui_component_get', { name: 'mesh' });
+        const camera = await call(harness.client, 'ui_component_get', { name: 'camera' });
+        const found = await call(harness.client, 'ui_components_search', { need: 'show an uploaded GLB model', category: 'graphics' });
+
+        expect(scene.isError).toBe(false);
+        expect(Object.keys(scene.body['properties'] as object)).toEqual(expect.arrayContaining(['background', 'environment', 'fog', 'controls', '_title', '_description', '_fallback']));
+        expect(mesh.body['tier']).toBe('shape');
+        expect(mesh.body['events']).toEqual(['press', 'hover']);
+        expect(Object.keys(mesh.body['properties'] as object)).toEqual(expect.arrayContaining(['geometry', 'material', 'castShadow', 'receiveShadow', 'position', 'rotation', 'scale', 'interactive', '_label', 'animate']));
+        expect(JSON.stringify((mesh.body['properties'] as Record<string, unknown>)['material'])).toContain('"roughness"');
+        expect(JSON.stringify((camera.body['properties'] as Record<string, unknown>)['fov'])).toContain('179');
+        expect((found.body['results'] as { name: string }[])[0]?.name).toBe('model');
+    });
+
     it('should answer an unknown component with the nearest names', async () => {
         const result = await call(harness.client, 'ui_component_get', { name: 'buton' });
 

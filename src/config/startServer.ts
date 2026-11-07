@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import { startHttpServer } from '../infrastructure/http/HttpServer.js';
 import { packageRoot } from '../infrastructure/http/packageRoot.js';
-import { loadRuntimeBundle } from '../infrastructure/http/runtimeBundle.js';
+import { loadChunk3d, loadRuntimeBundle } from '../infrastructure/http/runtimeBundle.js';
 import { McpHttpSessions } from '../infrastructure/mcp/McpHttpSessions.js';
 import { createStateUiMcpServer } from '../infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
@@ -24,6 +24,11 @@ export interface ServerOptions {
     readonly report: UseCaseReport;
     /** The folder of the built runtime bundle; default is the one in `@punyts/stateui-app` */
     readonly runtimeDir?: string;
+    /**
+     * The folder of the built 3D renderer chunk; default is the one in `@punyts/stateui-3d` when that optional package is
+     * installed. A folder without `manifest.json` means no chunk: scenes then show their fallback
+     */
+    readonly chunk3dDir?: string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
     /** The key that encrypts `$.server` at rest */
@@ -53,6 +58,7 @@ function loadHostScript(): Buffer {
 /** Starts the HTTP server (MCP at /mcp and the browser endpoint), and the stdio transport when asked */
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
     const runtime = loadRuntimeBundle(options.runtimeDir);
+    const chunk3d = loadChunk3d(options.chunk3dDir);
     const hostScript = loadHostScript();
     let origin = '';
     const services = createServices({
@@ -78,6 +84,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         instances: services.instanceViews,
         mcp: sessions,
         runtime,
+        ...(chunk3d !== undefined && { chunk3d }),
         hostScript,
         report: options.report
     });

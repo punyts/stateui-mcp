@@ -17,7 +17,7 @@ import type { LiveViews } from '../preview/LiveViews.js';
 import type { Authority } from '@punyts/state-sync/authority';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
-import type { RuntimeBundle } from './runtimeBundle.js';
+import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
 import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
@@ -39,6 +39,8 @@ export interface HttpServerOptions {
     readonly instances: InstanceViews;
     readonly mcp: McpEndpoint;
     readonly runtime: RuntimeBundle;
+    /** The 3D renderer chunk of `@punyts/stateui-3d`, served beside the runtime; absent when it is not installed */
+    readonly chunk3d?: RuntimeChunk;
     /** The compiled host script, served as `/assets/host.js` */
     readonly hostScript: Buffer;
     readonly report: UseCaseReport;
@@ -146,12 +148,13 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * | Route | What |
  * |---|---|
  * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
+ * | `GET /runtime/<chunk hash>.js` | the content-hashed 3D renderer chunk, when `@punyts/stateui-3d` is installed; the app page names it in `data-chunk-3d` |
  *
  * The frame is sandboxed with `allow-scripts allow-same-origin`. Its own origin keeps it apart from the host page, and
  * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
-    const { useCases, hub, liveViews, instances, runtime, report } = options;
+    const { useCases, hub, liveViews, instances, runtime, chunk3d, report } = options;
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
     // Both known after listen, so a port of 0 works
@@ -178,6 +181,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
         if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {
             send(response, 200, 'text/javascript; charset=utf-8', runtime.script, { 'Cache-Control': 'public, max-age=31536000, immutable' });
+            return;
+        }
+        if (chunk3d !== undefined && request.method === 'GET' && path === `${runtimeBase}/${chunk3d.hash}.js`) {
+            send(response, 200, 'text/javascript; charset=utf-8', chunk3d.script, { 'Cache-Control': 'public, max-age=31536000, immutable' });
             return;
         }
         throw new HttpError(404, 'Not found', 'not_found');
@@ -235,6 +242,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 appId,
                 name: part.name,
                 runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
+                ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
                 viewKind: headless ? 'headless' : 'browser',
                 namespace: instances.namespace(part)
             }),

@@ -50,7 +50,14 @@ export const DEFAULT_FILE_NAME = 'file';
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-/** The only types an upload may have. HTML, SVG, XML, other archives, executables and octet-stream are not here */
+/** A binary glTF 2.0 model (GLB). A `.gltf` (JSON with external buffers and images) is never accepted */
+export const GLB_TYPE = 'model/gltf-binary';
+
+/**
+ * The only types an upload may have. HTML, SVG, XML, other archives, executables, octet-stream and `.gltf` are not
+ * here. The live view page's host (`src/browser/host.ts`) imports this list; `@punyts/stateui-components` keeps its
+ * own copy in `src/shared/field/files.ts`, and a test in each library pins both to the same literal
+ */
 export const ALLOWED_FILE_TYPES: readonly string[] = Object.freeze([
     'image/png',
     'image/jpeg',
@@ -62,7 +69,8 @@ export const ALLOWED_FILE_TYPES: readonly string[] = Object.freeze([
     'text/plain',
     'text/csv',
     'text/markdown',
-    'application/json'
+    'application/json',
+    GLB_TYPE
 ]);
 
 /** The types `ui_file_read` decodes as UTF-8 text */
@@ -95,8 +103,28 @@ function startsWith(bytes: Uint8Array, signature: readonly number[], offset = 0)
     return signature.every((value, index) => bytes[offset + index] === value);
 }
 
-/** The type of an image or PDF recognised by its magic number, otherwise `undefined` */
-export function detectMagicType(head: Uint8Array): string | undefined {
+/** The four bytes `glTF` a GLB starts with */
+const GLB_MAGIC: readonly number[] = [0x67, 0x6c, 0x54, 0x46];
+
+/** Bytes of a GLB header: the magic, the version and the length of the whole file, each four bytes */
+const GLB_HEADER_BYTES = 12;
+
+/**
+ * Whether the bytes start with a GLB 2 header whose length is the size of the whole file. The head is enough, since
+ * the header is its first 12 bytes; `size` is the size of the whole file
+ */
+function isGlb(head: Uint8Array, size: number): boolean {
+    if (!startsWith(head, GLB_MAGIC) || head.length < GLB_HEADER_BYTES) return false;
+    const view = new DataView(head.buffer, head.byteOffset, GLB_HEADER_BYTES);
+    return view.getUint32(4, true) === 2 && view.getUint32(8, true) === size;
+}
+
+/**
+ * The type of an image, a PDF or a GLB recognised by its magic number, otherwise `undefined`. `head` is the start
+ * of the file and `size` the size of the whole file (the head's length when left out): a GLB's header names its
+ * length, which must be the file's
+ */
+export function detectMagicType(head: Uint8Array, size: number = head.length): string | undefined {
     if (startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
     if (startsWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
     if (startsWith(head, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || startsWith(head, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])) {
@@ -104,6 +132,7 @@ export function detectMagicType(head: Uint8Array): string | undefined {
     }
     if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
     if (startsWith(head, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf';
+    if (isGlb(head, size)) return GLB_TYPE;
     return undefined;
 }
 
@@ -113,6 +142,8 @@ function extensionOf(name: string): string {
 }
 
 const MARKUP_EXTENSIONS: readonly string[] = ['html', 'htm', 'xhtml', 'svg', 'xml'];
+/** Model names that are only ever a GLB by its magic number: never text, so a `.gltf` or a renamed file is refused */
+const MODEL_EXTENSIONS: readonly string[] = ['glb', 'gltf'];
 const TEXT_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = Object.freeze({
     txt: 'text/plain',
     csv: 'text/csv',
@@ -166,11 +197,13 @@ function looksLikeMarkup(text: string): boolean {
 /**
  * The type of a file that is not an image or PDF: a Word or Excel file (a ZIP with a `[Content_Types].xml` entry
  * and the matching extension) or text (valid UTF-8, no NUL byte; the extension picks the type, `.json` must parse).
- * HTML, SVG and XML are refused, by extension and by the way the text starts. Anything else is `undefined`
+ * HTML, SVG and XML are refused, by extension and by the way the text starts; so are `.glb` and `.gltf` names and
+ * bytes that start like a GLB (a model that failed the GLB check). Anything else is `undefined`
  */
 export function detectBodyType(name: string, bytes: Uint8Array): string | undefined {
     const extension = extensionOf(name);
-    if (MARKUP_EXTENSIONS.includes(extension)) return undefined;
+    if (MARKUP_EXTENSIONS.includes(extension) || MODEL_EXTENSIONS.includes(extension)) return undefined;
+    if (startsWith(bytes, GLB_MAGIC)) return undefined;
     const entries = zipEntryNames(bytes);
     if (entries !== undefined) {
         if (!entries.includes('[Content_Types].xml')) return undefined;

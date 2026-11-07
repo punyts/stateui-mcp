@@ -50,6 +50,8 @@ export interface AppPageOptions {
     readonly appId: string;
     readonly name: string;
     readonly runtimeUrl: string;
+    /** The hash of the 3D renderer chunk the runtime origin serves beside the runtime (`data-chunk-3d`); absent when there is none */
+    readonly chunk3d?: string;
     /** `headless` for the page of Playwright, `browser` for a person */
     readonly viewKind: 'browser' | 'headless';
     /** The sync namespace of the view's state: the app's instance */
@@ -67,7 +69,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}" data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}"${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}" data-status="loading">`,
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',
