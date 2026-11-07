@@ -9,6 +9,7 @@ const REMOVED_TOOLS = Object.freeze(['ui_app_write', 'ui_outline', 'ui_app_list'
 
 /** The tools that only read: they change nothing */
 const READ_ONLY_TOOLS = Object.freeze([
+    'ui_guide',
     'ui_components_search',
     'ui_component_get',
     'ui_icons_list',
@@ -44,6 +45,9 @@ const RUN_TIME_TOOLS = Object.freeze([
 /** The owner's data tools, which work at build time (seed data) and at run time (corrections) */
 const DATA_TOOLS = Object.freeze(['ui_data_write', 'ui_data_query']);
 
+/** The guide tool, whose description starts with Guide: (it is neither build time nor run time) */
+const GUIDE_TOOL = 'ui_guide';
+
 /** The catalog tools, which are neither build time nor run time */
 const UNPREFIXED_TOOLS = Object.freeze(['ui_components_search', 'ui_component_get', 'ui_icons_list', 'ui_tokens_list', 'ui_patterns_search']);
 
@@ -61,15 +65,16 @@ afterEach(async () => {
 });
 
 describe('the registered tools', () => {
-    it('should be exactly EXPECTED_TOOLS, the 35 tools of the design', async () => {
+    it('should be exactly EXPECTED_TOOLS, the 35 tools of the design and ui_guide', async () => {
         // Act
         const { tools } = await harness.client.listTools();
 
         // Assert
-        expect(EXPECTED_TOOLS).toHaveLength(35);
+        expect(EXPECTED_TOOLS).toHaveLength(36);
         expect(tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
         expect(EXPECTED_TOOLS).toContain('ui_patterns_search');
         expect(EXPECTED_TOOLS).toContain('ui_pattern_write');
+        expect(EXPECTED_TOOLS).toContain('ui_guide');
     });
 
     it('should not register any tool of the removed document model', async () => {
@@ -87,7 +92,7 @@ describe('the registered tools', () => {
 
         // Assert
         for (const tool of tools) {
-            if (UNPREFIXED_TOOLS.includes(tool.name)) continue;
+            if (UNPREFIXED_TOOLS.includes(tool.name) || tool.name === GUIDE_TOOL) continue;
             const side = DATA_TOOLS.includes(tool.name) ? 'Build and run time: ' : RUN_TIME_TOOLS.includes(tool.name) ? 'Run time: ' : 'Build time: ';
             expect((tool.description ?? '').startsWith(side), tool.name).toBe(true);
         }
@@ -152,6 +157,38 @@ describe('the server instructions', () => {
         const order = ['ui_patterns_search', 'ui_app_create', 'ui_screen_create', 'ui_components_search', 'ui_component_get', 'ui_nodes_write'].map((name) => instructions.indexOf(name));
         expect(order.every((at) => at >= 0)).toBe(true);
         expect(order).toEqual([...order].sort((left, right) => left - right));
+    });
+});
+
+describe('ui_guide on the server', () => {
+    it('should list the topic names in its description and answer every topic under the cap with the library catalog', async () => {
+        // Arrange
+        const { tools } = await harness.client.listTools();
+        const description = tools.find((tool) => tool.name === GUIDE_TOOL)?.description ?? '';
+
+        // Act
+        const index = await call(harness.client, GUIDE_TOOL);
+        const names = (index.body['topics'] as { name: string }[]).map((topic) => topic.name);
+
+        // Assert
+        expect(description.startsWith('Guide: ')).toBe(true);
+        expect(names.length).toBeGreaterThan(0);
+        for (const name of names) {
+            expect(description, name).toContain(name);
+            const result = await call(harness.client, GUIDE_TOOL, { topic: name });
+            expect(result.isError, name).toBe(false);
+            expect((result.body['text'] as string).length, name).toBeLessThan(2000);
+        }
+    });
+
+    it('should fail an unknown topic with unknown-topic and list the topic names', async () => {
+        // Act
+        const result = await call(harness.client, GUIDE_TOOL, { topic: 'nothing' });
+
+        // Assert
+        expect(result.isError).toBe(true);
+        expect(result.body['error']).toBe('unknown-topic');
+        expect(result.body['topics']).toContain('start');
     });
 });
 
