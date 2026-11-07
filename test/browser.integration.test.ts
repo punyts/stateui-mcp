@@ -941,6 +941,79 @@ async function readPixelAt(page: Page, result: ToolResult, fx: number, fy: numbe
     );
 }
 
+describe.skipIf(!installed)('the chart on canvas through the agent tools: G2.3 of the graphics epic 2 (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let blank: Page;
+    const CHART = '$.app.children.sales';
+
+    /** A bar chart of two months on canvas; the second bar is the tallest, so its centre is well inside it */
+    const chart = {
+        component: 'chart',
+        renderer: 'canvas',
+        _title: 'Sales',
+        legend: 'none',
+        x: 'month',
+        series: { revenue: { field: 'revenue', _label: 'Revenue' } },
+        records: [
+            { month: 'Jan', revenue: 1000 },
+            { month: 'Feb', revenue: 3000 }
+        ]
+    };
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+        blank = await browser.newPage();
+        await createApp(harness.client, 'sales', shellOf({ sales: chart }));
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should screenshot a canvas chart that is not blank and has the bar token colour at the bar centre', async () => {
+        // Arrange: where the tall bar is in the chart and the colour its token paints, read from a page of the same app
+        const preview = await call(harness.client, 'ui_preview', { app: 'sales' });
+        const own = await browser.newPage();
+        await own.goto(String(preview.body['url']));
+        const probe = await own
+            .frameLocator('iframe')
+            .locator('ui-chart[data-render="ready"]')
+            .evaluate((host) => {
+                const root = host.shadowRoot as ShadowRoot;
+                const canvas = root.querySelector('.plot > canvas') as HTMLCanvasElement;
+                const bar = root.querySelector('.proxies > [data-point="bar:revenue:1"]') as HTMLElement;
+                const outer = host.getBoundingClientRect();
+                const box = bar.getBoundingClientRect();
+                const swatch = document.createElement('canvas');
+                swatch.width = 1;
+                swatch.height = 1;
+                const context = swatch.getContext('2d') as CanvasRenderingContext2D;
+                context.fillStyle = getComputedStyle(canvas).getPropertyValue('--ui-color-data-categorical-1').trim();
+                context.fillRect(0, 0, 1, 1);
+                const [r = 0, g = 0, b = 0] = Array.from(context.getImageData(0, 0, 1, 1).data);
+                return { fx: (box.left + box.width / 2 - outer.left) / outer.width, fy: (box.top + box.height / 2 - outer.top) / outer.height, token: [r, g, b] };
+            });
+        await own.close();
+
+        // Act
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'sales', path: CHART });
+        const pixels = await readPixelAt(blank, shot, probe.fx, probe.fy);
+
+        // Assert
+        expect(shot.isError).toBe(false);
+        expect(shot.body['target']).toBe(CHART);
+        expect(shot.body['pending']).toBeUndefined();
+        expect(pixels.colours).toBeGreaterThan(2);
+        pixels.colour.forEach((channel, index) => expect(Math.abs(channel - (probe.token[index] as number))).toBeLessThanOrEqual(2));
+    });
+});
+
 describe.skipIf(!installed)('live sync between pages and the server (Chromium through Playwright)', () => {
     let data: TempData;
     let harness: HttpHarness;
@@ -1103,7 +1176,7 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
 
     /** Draws a horizontal stroke across the field's canvas at the fraction `at` of its height */
     async function drawStroke(page: Page, at: number): Promise<void> {
-        const box = await page.frameLocator('iframe').locator('canvas').boundingBox();
+        const box = await page.frameLocator('iframe').locator('canvas.canvas').boundingBox();
         if (!box) throw new Error('the canvas is not rendered');
         const y = box.y + box.height * at;
         await page.mouse.move(box.x + box.width * 0.1, y);
@@ -1125,7 +1198,7 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
         const page = await browser.newPage();
         await page.goto(`${harness.server.origin}/apps/${app.id}`);
         await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
-        await page.frameLocator('iframe').locator('canvas').waitFor();
+        await page.frameLocator('iframe').locator('canvas.canvas').waitFor();
 
         // Act: one stroke, then the pause
         await drawStroke(page, 0.5);
