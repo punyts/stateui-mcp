@@ -148,6 +148,18 @@ describe('the server instructions', () => {
         }
     });
 
+    it('should point to the graphics topics instead of giving them in full (K1.4 of the guide-tool epic)', async () => {
+        // Act
+        const instructions = harness.client.getInstructions() ?? '';
+
+        // Assert: one pointer line per graphics topic, and none of their texts
+        for (const topic of ['drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior']) {
+            const guide = await call(harness.client, GUIDE_TOOL, { topic });
+            expect(instructions, topic).toContain(`read ui_guide topic ${topic}.`);
+            expect(instructions, topic).not.toContain(String(guide.body['text']));
+        }
+    });
+
     it('should be at most half as long as before the short instructions (K1.2 of the guide-tool epic)', async () => {
         // Act
         const instructions = harness.client.getInstructions() ?? '';
