@@ -186,7 +186,7 @@ describe('paintFieldSection', () => {
 });
 
 describe('scene3dSection', () => {
-    it('should name scene3d and only the 3D nodes that draw (release 3A, repeat3d of G3.6, press and hover of G3.8, label3d of G3.6b)', () => {
+    it('should name scene3d and the 3D nodes of releases 3A and 3B (repeat3d of G3.6, label3d of G3.6b)', () => {
         // Act
         const text = scene3dSection();
 
@@ -239,7 +239,8 @@ describe('scene3dSection', () => {
         expect(text).toContain('writes the active camera node\'s position and target once, when the gesture is released');
         expect(text).toContain('at most 16 WebGL contexts');
         expect(text).toContain('ui_validate warns past 16 scenes');
-        expect(text).toContain('ui_screenshot of its path: it waits until the scene and its models are drawn');
+        expect(text).toContain('ui_screenshot of its path: it waits until the scene, its models and textures are drawn and its transitions have arrived');
+        expect(text).toContain('a playing animate or clip does not hold it back');
     });
 
     it('should say transition eases the 3D channels and jumps with reduced motion (G3.9)', () => {
@@ -284,12 +285,26 @@ describe('scene3dSection', () => {
         expect(text).toContain('At most 20,000 records (more are cut, SUI-RUN-CAP)');
     });
 
+    it('should be a header and one bullet per topic, in the order a scene is built (G3.11, second pass)', () => {
+        // Arrange
+        const starts = ['3D: a scene3d node', '- Give every scene3d', '- position, target, rotation', '- With no camera node', '- model.src', '- material.map', '- repeat3d', '- interactive: true', '- label3d', '- A node with transition', '- Check a scene'];
+
+        // Act
+        const lines = scene3dSection().split('\n');
+
+        // Assert
+        expect(lines).toHaveLength(starts.length);
+        lines.forEach((line, index) => expect(line.startsWith(starts[index] ?? '\0'), line).toBe(true));
+    });
+
     it('should take about ten lines and name only registered tools', () => {
         // Act
         const text = scene3dSection();
 
-        // Assert
-        expect(text.split('\n').length).toBeLessThanOrEqual(10);
+        // Assert: 11, one more than the first pass's cap of 10, so each topic of releases 3A and 3B has a line of its
+        // own instead of two topics merged into one (the 16-contexts warning with the screenshot, models with textures);
+        // the drawing section takes 12 for the same "about ten lines"
+        expect(text.split('\n').length).toBeLessThanOrEqual(11);
         expect(toolNames(text).filter((name) => !EXPECTED_TOOLS.includes(name))).toEqual([]);
     });
 
