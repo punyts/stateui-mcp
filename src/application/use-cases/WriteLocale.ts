@@ -41,9 +41,9 @@ export type WriteLocaleResult =
     | { readonly kind: 'missing-parts'; readonly missing: readonly MissingPart[] }
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] };
 
-/** The overlays by language of the target: the app's `locales` for the shell, the screen's own for a screen */
+/** The overlays by language of the target: the app's `locales` for the app node, the screen's own for a screen */
 function localesOf(body: UiPartBodies['apps'], target: TreeTarget): JsonObject | undefined {
-    const holder = target.kind === 'shell' ? (body as unknown as JsonObject) : (body.screens[target.screen] as unknown as JsonObject | undefined);
+    const holder = target.kind === 'app' ? (body as unknown as JsonObject) : (body.screens[target.screen] as unknown as JsonObject | undefined);
     const locales = holder?.['locales'];
     return isJsonObject(locales) ? locales : undefined;
 }
@@ -56,12 +56,12 @@ function withOverlay(body: UiPartBodies['apps'], target: TreeTarget, language: s
         const { locales: _locales, ...rest } = holder as T & { locales?: unknown };
         return (Object.keys(locales).length > 0 ? { ...rest, locales } : rest) as T;
     };
-    if (target.kind === 'shell') return place(body);
+    if (target.kind === 'app') return place(body);
     return { ...body, screens: { ...body.screens, [target.screen]: place(body.screens[target.screen] as object) } } as unknown as UiPartBodies['apps'];
 }
 
 /**
- * Writes the content overlay of one language for one tree of an app (the shell or a screen): texts set or removed at
+ * Writes the content overlay of one language for one tree of an app (the app node or a screen): texts set or removed at
  * content paths. The app is checked as a whole (the overlay's paths must be content of the tree), then the language is
  * checked with `validateAppLocale`: its untranslated paths come back as warnings
  */

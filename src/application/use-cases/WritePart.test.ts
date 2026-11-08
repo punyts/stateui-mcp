@@ -23,7 +23,7 @@ const BAD_THEME = deepFreeze({ tokens: { bad: true } }) as unknown as UiPartBodi
 const GONE_THEME = deepFreeze({ tokens: { gone: true } }) as unknown as UiPartBodies['themes'];
 
 function appUsing(theme: string): UiPartBodies['apps'] {
-    return deepFreeze({ uses: { themes: [theme] }, start: 'main', shell: { component: 'outlet' }, screens: { main: { root: { component: 'text' } } } }) as UiPartBodies['apps'];
+    return deepFreeze({ uses: { themes: [theme] }, start: 'main', app: { component: 'app' }, screens: { main: { root: { component: 'text' } } } }) as UiPartBodies['apps'];
 }
 
 function fakeValidator(): UiAppValidator {

@@ -23,7 +23,7 @@ const SEARCH = deepFreeze({
 /** A shop whose home screen uses the price field with its own label */
 const SHOP = deepFreeze({
     start: 'home',
-    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: { home: { root: { component: 'price-field', _label: 'Unit price' } } }
 }) as unknown as UiPartBodies['apps'];
 

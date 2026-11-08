@@ -1,0 +1,18 @@
+{
+  "id": "0f9459a3-acae-5da5-9142-2716ec8685d4",
+  "kind": "data",
+  "name": "showcase-preferences",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-preference",
+    "records": {
+      "current": {
+        "id": "current",
+        "theme": "showcase-clean",
+        "mode": "light"
+      }
+    }
+  }
+}

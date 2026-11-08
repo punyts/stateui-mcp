@@ -27,7 +27,7 @@ function app(logic: Record<string, unknown>): UiPartBodies['apps'] {
     return deepFreeze({
         uses: { themes: ['store'], data: { products: { dataset: 'catalog' } }, logic },
         start: 'main',
-        shell: { component: 'page', children: { body: { component: 'outlet' } } },
+        app: { component: 'app' },
         screens: { main: { root: { component: 'hero' } } }
     }) as unknown as UiPartBodies['apps'];
 }

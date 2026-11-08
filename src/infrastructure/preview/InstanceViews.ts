@@ -15,7 +15,7 @@ export type AppViewMessage = Extract<ViewMessage, { type: 'app' }>;
 
 /**
  * The live views of the owner's apps (parts): what a view of an app part is sent and which authority its socket
- * talks to. A view shows the assembled app (`assembleApp`: the shell, the screens, the themes, the bound data and
+ * talks to. A view shows the assembled app (`assembleApp`: the app node, the screens, the themes, the bound data and
  * modules) with the default persona's instance laid over it, and syncs with that instance's authority.
  *
  * The document of a view is not one part, so its revision is counted here: it rises by one each time the assembled

@@ -1,0 +1,94 @@
+{
+  "id": "a6b5c1af-54b7-580a-bc50-97d23dd22eac",
+  "kind": "components",
+  "name": "showcaseMenu",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "summary": "The menu of the showcase: a screen per category; a menu button on a phone",
+    "category": "navigation",
+    "purposes": [
+      "menu of every showcase screen",
+      "move between the component categories"
+    ],
+    "tree": {
+      "component": "nav",
+      "collapseBelow": "md",
+      "_label": "Showcase sections",
+      "children": {
+        "home": {
+          "component": "menuItem",
+          "icon": "home",
+          "_label": "Home",
+          "screen": "home"
+        },
+        "layout": {
+          "component": "menuItem",
+          "icon": "layout",
+          "_label": "Layout",
+          "screen": "layout"
+        },
+        "navigation": {
+          "component": "menuItem",
+          "icon": "compass",
+          "_label": "Navigation",
+          "screen": "navigation"
+        },
+        "forms": {
+          "component": "menuItem",
+          "icon": "forms",
+          "_label": "Forms",
+          "screen": "forms"
+        },
+        "data": {
+          "component": "menuItem",
+          "icon": "table",
+          "_label": "Data",
+          "screen": "data"
+        },
+        "feedback": {
+          "component": "menuItem",
+          "icon": "bell",
+          "_label": "Feedback",
+          "screen": "feedback"
+        },
+        "overlays": {
+          "component": "menuItem",
+          "icon": "stack-2",
+          "_label": "Overlays",
+          "screen": "overlays"
+        },
+        "content": {
+          "component": "menuItem",
+          "icon": "file-text",
+          "_label": "Content",
+          "screen": "content"
+        },
+        "conversation": {
+          "component": "menuItem",
+          "icon": "message-circle",
+          "_label": "Conversation",
+          "screen": "conversation"
+        },
+        "graphics": {
+          "component": "menuItem",
+          "icon": "shape",
+          "_label": "Graphics",
+          "screen": "graphics"
+        }
+      },
+      "footer": {
+        "component": "text",
+        "textRole": "caption",
+        "_text": "96 components of @punyts/stateui-components"
+      }
+    },
+    "exposes": [
+      {
+        "path": "children",
+        "description": "The menu items, one per screen"
+      }
+    ]
+  }
+}

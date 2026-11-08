@@ -7,7 +7,7 @@ export type BindingScope = 'shared' | 'persona';
 
 /** What a running instance is made of: the assembled document and the scope of each data binding */
 export interface InstanceShape {
-    /** The app assembled from its parts: shell (`app`), `screens`, `start`, `data` (by binding), the bound `logic` */
+    /** The app assembled from its parts: the app node (`app`), `screens`, `start`, `data` (by binding), the bound `logic` */
     readonly document: UiDocument;
     readonly bindings: Readonly<Record<string, BindingScope>>;
 }

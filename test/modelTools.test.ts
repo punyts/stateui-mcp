@@ -18,7 +18,7 @@ const CATALOG = deepFreeze({ model: 'product', records: { p1: { name: 'Lamp', pr
 const SHOP = deepFreeze({
     uses: { data: { products: { dataset: 'catalog' } } },
     start: 'home',
-    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: { home: { root: { component: 'text', _text: '', '<-_text': '$.data.products.p1.price' } } }
 }) as unknown as UiPartBodies['apps'];
 

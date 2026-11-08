@@ -12,10 +12,7 @@ import type { WritePart } from './WritePart.js';
 
 type PatternBody = UiPartBodies['patterns'];
 
-/** The screen name `from` takes for the shell of an app */
-export const SHELL_SOURCE = 'shell';
-
-/** Where a pattern's tree is copied from: the shell (`screen: "shell"`) or one screen of an owner app */
+/** Where a pattern's tree is copied from: the root of one screen of an owner app */
 export interface PatternSource {
     readonly app: string;
     readonly screen: string;
@@ -52,10 +49,10 @@ export type WritePatternResult =
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] };
 
 /**
- * Writes an owner pattern: a shell or screen to start from, in the format of the library's `*.pattern.json` files. The
- * tree is given, or copied once from the shell or a screen of an owner app (`from`), and the slots and params name
+ * Writes an owner pattern: a screen to start from, in the format of the library's `*.pattern.json` files. The
+ * tree is given, or copied once from a screen of an owner app (`from`), and the slots and params name
  * paths of that copy. The part is checked through `WritePart`, which runs the library build's pattern checks, so a
- * slot or param path that is not in the tree, a shell without exactly one outlet or a node that fails its shape fails
+ * slot or param path that is not in the tree or a node that fails its shape fails
  * the write and nothing is stored. A name the library's patterns have is refused, so a `pattern` argument names one
  * pattern. `ui_patterns_search`, `ui_app_create` and `ui_screen_create` read the stored patterns
  */
@@ -123,18 +120,18 @@ export class WritePattern {
         }
     }
 
-    /** A copy of the shell or of one screen's root of an owner app */
+    /** A copy of one screen's root of an owner app */
     private async copyFrom(from: PatternSource): Promise<{ readonly tree: JsonObject } | Extract<WritePatternResult, { kind: 'source-not-found' }>> {
         const app = await this.parts.findByName('apps', from.app);
         if (app === undefined) {
             const nearest = nearestNames(from.app, (await this.parts.list('apps')).map((summary) => summary.name));
             return { kind: 'source-not-found', argument: 'from.app', reason: `the owner has no app "${from.app}"`, nearest };
         }
-        const body = app.body as unknown as { shell?: unknown; screens?: Record<string, { root?: unknown }> };
-        const source = from.screen === SHELL_SOURCE ? body.shell : body.screens?.[from.screen]?.root;
+        const body = app.body as unknown as { screens?: Record<string, { root?: unknown }> };
+        const source = body.screens?.[from.screen]?.root;
         if (!isJsonObject(source)) {
-            const nearest = nearestNames(from.screen, [SHELL_SOURCE, ...Object.keys(body.screens ?? {})]);
-            return { kind: 'source-not-found', argument: 'from.screen', reason: `the app "${from.app}" has no screen "${from.screen}" (use "${SHELL_SOURCE}" for its shell)`, nearest };
+            const nearest = nearestNames(from.screen, Object.keys(body.screens ?? {}));
+            return { kind: 'source-not-found', argument: 'from.screen', reason: `the app "${from.app}" has no screen "${from.screen}"`, nearest };
         }
         return { tree: structuredClone(source) };
     }

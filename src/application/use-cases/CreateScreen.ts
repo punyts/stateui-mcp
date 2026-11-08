@@ -1,4 +1,5 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
+import { APP_TREE } from '../../domain/nodeOperations.js';
 import { nearestNames } from '../../domain/nearestNames.js';
 import { hasScreen } from '../../domain/renameReferences.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
@@ -56,11 +57,12 @@ export class CreateScreen {
     private async create(input: CreateScreenInput): Promise<CreateScreenResult> {
         const problem = partNameProblem(input.name);
         if (problem !== undefined) return { kind: 'invalid-name', reason: problem };
+        if (input.name === APP_TREE) return { kind: 'invalid-name', reason: `"${APP_TREE}" names the app node in the node tools, so no screen takes it` };
         const app = await this.parts.findByName('apps', input.app);
         if (app === undefined) return { kind: 'not-found', nearest: nearestNames(input.app, (await this.parts.list('apps')).map((summary) => summary.name)) };
         if (app.revision !== input.expectedRevision) return { kind: 'conflict', currentRevision: app.revision };
         if (hasScreen(app.body, input.name)) return { kind: 'duplicate-name' };
-        const root = treeOf(input.root, 'screen', await withOwnerPatterns(this.patterns, this.parts), `$.screens.${input.name}`);
+        const root = treeOf(input.root, await withOwnerPatterns(this.patterns, this.parts), `$.screens.${input.name}`);
         if (root.kind !== 'tree') return root;
         const screen = {
             ...(input.title !== undefined && { title: input.title }),

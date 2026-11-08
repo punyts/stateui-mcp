@@ -23,7 +23,7 @@ function lines(root: JsonObject, extra: Partial<OutlineSource> = {}): string[] {
 describe('formatOutline', () => {
     it('should print the spec example shape', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             _title: 'Orders',
             children: {
                 order: {
@@ -51,7 +51,7 @@ describe('formatOutline', () => {
         };
 
         expect(lines(root)).toEqual([
-            'page "Orders"',
+            'stack "Orders"',
             '  panel order "Order"',
             '    form',
             '      textField customer "Customer" <-$.data.order.customer',
@@ -63,7 +63,7 @@ describe('formatOutline', () => {
 
     it('should try _title, then _label, then _text and skip empty text', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             children: {
                 a: { component: 'text', _title: '', _label: 'L', _text: 'T' },
                 b: { component: 'text', _text: 'T' },
@@ -76,7 +76,7 @@ describe('formatOutline', () => {
 
     it('should leave out the content of a linked property and long text should be cut', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             children: {
                 a: { component: 'text', _text: 'default', '<-_text': '$.data.name' },
                 b: { component: 'text', _text: `${'x'.repeat(100)}\nsecond line` }
@@ -91,7 +91,7 @@ describe('formatOutline', () => {
 
     it('should show hidden and closed nodes with marks', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             children: { a: { component: 'text', hidden: true }, b: { component: 'drawer', hidden: true, open: false } }
         };
 
@@ -99,22 +99,22 @@ describe('formatOutline', () => {
     });
 
     it('should let the snapshot reopen a closed node', () => {
-        const root: JsonObject = { component: 'page', children: { dialog: { component: 'modal', open: false } } };
+        const root: JsonObject = { component: 'stack', children: { dialog: { component: 'modal', open: false } } };
 
         const output = lines(root, { snapshotApp: { children: { dialog: { open: true } } } });
 
-        expect(output).toEqual(['page', '  modal dialog']);
+        expect(output).toEqual(['stack', '  modal dialog']);
     });
 
     it('should print a row template once with the record count of 10,000 records', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             children: { rows: { component: 'list', '<-items': '$.data.rows', row: { component: 'text', '<-_text': '$row.name' } } }
         };
 
         const output = lines(root, { recordCount: (target) => (target === '$.data.rows' ? 10000 : undefined) });
 
-        expect(output).toEqual(['page', '  list rows <-$.data.rows', '    text row <-$row.name (10000 records)']);
+        expect(output).toEqual(['stack', '  list rows <-$.data.rows', '    text row <-$row.name (10000 records)']);
     });
 
     it('should print a row template without a count when no link feeds it', () => {
@@ -152,16 +152,16 @@ describe('formatOutline', () => {
 
     describe('depth', () => {
         const root: JsonObject = {
-            component: 'page',
+            component: 'stack',
             children: { a: { component: 'panel', children: { b: { component: 'text' } } }, c: { component: 'text' } }
         };
 
         it('should show a node one level below the limit as one line with its child count', () => {
-            expect(lines(root, { depth: 0 })).toEqual(['page', '  panel a (+1 children)', '  text c']);
+            expect(lines(root, { depth: 0 })).toEqual(['stack', '  panel a (+1 children)', '  text c']);
         });
 
         it('should show every level when the depth is large', () => {
-            expect(lines(root, { depth: 5 })).toEqual(['page', '  panel a', '    text b', '  text c']);
+            expect(lines(root, { depth: 5 })).toEqual(['stack', '  panel a', '    text b', '  text c']);
         });
     });
 
@@ -169,7 +169,7 @@ describe('formatOutline', () => {
         it('should cut at the cap and say how much was cut', () => {
             const children = Object.fromEntries(Array.from({ length: 450 }, (_unused, index) => [`n${index}`, { component: 'text' }]));
 
-            const outline = formatOutline(source({ component: 'page', children }));
+            const outline = formatOutline(source({ component: 'stack', children }));
 
             expect(outline.lineCount).toBe(451);
             expect(outline.cutLines).toBe(51);
@@ -181,21 +181,21 @@ describe('formatOutline', () => {
         it('should not cut an outline of exactly the cap', () => {
             const children = Object.fromEntries(Array.from({ length: MAX_OUTLINE_LINES - 1 }, (_unused, index) => [`n${index}`, { component: 'text' }]));
 
-            const outline = formatOutline(source({ component: 'page', children }));
+            const outline = formatOutline(source({ component: 'stack', children }));
 
             expect(outline.lineCount).toBe(MAX_OUTLINE_LINES);
             expect(outline.cutLines).toBe(0);
         });
     });
 
-    it('should list several screens under the outlet by name, each with the marks of its own snapshot', () => {
+    it('should list the screens below the app node by name, each with the marks of its own snapshot', () => {
         // Arrange
-        const shell: JsonObject = Object.freeze({ component: 'page', children: Object.freeze({ main: Object.freeze({ component: 'outlet' }) }) });
+        const app: JsonObject = Object.freeze({ component: 'app' });
         const home: JsonObject = Object.freeze({ component: 'panel', _title: 'Home' });
         const help: JsonObject = Object.freeze({ component: 'modal', _title: 'Help', open: true });
 
         // Act
-        const text = lines(shell, {
+        const text = lines(app, {
             screens: [
                 { name: 'home', root: home, snapshot: undefined },
                 { name: 'help', root: help, snapshot: Object.freeze({ open: false }) }
@@ -203,7 +203,7 @@ describe('formatOutline', () => {
         });
 
         // Assert
-        expect(text).toEqual(['page', '  outlet main', '    panel home "Home"', '    modal help "Help" (closed)']);
+        expect(text).toEqual(['app', '  panel home "Home"', '  modal help "Help" (closed)']);
     });
 
     it('should return an empty outline for a root that is not a node', () => {

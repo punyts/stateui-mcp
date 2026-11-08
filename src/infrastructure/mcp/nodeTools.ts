@@ -2,29 +2,27 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { MissingPart } from '../../application/partAppCheck.js';
 import type { LocaleOperation } from '../../application/use-cases/WriteLocale.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
-import { treePath } from '../../domain/nodeOperations.js';
+import { treePath, APP_TREE } from '../../domain/nodeOperations.js';
 import type { NodeOperation, TreeTarget } from '../../domain/nodeOperations.js';
 import { PART_KIND_WORDS } from '../../domain/partReferences.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
-const SHELL = 'shell';
-
 const APP = { type: 'string', required: true, description: 'The app name from ui_list (kind "apps")' } as const;
 const SCREEN = {
     type: 'string',
     required: true,
-    description: 'The tree to write: a screen name of the app (ui_list kind "screens"), or "shell" for the frame around every screen'
+    description: 'The tree to write: a screen name of the app (ui_list kind "screens"), or "app" for the app node (its layout, toasts and app events)'
 } as const;
 const EXPECTED = {
     type: 'integer',
     minimum: 1,
     required: true,
-    description: 'The app revision you last read (a screen and the shell are parts of their app). When it has changed since, nothing is written'
+    description: 'The app revision you last read (a screen and the app node are parts of their app). When it has changed since, nothing is written'
 } as const;
 const PATH_TEXT =
-    'A path in the tree that starts with root, such as "root.children.hero._title" ("root" is the screen\'s root node, or the shell\'s). The run-time form also works: "$.screens.product.children.buy" for a screen, "$.app.children.header" for the shell';
+    'A path in the tree that starts with root, such as "root.children.hero._title" ("root" is the screen\'s root node, or the app node). The run-time form also works: "$.screens.product.children.buy" for a screen, "$.app.toasts" for the app node';
 
 const NODE_ITEMS = {
     op: {
@@ -86,14 +84,14 @@ function misplaced(index: number, name: string, message: string): ToolOutcome {
 }
 
 function targetOf(screen: string): TreeTarget {
-    return screen === SHELL ? { kind: 'shell' } : { kind: 'screen', screen };
+    return screen === APP_TREE ? { kind: 'app' } : { kind: 'screen', screen };
 }
 
 /** A path made relative to the tree, or the argument error for a path of another tree */
 function relative(text: string, target: TreeTarget, index: number, name: string): string | ToolOutcome {
     const path = treePath(text, target);
     if (path !== undefined) return path;
-    const where = target.kind === 'shell' ? 'the shell ("root..." or "$.app...")' : `the screen "${target.screen}" ("root..." or "$.screens.${target.screen}...")`;
+    const where = target.kind === 'app' ? 'the app node ("root..." or "$.app...")' : `the screen "${target.screen}" ("root..." or "$.screens.${target.screen}...")`;
     return misplaced(index, name, `is not a path in ${where}`);
 }
 
@@ -149,7 +147,7 @@ function sharedOutcome(result: SharedResult, app: string, screen: string): ToolO
                 nearest: result.nearest
             });
         case 'screen-not-found':
-            return fail('not-found', `The app "${app}" has no screen "${screen}"${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : ''}; "shell" names the shell`, {
+            return fail('not-found', `The app "${app}" has no screen "${screen}"${result.nearest.length > 0 ? `; nearest: ${result.nearest.join(', ')}` : ''}; "app" names the app node`, {
                 argument: 'screen',
                 nearest: result.nearest
             });
@@ -175,7 +173,7 @@ export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' |
     return [
         {
             name: 'ui_nodes_write',
-            description: `Build time: change the nodes of one tree of an app: a screen (screen: its name) or the shell (screen: "shell"), with up to ${MAX_OPERATIONS_PER_WRITE} add, set, remove, merge and move operations on paths that start with root. They apply in order to a copy, and later ones see the paths earlier ones made. add puts a node into the children of the node at path and returns its path; move keeps the key and subtree of an entry ({ op: "move", path, before | after } reorders it, with to it moves into another map). A set through a missing parent fails: write the parent first or use merge. The app is then checked as a whole with every part it uses and written as one change, or not at all; the shell must keep its one outlet. Pass expectedRevision, the app's. Returns { app, screen, revision, warnings, added: [{ index, path }] }.`,
+            description: `Build time: change the nodes of one tree of an app: a screen (screen: its name) or the app node (screen: "app": its layout, toasts and on; an app is its screens, so a header or menu goes in each screen), with up to ${MAX_OPERATIONS_PER_WRITE} add, set, remove, merge and move operations on paths that start with root. They apply in order to a copy, and later ones see the paths earlier ones made. add puts a node into the children of the node at path and returns its path; move keeps the key and subtree of an entry ({ op: "move", path, before | after } reorders it, with to it moves into another map). A set through a missing parent fails: write the parent first or use merge. The app is then checked as a whole with every part it uses and written as one change, or not at all; the shell must keep its one outlet. Pass expectedRevision, the app's. Returns { app, screen, revision, warnings, added: [{ index, path }] }.`,
             inputSchema: NODES_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -197,7 +195,7 @@ export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' |
         {
             name: 'ui_locale_write',
             description:
-                'Build time: write the translations of one language for one tree of an app: a screen (screen: its name) or the shell (screen: "shell"). Each operation sets or removes the text at a content path of the tree (root.children.hero._title); the overlay keeps only content, never data links. The app is checked as a whole, then the language: every content path still untranslated comes back as a SUI-LOCALE-MISSING warning, so you can see what is left. Pass expectedRevision, the app\'s. Returns { app, screen, language, revision, warnings }.',
+                'Build time: write the translations of one language for one tree of an app: a screen (screen: its name) or the app node (screen: "app"). Each operation sets or removes the text at a content path of the tree (root.children.hero._title); the overlay keeps only content, never data links. The app is checked as a whole, then the language: every content path still untranslated comes back as a SUI-LOCALE-MISSING warning, so you can see what is left. Pass expectedRevision, the app\'s. Returns { app, screen, language, revision, warnings }.',
             inputSchema: LOCALE_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {

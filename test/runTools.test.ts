@@ -30,18 +30,18 @@ const RUN_TIME_TOOLS = Object.freeze([
 const PRODUCT = deepFreeze({ fields: { name: { type: 'string', required: true } } }) as unknown as UiPartBodies['models'];
 const CATALOG = deepFreeze({ model: 'product', records: { p1: { name: 'Lamp' } } }) as unknown as UiPartBodies['data'];
 
-/** A shop with a search field in its shell, a shared catalog and two screens */
+/** A shop with a search field on its home screen, a shared catalog and two screens */
 const SHOP = deepFreeze({
     uses: { data: { products: { dataset: 'catalog' } } },
     start: 'home',
-    shell: { component: 'page', children: { search: { component: 'textField', _label: 'Search' }, main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: {
-        home: { root: { component: 'text', _text: 'Welcome home' } },
+        home: { root: { component: 'panel', children: { search: { component: 'textField', _label: 'Search' }, welcome: { component: 'text', _text: 'Welcome home' } } } },
         about: { root: { component: 'text', _text: 'About the shop' } }
     }
 }) as unknown as UiPartBodies['apps'];
 
-const SEARCH = '$.app.children.search.value';
+const SEARCH = '$.screens.home.children.search.value';
 
 let data: TempData;
 let harness: InMemoryHarness;

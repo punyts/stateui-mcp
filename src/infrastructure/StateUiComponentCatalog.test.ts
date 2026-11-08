@@ -13,7 +13,7 @@ describe('StateUiComponentCatalog', () => {
         it('should list every component with its tier, size and summary', () => {
             const names = catalog.list().map((component) => component.name);
 
-            expect(names).toEqual(expect.arrayContaining(['page', 'panel', 'form', 'textField', 'list', 'confirmDialog']));
+            expect(names).toEqual(expect.arrayContaining(['app', 'panel', 'form', 'textField', 'list', 'confirmDialog']));
             expect(catalog.list().every((component) => component.summary !== '' && component.size !== '')).toBe(true);
         });
     });

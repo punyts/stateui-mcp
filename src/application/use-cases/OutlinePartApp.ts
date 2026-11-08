@@ -13,9 +13,9 @@ import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UseCaseReport } from '../ports/UseCaseReport.js';
 
 export interface OutlinePartAppInput {
-    /** One screen to draw at the shell's outlet; absent, all of them */
+    /** One screen to draw below the app node; absent, all of them */
     readonly screen?: string;
-    /** A dotted path to a node of the running app (`app.children.main`, `screens.home.children.form`); absent, the shell */
+    /** A dotted path to a node of the running app (`app.toasts`, `screens.home.children.form`); absent, the app node */
     readonly path?: string;
     /** How many `children` levels to show below the first node */
     readonly depth?: number;
@@ -35,7 +35,7 @@ export type OutlinePartAppResult =
           readonly cutLines: number;
           /** For the structure: how many nodes it shows */
           readonly nodeCount?: number;
-          /** The screens drawn at the outlet */
+          /** The screens drawn below the app node */
           readonly screens: readonly string[];
       }
     | { readonly kind: 'unknown-screen'; readonly screens: readonly string[] }
@@ -53,8 +53,8 @@ function objectAt(value: JsonValue | undefined, key: string): JsonObject | undef
 }
 
 /**
- * The structure or the content of an app of parts as its default persona's instance runs it: the shell, with the
- * screens drawn at its outlet under their own state paths (`$.screens.{name}`), and, when asked, the logic of the app
+ * The structure or the content of an app of parts as its default persona's instance runs it: the app node, with the
+ * screens drawn below it under their own state paths (`$.screens.{name}`), and, when asked, the logic of the app
  * and of its modules (module units carry their module's name as a prefix, `cart:totals`), each machine in its current
  * state. Marks and record counts follow the instance's state. Reuses the formatters of `OutlineApp`
  */

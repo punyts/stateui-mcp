@@ -16,22 +16,19 @@ function deepFreeze<T>(value: T): T {
 type Node = Record<string, unknown> & { children: Record<string, unknown> };
 const SAMPLE = SAMPLE_FORM_AND_LIST_APP['app'] as unknown as Node;
 
-/**
- * The sample form-and-list app as an app of parts: the page is the shell, its main panel the one screen drawn at
- * the outlet, and its customers a shared dataset
- */
+/** The sample form-and-list app as an app of parts: its panel is the root of the one screen, its customers a shared dataset */
 const CUSTOMERS_APP = deepFreeze({
     uses: { data: { customers: { dataset: 'customers' } } },
     start: 'home',
-    shell: { ...SAMPLE, children: { main: { component: 'outlet' }, confirm: SAMPLE.children['confirm'] } },
-    screens: { home: { root: SAMPLE.children['main'] } }
+    app: { component: 'app' },
+    screens: { home: { root: SAMPLE } }
 }) as unknown as UiPartBodies['apps'];
 
 /** A shop with a home and a detail screen, a persona bag and totals, and a machine over the totals' status */
 const SHOP = deepFreeze({
     uses: { data: { bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } } },
     start: 'home',
-    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: {
         home: { root: { component: 'form', children: { price: { component: 'textField', _label: 'Price' } } } },
         detail: { root: { component: 'panel', _title: 'Detail', children: { note: { component: 'text', _text: 'More' } } } }
@@ -74,7 +71,10 @@ describe('ui_tree with app', () => {
         // Assert
         expect(result.isError).toBe(false);
         expect(result.body).toMatchObject({ app: 'customers', revision: 1, screens: ['home'] });
-        expect(result.body['text']).toBe(SAMPLE_FORM_AND_LIST_OUTLINE);
+        const [first, ...rest] = SAMPLE_FORM_AND_LIST_OUTLINE.split('\n');
+        expect(result.body['text']).toBe(
+            ['app', `  ${first!.replace('panel', 'panel home')}`, ...rest.map((line) => `  ${line}`), '  toastRegion toasts "Notifications"'].join('\n')
+        );
     });
 
     describe('with two screens', () => {
@@ -84,32 +84,31 @@ describe('ui_tree with app', () => {
             await write('apps', 'shop', SHOP);
         });
 
-        it('should list the paths of both screens under the outlet', async () => {
+        it('should list the paths of both screens under the app node, and its toasts', async () => {
             // Act
             const result = await call(harness.client, 'ui_tree', { app: 'shop' });
 
             // Assert
             expect(result.body['text']).toBe(
                 [
-                    '- app (page) $.app',
-                    '  * toasts (toastRegion) [slot] $.app.toasts',
-                    '  * main (outlet) $.app.children.main',
-                    '    - home (form) $.screens.home',
-                    '      * price (textField) $.screens.home.children.price',
-                    '    - detail (panel) $.screens.detail',
-                    '      * note (text) $.screens.detail.children.note'
+                    '- app (app) $.app',
+                    '  * home (form) $.screens.home',
+                    '    - price (textField) $.screens.home.children.price',
+                    '  * detail (panel) $.screens.detail',
+                    '    - note (text) $.screens.detail.children.note',
+                    '  * toasts (toastRegion) [slot] $.app.toasts'
                 ].join('\n')
             );
-            expect(result.body).toMatchObject({ screens: ['home', 'detail'], nodeCount: 7 });
+            expect(result.body).toMatchObject({ screens: ['home', 'detail'], nodeCount: 6 });
         });
 
-        it('should draw only the screen asked for, in the outlet\'s place, and start at a screen node', async () => {
+        it('should draw only the screen asked for under the app node, and start at a screen node', async () => {
             // Act
             const one = await call(harness.client, 'ui_tree', { app: 'shop', screen: 'detail', paths: false });
             const node = await call(harness.client, 'ui_tree', { app: 'shop', path: '$.screens.home.children.price' });
 
             // Assert
-            expect(one.body['text']).toBe(['- app (page)', '  * toasts (toastRegion) [slot]', '  * main (panel)', '    - note (text)'].join('\n'));
+            expect(one.body['text']).toBe(['- app (app)', '  * detail (panel)', '    - note (text)', '  * toasts (toastRegion) [slot]'].join('\n'));
             expect(node.body['text']).toBe('- price (textField) $.screens.home.children.price');
         });
 
@@ -143,7 +142,7 @@ describe('ui_tree with app', () => {
             await harness.close();
             const open = vi.fn(async () => ({ rendered: true }));
             const rendered = vi.fn(async () => [
-                { path: '$.app', component: 'page', visible: true },
+                { path: '$.app', component: 'app', visible: true },
                 { path: '$.screens.detail', component: 'panel', visible: true }
             ]);
             harness = await inMemoryHarness(data.dir, { ...noBrowser, open, rendered });

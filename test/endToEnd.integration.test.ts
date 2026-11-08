@@ -102,8 +102,7 @@ describe.skipIf(!installed)('building a multi-screen app from parts through the 
             title: 'Harbor shop',
             themes: ['harbor'],
             data: { products: { dataset: 'catalog' }, bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } },
-            logic: { cart: {} },
-            shell: { component: 'page', _title: 'Harbor shop', children: { main: { component: 'outlet' } } }
+            logic: { cart: {} }
         });
         shopId = shop['id'] as string;
         await step('ui_screen_create', {
@@ -167,19 +166,18 @@ describe.skipIf(!installed)('building a multi-screen app from parts through the 
     it('should let a second app use the same theme and dataset with no copy of either', async () => {
         // Act
         await step('ui_app_create', {
-            name: 'outlet-store',
+            name: 'second-store',
             themes: ['harbor'],
-            data: { products: { dataset: 'catalog' } },
-            shell: { component: 'page', children: { main: { component: 'outlet' } } }
+            data: { products: { dataset: 'catalog' } }
         });
         await step('ui_nodes_write', {
-            app: 'outlet-store',
+            app: 'second-store',
             screen: 'home',
             expectedRevision: 1,
             operations: [{ op: 'add', path: 'root', key: 'products', value: { component: 'list', '<-items': '$.data.products', row: { component: 'text', '<-_text': '$row.name' } } }]
         });
-        const validated = await step('ui_validate', { app: 'outlet-store' });
-        const tree = await step('ui_tree', { app: 'outlet-store', content: true });
+        const validated = await step('ui_validate', { app: 'second-store' });
+        const tree = await step('ui_tree', { app: 'second-store', content: true });
         const themes = await step('ui_list', { kind: 'themes' });
         const datasets = await step('ui_list', { kind: 'data' });
 

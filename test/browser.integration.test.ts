@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, Page, WebSocketRoute } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
-import { call, createApp, httpHarness, shellOf, tempData } from './helpers.js';
+import { call, createApp, httpHarness, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -42,9 +42,9 @@ async function seedItems(harness: HttpHarness, records: Record<string, string>):
     });
 }
 
-/** Writes nodes of the shell, at the revision the app has now */
+/** Writes nodes of the home screen, at the revision the app has now */
 async function writeShell(harness: HttpHarness, app: string, expectedRevision: number, operations: readonly object[]): Promise<ToolResult> {
-    return call(harness.client, 'ui_nodes_write', { app, screen: 'shell', expectedRevision, operations });
+    return call(harness.client, 'ui_nodes_write', { app, screen: 'home', expectedRevision, operations });
 }
 
 /** The revision the runtime page last rendered, from the preview block of ui_state_get */
@@ -83,7 +83,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
     it('should return a PNG screenshot of the page and of one node', async () => {
         // Act
         const page = await call(harness.client, 'ui_screenshot', { app: 'form', width: 640, height: 400 });
-        const node = await call(harness.client, 'ui_screenshot', { app: 'form', path: '$.app.children.form.children.save' });
+        const node = await call(harness.client, 'ui_screenshot', { app: 'form', path: '$.screens.home.children.form.children.save' });
 
         // Assert
         for (const shot of [page, node]) {
@@ -93,7 +93,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
             expect(Buffer.from(shot.images[0]?.data ?? '', 'base64').subarray(1, 4).toString()).toBe('PNG');
         }
         expect(page.body['target']).toBe('page');
-        expect(node.body['target']).toBe('$.app.children.form.children.save');
+        expect(node.body['target']).toBe('$.screens.home.children.form.children.save');
     });
 
     it('should click a button that emits and hand the event to ui_events_read', async () => {
@@ -104,8 +104,8 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         const interacted = await call(harness.client, 'ui_interact', {
             app: 'form',
             actions: [
-                { action: 'fill', path: '$.app.children.form.children.email', value: 'a@b.test' },
-                { action: 'click', path: '$.app.children.form.children.save' }
+                { action: 'fill', path: '$.screens.home.children.form.children.email', value: 'a@b.test' },
+                { action: 'click', path: '$.screens.home.children.form.children.save' }
             ]
         });
         const after = await call(harness.client, 'ui_events_read', { app: 'form', since: before.body['cursor'] });
@@ -131,8 +131,8 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         const result = await call(harness.client, 'ui_interact', {
             app: 'form',
             actions: [
-                { action: 'click', path: '$.app.children.nothing' },
-                { action: 'click', path: '$.app.children.form.children.save' }
+                { action: 'click', path: '$.screens.home.children.nothing' },
+                { action: 'click', path: '$.screens.home.children.form.children.save' }
             ]
         });
 
@@ -159,7 +159,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
 
     it('should swap a node for another component in the open page without a runtime error', async () => {
         // Arrange
-        await createApp(harness.client, 'swap', shellOf({ k: { component: 'stat', _label: 'Cash', value: 3 } }));
+        await createApp(harness.client, 'swap', rootOf({ k: { component: 'stat', _label: 'Cash', value: 3 } }));
         await call(harness.client, 'ui_preview', { app: 'swap' });
 
         // Act
@@ -179,7 +179,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
     it('should follow a move that only reorders the children of a container in the open page', async () => {
         // Arrange
         const children = { a: { component: 'text', _text: 'alpha' }, b: { component: 'text', _text: 'beta' }, c: { component: 'text', _text: 'gamma' } };
-        await createApp(harness.client, 'reorder', shellOf({ list: { component: 'panel', children } }));
+        await createApp(harness.client, 'reorder', rootOf({ list: { component: 'panel', children } }));
         const preview = await call(harness.client, 'ui_preview', { app: 'reorder' });
         const browser = await chromium.launch();
         const page = await browser.newPage();
@@ -212,7 +212,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
     it('should re-point a changed link in the open page', async () => {
         // Arrange
         await seedItems(harness, { i1: 'first-value', i2: 'second-value' });
-        await createApp(harness.client, 'relink', shellOf({ k: { component: 'text', '<-_text': '$.data.items.i1.title' } }), { data: { items: { dataset: 'items' } } });
+        await createApp(harness.client, 'relink', rootOf({ k: { component: 'text', '<-_text': '$.data.items.i1.title' } }), { data: { items: { dataset: 'items' } } });
         const preview = await call(harness.client, 'ui_preview', { app: 'relink' });
         const browser = await chromium.launch();
         const page = await browser.newPage();
@@ -240,7 +240,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
     it('should add a new key with ui_state_set to the running page and keep it', async () => {
         // Arrange
         await step(harness, 'ui_model_write', { model: 'task', operations: [{ op: 'set', field: 'title', type: 'string', required: true }] });
-        await createApp(harness.client, 'tasks', shellOf({}), { data: { tasks: { model: 'task', scope: 'persona' } } });
+        await createApp(harness.client, 'tasks', rootOf({}), { data: { tasks: { model: 'task', scope: 'persona' } } });
 
         // Act: a new object under the binding, then a new record inside it
         await call(harness.client, 'ui_state_set', { app: 'tasks', path: '$.data.tasks', value: { t1: { title: 'first' } } });
@@ -255,11 +255,11 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
 
     it('should refuse at once a screenshot of a node that is rendered but not visible', async () => {
         // Arrange: a closed modal keeps its body rendered, but nothing of it is shown
-        await createApp(harness.client, 'closed-modal', shellOf({ dialog: { component: 'modal', _title: 'Hidden', body: { component: 'text', _text: 'inside' } } }));
+        await createApp(harness.client, 'closed-modal', rootOf({ dialog: { component: 'modal', _title: 'Hidden', body: { component: 'text', _text: 'inside' } } }));
         const started = Date.now();
 
         // Act
-        const shot = await call(harness.client, 'ui_screenshot', { app: 'closed-modal', path: '$.app.children.dialog.body' });
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'closed-modal', path: '$.screens.home.children.dialog.body' });
 
         // Assert
         expect(shot.isError).toBe(true);
@@ -273,7 +273,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
             await createApp(
                 harness.client,
                 'open-modal',
-                shellOf({
+                rootOf({
                     behind: { component: 'button', _title: 'Behind' },
                     dialog: { component: 'modal', _title: 'Shown', open: true, body: { component: 'text', _text: 'inside' } }
                 })
@@ -283,7 +283,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
 
         it('should screenshot the dialog of a modal named by its path', async () => {
             // Act: the modal host is display: contents, so the image is of the dialog in its shadow root
-            const shot = await call(harness.client, 'ui_screenshot', { app: 'open-modal', path: '$.app.children.dialog', width: 800, height: 600 });
+            const shot = await call(harness.client, 'ui_screenshot', { app: 'open-modal', path: '$.screens.home.children.dialog', width: 800, height: 600 });
 
             // Assert
             expect(shot.isError).toBe(false);
@@ -294,7 +294,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
 
         it('should say that a click is behind the open modal', async () => {
             // Act
-            const result = await call(harness.client, 'ui_interact', { app: 'open-modal', actions: [{ action: 'click', path: '$.app.children.behind' }] });
+            const result = await call(harness.client, 'ui_interact', { app: 'open-modal', actions: [{ action: 'click', path: '$.screens.home.children.behind' }] });
 
             // Assert
             expect(result.isError).toBe(true);
@@ -306,7 +306,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
             await createApp(
                 harness.client,
                 'open-modal-with-fields',
-                shellOf({
+                rootOf({
                     name: { component: 'textField', _label: 'Name' },
                     view: { component: 'segmented', value: 'open', options: { open: { _label: 'Open' }, overdue: { _label: 'Overdue' } } },
                     dialog: { component: 'modal', _title: 'Shown', open: true, body: { component: 'text', _text: 'inside' } }
@@ -317,10 +317,10 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
             // Act
             const results: { ok: boolean; error?: string }[] = [];
             for (const action of [
-                { action: 'fill', path: '$.app.children.name', value: 'x' },
-                { action: 'choose', path: '$.app.children.view', value: 'overdue' },
-                { action: 'press', path: '$.app.children.name', value: 'Enter' },
-                { action: 'focus', path: '$.app.children.name' }
+                { action: 'fill', path: '$.screens.home.children.name', value: 'x' },
+                { action: 'choose', path: '$.screens.home.children.view', value: 'overdue' },
+                { action: 'press', path: '$.screens.home.children.name', value: 'Enter' },
+                { action: 'focus', path: '$.screens.home.children.name' }
             ]) {
                 const result = await call(harness.client, 'ui_interact', { app: 'open-modal-with-fields', actions: [action] });
                 results.push(...(result.body['results'] as { ok: boolean; error?: string }[]));
@@ -345,7 +345,7 @@ describe.skipIf(!installed)('ui_interact choose and ui_preview reload (Chromium 
             await createApp(
                 harness.client,
                 'choices',
-                shellOf({
+                rootOf({
                     view: { component: 'segmented', value: 'open', options: { open: { _label: 'Open' }, overdue: { _label: 'Overdue' } } },
                     size: { component: 'radioField', _label: 'Size', value: 'm', options: { s: { _label: 'Small' }, m: { _label: 'Medium' } } },
                     pick: { component: 'selectField', _label: 'Pick', value: 'a', options: { a: { _label: 'Alpha one' }, b: { _label: 'Beta two' } } }
@@ -361,13 +361,13 @@ describe.skipIf(!installed)('ui_interact choose and ui_preview reload (Chromium 
     });
 
     async function choose(path: string, value: string): Promise<ToolResult> {
-        return call(harness.client, 'ui_interact', { app: 'choices', actions: [{ action: 'choose', path: '$.app.children.' + path, value }] });
+        return call(harness.client, 'ui_interact', { app: 'choices', actions: [{ action: 'choose', path: '$.screens.home.children.' + path, value }] });
     }
 
     /** The values the three controls hold in the instance */
     async function valuesNow(): Promise<Record<string, unknown>> {
         const state = await eventually(harness, 'ui_state_get', { app: 'choices' }, () => true);
-        const children = (state.body['state'] as { app: { children: Record<string, { value?: unknown }> } }).app.children;
+        const children = (state.body['state'] as { screens: { home: { children: Record<string, { value?: unknown }> } } }).screens.home.children;
         return Object.fromEntries(Object.entries(children).map(([name, node]) => [name, node.value]));
     }
 
@@ -496,7 +496,7 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
     let harness: HttpHarness;
     let browser: Browser;
     let blank: Page;
-    const DRAWING = '$.app.children.map';
+    const DRAWING = '$.screens.home.children.map';
     const DOT = `${DRAWING}.children.dot`;
 
     /**
@@ -537,7 +537,7 @@ describe.skipIf(!installed)('drawings through the agent tools: release 1A of the
             ]
         });
         await step(harness, 'ui_data_write', { dataset: 'points', model: 'point', operations: [{ op: 'set', path: 'p1', value: { x: 40, chosen: 'no' } }] });
-        await createApp(harness.client, 'seats', shellOf({}), { data: { pos: { dataset: 'points' } } });
+        await createApp(harness.client, 'seats', rootOf({}), { data: { pos: { dataset: 'points' } } });
     });
 
     afterAll(async () => {
@@ -682,8 +682,8 @@ describe.skipIf(!installed)('dragging shapes with ui_interact: G1.10b of the gra
     let data: TempData;
     let harness: HttpHarness;
     let browser: Browser;
-    const MAP = '$.app.children.map';
-    const PLAN = '$.app.children.plan';
+    const MAP = '$.screens.home.children.map';
+    const PLAN = '$.screens.home.children.plan';
 
     /**
      * A drawing on a renderer: a draggable blue block whose x and y link a record of $.data.pos, and an interactive
@@ -800,7 +800,7 @@ describe.skipIf(!installed)('dragging shapes with ui_interact: G1.10b of the gra
                 { op: 'set', path: 's2', value: { name: 'Two', x: 140, y: 20 } }
             ]
         });
-        await createApp(harness.client, 'floor', shellOf({ map: drawingOf('svg', 'b1'), plan: drawingOf('canvas', 'c1') }), {
+        await createApp(harness.client, 'floor', rootOf({ map: drawingOf('svg', 'b1'), plan: drawingOf('canvas', 'c1') }), {
             data: { pos: { dataset: 'spots' }, seats: { dataset: 'seats' } }
         });
         // Counts the writes of each block's x, so a drag that wrote while it moved would count more than one
@@ -951,7 +951,7 @@ describe.skipIf(!installed)('the chart on canvas through the agent tools: G2.3 o
     let harness: HttpHarness;
     let browser: Browser;
     let blank: Page;
-    const CHART = '$.app.children.sales';
+    const CHART = '$.screens.home.children.sales';
 
     /** A bar chart of two months on canvas; the second bar is the tallest, so its centre is well inside it */
     const chart = {
@@ -972,7 +972,7 @@ describe.skipIf(!installed)('the chart on canvas through the agent tools: G2.3 o
         harness = await httpHarness(data.dir);
         browser = await chromium.launch();
         blank = await browser.newPage();
-        await createApp(harness.client, 'sales', shellOf({ sales: chart }));
+        await createApp(harness.client, 'sales', rootOf({ sales: chart }));
     });
 
     afterAll(async () => {
@@ -1053,7 +1053,7 @@ describe.skipIf(!installed)('live sync between pages and the server (Chromium th
         await openPage(page, app.id);
 
         // Act
-        await call(harness.client, 'ui_state_set', { app: app.name, path: '$.app.children.form.children.email.value', value: 'from@tool.test' });
+        await call(harness.client, 'ui_state_set', { app: app.name, path: '$.screens.home.children.form.children.email.value', value: 'from@tool.test' });
 
         // Assert
         await expect.poll(() => email(page).inputValue()).toBe('from@tool.test');
@@ -1119,7 +1119,7 @@ describe.skipIf(!installed)('live sync between pages and the server (Chromium th
         const found = await harness.server.services.useCases.findPartApp.execute(app.name);
         if (found.kind !== 'found') throw new Error('the app is stored');
         const authority = await harness.server.services.instanceViews.authority(found.part);
-        authority.onChange('$.app.children.form', () => ({ result: 'reject', reason: 'read only' }));
+        authority.onChange('$.screens.home.children.form', () => ({ result: 'reject', reason: 'read only' }));
         const page = await browser.newPage();
         await openPage(page, app.id);
 
@@ -1199,7 +1199,7 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
 
     it('should save a painting the server serves back as a PNG, keep one file over ten saves and keep it past the sweep', { timeout: 120_000 }, async () => {
         // Arrange
-        const app = await createApp(harness.client, 'paint', shellOf({ sign: SIGN }));
+        const app = await createApp(harness.client, 'paint', rootOf({ sign: SIGN }));
         const page = await browser.newPage();
         await page.goto(`${harness.server.origin}/apps/${app.id}`);
         await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
@@ -1260,15 +1260,15 @@ describe.skipIf(!installed)('a drawImage of an uploaded file through the agent t
     let browser: Browser;
     let blank: Page;
     let appId = '';
-    const SVG_PLAN = '$.app.children.plan';
-    const CANVAS_PLAN = '$.app.children.canvasPlan';
+    const SVG_PLAN = '$.screens.home.children.plan';
+    const CANVAS_PLAN = '$.screens.home.children.canvasPlan';
 
     beforeAll(async () => {
         data = await tempData();
         harness = await httpHarness(data.dir);
         browser = await chromium.launch();
         blank = await browser.newPage();
-        appId = (await createApp(harness.client, 'plans', shellOf({}))).id;
+        appId = (await createApp(harness.client, 'plans', rootOf({}))).id;
     });
 
     afterAll(async () => {
@@ -1408,7 +1408,7 @@ describe.skipIf(!installed)('a 3D scene through the agent tools: G3.10 of the gr
     let browser: Browser;
     let blank: Page;
     let viewerId = '';
-    const SCENE = '$.app.children.viewer';
+    const SCENE = '$.screens.home.children.viewer';
 
     beforeAll(async () => {
         data = await tempData();
@@ -1417,8 +1417,8 @@ describe.skipIf(!installed)('a 3D scene through the agent tools: G3.10 of the gr
         harness = await httpHarness(data.dir);
         browser = await chromium.launch();
         blank = await browser.newPage();
-        viewerId = (await createApp(harness.client, 'viewer', shellOf({}))).id;
-        await createApp(harness.client, 'plain', shellOf({ note: { component: 'text', _text: 'No scene here' } }));
+        viewerId = (await createApp(harness.client, 'viewer', rootOf({}))).id;
+        await createApp(harness.client, 'plain', rootOf({ note: { component: 'text', _text: 'No scene here' } }));
     });
 
     afterAll(async () => {
@@ -1589,7 +1589,7 @@ describe.skipIf(!installed)('a 3D scene in a headless browser with no WebGL: G3.
     let harness: HttpHarness;
     let browser: Browser;
     let blank: Page;
-    const SCENE = '$.app.children.viewer';
+    const SCENE = '$.screens.home.children.viewer';
 
     beforeAll(async () => {
         data = await tempData();
@@ -1597,7 +1597,7 @@ describe.skipIf(!installed)('a 3D scene in a headless browser with no WebGL: G3.
         harness = await httpHarness(data.dir, undefined, { browserArgs: ['--disable-3d-apis'] });
         browser = await chromium.launch();
         blank = await browser.newPage();
-        await createApp(harness.client, 'viewer', shellOf({ viewer: { ...VIEWER, _fallback: 'No 3D in this browser' } }));
+        await createApp(harness.client, 'viewer', rootOf({ viewer: { ...VIEWER, _fallback: 'No 3D in this browser' } }));
     });
 
     afterAll(async () => {
@@ -1682,14 +1682,14 @@ describe.skipIf(!installed || MODEL_FIXTURE === undefined)('a model from an uplo
     let browser: Browser;
     let blank: Page;
     let appId = '';
-    const SCENE = '$.app.children.product';
+    const SCENE = '$.screens.home.children.product';
 
     beforeAll(async () => {
         data = await tempData();
         harness = await httpHarness(data.dir);
         browser = await chromium.launch();
         blank = await browser.newPage();
-        appId = (await createApp(harness.client, 'product', shellOf({}))).id;
+        appId = (await createApp(harness.client, 'product', rootOf({}))).id;
     });
 
     afterAll(async () => {
@@ -1736,7 +1736,7 @@ describe.skipIf(!installed || MODEL_FIXTURE === undefined)('a model from an uplo
 describe.skipIf(!installed)('press on a 3D node through its proxy with the agent tools: G3.8 of the graphics epic 3 (Chromium through Playwright)', () => {
     let data: TempData;
     let harness: HttpHarness;
-    const SCENE = '$.app.children.parts';
+    const SCENE = '$.screens.home.children.parts';
     const LID = `${SCENE}.children.lid`;
     const BASE = `${SCENE}.children.base`;
     const EYE = `${SCENE}.children.eye`;
@@ -1786,7 +1786,7 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
         harness = await httpHarness(data.dir);
         await step(harness, 'ui_model_write', { model: 'pick', operations: [{ op: 'set', field: 'chosen', type: 'string' }] });
         await step(harness, 'ui_data_write', { dataset: 'picks', model: 'pick', operations: [{ op: 'set', path: 'p1', value: { chosen: 'none' } }] });
-        await createApp(harness.client, 'parts', shellOf({}), { data: { ui: { dataset: 'picks' } } });
+        await createApp(harness.client, 'parts', rootOf({}), { data: { ui: { dataset: 'picks' } } });
         const written = await writeShell(harness, 'parts', 1, [{ op: 'set', path: 'root.children.parts', value: parts }]);
         if (written.isError) throw new Error(JSON.stringify(written.body));
     });

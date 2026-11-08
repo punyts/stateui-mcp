@@ -16,7 +16,8 @@ const STORE = deepFreeze({ tokens: { color: { accent: { base: '#204080' } } } })
 const PRODUCT = deepFreeze({ fields: { name: { type: 'string', required: true }, price: { type: 'number' } } }) as unknown as UiPartBodies['models'];
 const CATALOG = deepFreeze({ model: 'product', records: { p1: { name: 'Lamp', price: 30 } } }) as unknown as UiPartBodies['data'];
 const PRICING = deepFreeze({ needs: { items: { model: 'product' } }, params: { taxRate: { type: 'number', default: 0 } } }) as unknown as UiPartBodies['logic'];
-const SHELL = deepFreeze({ component: 'page', children: { header: { component: 'text', _text: 'Shop' }, body: { component: 'outlet' } } });
+const HOME_ROOT = deepFreeze({ component: 'panel', children: { header: { component: 'text', _text: 'Shop' } } });
+const TOASTS = deepFreeze({ component: 'toastRegion', messages: { saved: { tone: 'success', _title: 'Saved' } } });
 
 let data: TempData;
 let harness: InMemoryHarness;
@@ -32,7 +33,7 @@ async function createShop(): Promise<void> {
         title: 'Corner shop',
         themes: ['store'],
         data: { products: { dataset: 'catalog' } },
-        shell: SHELL
+        home: HOME_ROOT
     });
     if (created.isError) throw new Error(JSON.stringify(created.body));
 }
@@ -56,8 +57,8 @@ afterEach(async () => {
     await data.cleanup();
 });
 
-describe('ui_app_create with shell', () => {
-    it('should create an app of parts with its uses, the shell and a home start screen', async () => {
+describe('ui_app_create', () => {
+    it('should create an app of parts with its uses, the app node and a home start screen', async () => {
         // Act
         const created = await call(harness.client, 'ui_app_create', {
             name: 'shop',
@@ -65,7 +66,8 @@ describe('ui_app_create with shell', () => {
             themes: ['store'],
             data: { products: { dataset: 'catalog' }, items: { dataset: 'catalog' } },
             logic: { pricing: { params: { taxRate: 0.08 } } },
-            shell: SHELL
+            app: { toasts: TOASTS },
+            home: HOME_ROOT
         });
         const body = await appBody('shop');
         const validated = await call(harness.client, 'ui_validate', { app: 'shop' });
@@ -82,8 +84,8 @@ describe('ui_app_create with shell', () => {
                 logic: { pricing: { params: { taxRate: 0.08 } } }
             },
             start: 'home',
-            shell: SHELL,
-            screens: { home: { title: 'Home', root: { component: 'panel' } } }
+            app: { _title: 'Corner shop', toasts: TOASTS, component: 'app' },
+            screens: { home: { title: 'Home', root: HOME_ROOT } }
         });
         expect(validated.body).toMatchObject({ app: 'shop', valid: true });
     });
@@ -93,8 +95,7 @@ describe('ui_app_create with shell', () => {
         const result = await call(harness.client, 'ui_app_create', {
             name: 'shop',
             themes: ['stor'],
-            data: { products: { dataset: 'catalgo' } },
-            shell: SHELL
+            data: { products: { dataset: 'catalgo' } }
         });
         const apps = await call(harness.client, 'ui_list', { kind: 'apps' });
 
@@ -110,47 +111,56 @@ describe('ui_app_create with shell', () => {
         expect(apps.body).toMatchObject({ count: 0 });
     });
 
-    it('should refuse a shell with no outlet with SUI-SHELL-OUTLET', async () => {
+    it('should create a bare panel home screen and an app node with the title when only a name and title are given', async () => {
         // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'shop', shell: { component: 'page', children: { header: { component: 'text', _text: 'Shop' } } } });
+        const created = await call(harness.client, 'ui_app_create', { name: 'shop', title: 'Shop' });
+        const body = await appBody('shop');
+
+        // Assert
+        expect(created.isError).toBe(false);
+        expect(body).toEqual({ title: 'Shop', start: 'home', app: { _title: 'Shop', component: 'app' }, screens: { home: { title: 'Home', root: { component: 'panel' } } } });
+    });
+
+    it('should refuse an app node of another component and a home screen with an unknown component, creating nothing', async () => {
+        // Act
+        const other = await call(harness.client, 'ui_app_create', { name: 'shop', app: { component: 'page' } });
+        const unknown = await call(harness.client, 'ui_app_create', { name: 'shop', home: { component: 'nothingLikeThis' } });
         const apps = await call(harness.client, 'ui_list', { kind: 'apps' });
 
         // Assert
-        expect(result.body['error']).toBe('invalid-app');
-        expect((result.body['errors'] as { code: string }[]).map((error) => error.code)).toContain('SUI-SHELL-OUTLET');
+        expect(other.body).toMatchObject({ error: 'invalid-argument', argument: 'app.component' });
+        expect(unknown.body['error']).toBe('invalid-app');
         expect(apps.body).toMatchObject({ count: 0 });
     });
 
     it('should refuse a module whose need is not bound and name the module', async () => {
         // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'shop', logic: { pricing: { params: {} } }, shell: SHELL });
+        const result = await call(harness.client, 'ui_app_create', { name: 'shop', logic: { pricing: { params: {} } }, home: HOME_ROOT });
 
         // Assert
         expect(result.body['error']).toBe('invalid-app');
         expect(result.body['errors']).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'SUI-USES-NEEDS', part: { kind: 'logic', name: 'pricing' } })]));
     });
 
-    it('should refuse a shell pattern while the library has no patterns', async () => {
+    it('should refuse a home pattern the library does not have', async () => {
         // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'shop', shell: { pattern: 'top-nav', params: { title: 'Shop' } } });
+        const result = await call(harness.client, 'ui_app_create', { name: 'shop', home: { pattern: 'top-nav', params: { title: 'Shop' } } });
 
         // Assert
-        expect(result.body).toMatchObject({ error: 'invalid-argument', argument: 'shell' });
+        expect(result.body).toMatchObject({ error: 'invalid-argument', argument: 'home' });
         expect(result.body['message']).toContain('No such pattern: "top-nav"');
     });
 
-    it('should refuse a document, a missing shell, a sync mode and a bad name', async () => {
+    it('should refuse a document, a home that is no node, a sync mode and a bad name', async () => {
         // Act
-        const both = await call(harness.client, 'ui_app_create', { name: 'shop', document: {}, shell: SHELL });
-        const titleOnly = await call(harness.client, 'ui_app_create', { name: 'shop', title: 'Shop' });
-        const notNode = await call(harness.client, 'ui_app_create', { name: 'shop', shell: { title: 'Shop' } });
-        const persisted = await call(harness.client, 'ui_app_create', { name: 'shop', sync: 'persisted', shell: SHELL });
-        const badName = await call(harness.client, 'ui_app_create', { name: 'Corner Shop', shell: SHELL });
+        const both = await call(harness.client, 'ui_app_create', { name: 'shop', document: {}, home: HOME_ROOT });
+        const notNode = await call(harness.client, 'ui_app_create', { name: 'shop', home: { title: 'Shop' } });
+        const persisted = await call(harness.client, 'ui_app_create', { name: 'shop', sync: 'persisted', home: HOME_ROOT });
+        const badName = await call(harness.client, 'ui_app_create', { name: 'Corner Shop', home: HOME_ROOT });
 
         // Assert
         expect(both.body).toMatchObject({ error: 'invalid-argument', argument: 'document' });
-        expect(titleOnly.body).toMatchObject({ error: 'invalid-argument', argument: 'shell' });
-        expect(notNode.body).toMatchObject({ error: 'invalid-argument', argument: 'shell' });
+        expect(notNode.body).toMatchObject({ error: 'invalid-argument', argument: 'home' });
         expect(persisted.body).toMatchObject({ error: 'invalid-argument', argument: 'sync' });
         expect(badName.body).toMatchObject({ error: 'invalid-name', argument: 'name' });
     });
@@ -160,7 +170,7 @@ describe('ui_app_create with shell', () => {
         await createShop();
 
         // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'shop', shell: SHELL });
+        const result = await call(harness.client, 'ui_app_create', { name: 'shop', home: HOME_ROOT });
 
         // Assert
         expect(result.body['error']).toBe('duplicate-name');
@@ -170,7 +180,7 @@ describe('ui_app_create with shell', () => {
 describe('ui_app_configure', () => {
     beforeEach(createShop);
 
-    it('should change only the title and keep every other field byte-equal', async () => {
+    it('should change only the title and the app node title, and keep every other field byte-equal', async () => {
         // Arrange
         const before = await appBody('shop');
 
@@ -180,9 +190,10 @@ describe('ui_app_configure', () => {
 
         // Assert
         expect(result.body).toEqual({ name: 'shop', revision: 2, warnings: [] });
-        const { title: oldTitle, ...oldRest } = before;
-        const { title: newTitle, ...newRest } = after;
+        const { title: oldTitle, app: oldApp, ...oldRest } = before;
+        const { title: newTitle, app: newApp, ...newRest } = after;
         expect([oldTitle, newTitle]).toEqual(['Corner shop', 'Lamp shop']);
+        expect(newApp).toEqual({ ...(oldApp as object), _title: 'Lamp shop' });
         expect(JSON.stringify(newRest)).toBe(JSON.stringify(oldRest));
     });
 
@@ -281,6 +292,6 @@ describe('ui_screen_create', () => {
         expect(pattern.body).toMatchObject({ error: 'invalid-argument', argument: 'pattern' });
         expect(pattern.body['message']).toContain('No such pattern');
         expect(both.body).toMatchObject({ error: 'invalid-argument' });
-        expect((await appBody('shop'))['screens']).toEqual({ home: { title: 'Home', root: { component: 'panel' } } });
+        expect((await appBody('shop'))['screens']).toEqual({ home: { title: 'Home', root: HOME_ROOT } });
     });
 });

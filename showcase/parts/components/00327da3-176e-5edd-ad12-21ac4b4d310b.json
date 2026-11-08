@@ -1,0 +1,104 @@
+{
+  "id": "00327da3-176e-5edd-ad12-21ac4b4d310b",
+  "kind": "components",
+  "name": "showcaseHeader",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "summary": "The header of the showcase: its title and the switches of the theme preset and of light or dark",
+    "category": "layout",
+    "purposes": [
+      "header of every showcase screen",
+      "switch the theme preset and the mode"
+    ],
+    "tree": {
+      "component": "toolbar",
+      "align": "between",
+      "children": {
+        "title": {
+          "component": "text",
+          "textRole": "title",
+          "_text": "Component showcase"
+        },
+        "actions": {
+          "component": "toolbar",
+          "align": "end",
+          "children": {
+            "theme": {
+              "component": "segmented",
+              "size": "sm",
+              "_label": "Theme preset",
+              "options": {
+                "showcase-clean": {
+                  "_label": "Clean"
+                },
+                "showcase-professional": {
+                  "_label": "Professional"
+                },
+                "showcase-playful": {
+                  "_label": "Playful"
+                },
+                "showcase-moody": {
+                  "_label": "Moody"
+                }
+              },
+              "<-value": "$.data.preferences.current.theme",
+              "on": {
+                "change": [
+                  {
+                    "command": "set",
+                    "target": "$.theme.active.theme",
+                    "from": ".value"
+                  },
+                  {
+                    "command": "set",
+                    "target": "$.data.preferences.current.theme",
+                    "from": ".value"
+                  }
+                ]
+              }
+            },
+            "mode": {
+              "component": "segmented",
+              "size": "sm",
+              "iconOnly": true,
+              "_label": "Light or dark",
+              "options": {
+                "light": {
+                  "_label": "Light",
+                  "icon": "sun"
+                },
+                "dark": {
+                  "_label": "Dark",
+                  "icon": "moon"
+                }
+              },
+              "<-value": "$.data.preferences.current.mode",
+              "on": {
+                "change": [
+                  {
+                    "command": "set",
+                    "target": "$.theme.active.mode",
+                    "from": ".value"
+                  },
+                  {
+                    "command": "set",
+                    "target": "$.data.preferences.current.mode",
+                    "from": ".value"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "exposes": [
+      {
+        "path": "children.title._text",
+        "description": "The title at the start of the header"
+      }
+    ]
+  }
+}

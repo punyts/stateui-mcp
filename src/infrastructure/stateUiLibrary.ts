@@ -45,7 +45,7 @@ export interface CatalogFileTheme {
 export interface CatalogFile {
     readonly components: readonly CatalogFileComponent[];
     readonly theme: CatalogFileTheme;
-    /** The library's shell and screen patterns, sorted by kind then name (search epic 2 S2.1b builds them) */
+    /** The library's screen patterns, sorted by kind then name (search epic 2 S2.1b builds them) */
     readonly patterns: readonly PatternEntry[];
     /** The library's theme presets, by name; absent until search epic 2 S2.7 */
     readonly themePresets?: readonly ThemePresetEntry[];

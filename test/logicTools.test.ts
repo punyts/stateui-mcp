@@ -15,7 +15,7 @@ function deepFreeze<T>(value: T): T {
 const SHOP = deepFreeze({
     uses: { data: { bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } } },
     start: 'home',
-    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: { home: { root: { component: 'form', children: { price: { component: 'textField', _label: 'Price' } } } } }
 }) as unknown as UiPartBodies['apps'];
 

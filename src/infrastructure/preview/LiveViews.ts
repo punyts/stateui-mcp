@@ -25,7 +25,7 @@ export class LiveViews {
     /**
      * After a part was created, written, renamed or deleted: sends the assembled document of every app that shows the
      * part (the app itself, or an app that reaches it) to its open views. The page loads a changed theme, locale,
-     * screen or component again in full and writes a change of the shell's nodes in place. A definition change also
+     * screen or component again in full and writes a change of the app node in place. A definition change also
      * restarts the instance's authority, so the views reconnect and get its state as a snapshot. Returns how many views
      * were sent a document
      */

@@ -23,11 +23,11 @@ const ACCENT = '--ui-color-accent-base';
 
 const theme = (accent: string): UiPartBodies['themes'] => deepFreeze({ tokens: { color: { accent: { base: accent } } } }) as unknown as UiPartBodies['themes'];
 
-/** A shop with a store theme, a shell with a search field and two screens; the about screen has a note field */
+/** A shop with a store theme and two screens; the about screen has a note field */
 const SHOP = deepFreeze({
     uses: { themes: ['store'] },
     start: 'home',
-    shell: { component: 'page', children: { search: { component: 'textField', _label: 'Search' }, main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: {
         home: { root: { component: 'text', _text: 'Welcome home' } },
         about: { root: { component: 'form', children: { title: { component: 'text', _text: 'About the shop' }, note: { component: 'textField', _label: 'Note' } } } }
@@ -236,7 +236,7 @@ describe.skipIf(!installed)('the live view of an owner app (Chromium through Pla
 const STOCK = deepFreeze({
     uses: { data: { products: { dataset: 'catalog' } } },
     start: 'home',
-    shell: { component: 'page', children: { main: { component: 'outlet' } } },
+    app: { component: 'app' },
     screens: { home: { root: { component: 'list', '<-items': '$.data.products', row: { component: 'text', '<-_text': '$row.name' } } } }
 }) as unknown as UiPartBodies['apps'];
 

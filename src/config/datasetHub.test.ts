@@ -50,7 +50,7 @@ function shop(logic?: object): UiPartBodies['apps'] {
     return deepFreeze({
         uses: { data: { products: { dataset: 'catalog' }, cart: { model: 'line', scope: 'persona' } }, logic: { pricing: {} } },
         start: 'home',
-        shell: { component: 'page', children: { main: { component: 'outlet' } } },
+        app: { component: 'app' },
         screens: { home: { root: { component: 'text', _text: 'Shop' } } },
         ...(logic !== undefined && { logic })
     }) as unknown as UiPartBodies['apps'];

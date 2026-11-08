@@ -9,7 +9,7 @@ export type SearchPatternsResult =
     | { readonly kind: 'invalid-argument'; readonly argument: InvalidSearchArgumentError['argument']; readonly allowed: readonly string[] };
 
 /**
- * Shell and screen patterns, the library's and the owner's, ranked for a need in plain words, each with its source;
+ * Screen patterns, the library's and the owner's, ranked for a need in plain words, each with its source;
  * never empty (a need with no match lists the patterns of the kind)
  */
 export class SearchPatterns {

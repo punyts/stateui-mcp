@@ -8,7 +8,7 @@ import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
 import { loadChunk3d } from '../src/infrastructure/http/runtimeBundle.js';
 import { runtimeCsp } from '../src/infrastructure/http/security.js';
 import { EXPECTED_TOOLS } from './expectedTools.js';
-import { FORM_SHELL, call, createApp, httpHarness, noBrowser, shellOf, tempData } from './helpers.js';
+import { FORM_ROOT, call, createApp, httpHarness, noBrowser, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
 const PNG_BYTES = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(32)]);
@@ -23,7 +23,7 @@ beforeAll(async () => {
     data = await tempData();
     harness = await httpHarness(data.dir, noBrowser);
     origin = harness.server.origin;
-    appId = (await createApp(harness.client, 'form', FORM_SHELL)).id;
+    appId = (await createApp(harness.client, 'form', FORM_ROOT)).id;
     const found = await harness.server.services.useCases.findPartApp.execute('form');
     if (found.kind !== 'found') throw new Error('the form app is stored');
     appNamespace = harness.server.services.instanceViews.namespace(found.part);
@@ -66,7 +66,7 @@ describe('GET /', () => {
 
     it('should list every app, the most recently changed first', async () => {
         // Arrange
-        const created = await createApp(harness.client, 'corner-shop', shellOf({}), { title: 'Corner shop' });
+        const created = await createApp(harness.client, 'corner-shop', rootOf({}), { title: 'Corner shop' });
         const partId = created.id;
 
         // Act
@@ -203,11 +203,11 @@ describe('the 3D chunk on the runtime origin', () => {
         await writeFile(join(chunkDir, 'manifest.json'), JSON.stringify({ hash: CHUNK_HASH, script: `${CHUNK_HASH}.js` }));
         await writeFile(join(chunkDir, `${CHUNK_HASH}.js`), CHUNK_SCRIPT);
         chunkHarness = await httpHarness(join(chunkData.dir, 'data'), noBrowser, { chunk3dDir: chunkDir });
-        chunkAppId = (await createApp(chunkHarness.client, 'scene', FORM_SHELL)).id;
+        chunkAppId = (await createApp(chunkHarness.client, 'scene', FORM_ROOT)).id;
         // A folder with no manifest stands for a server without @punyts/stateui-3d
         bareData = await tempData();
         bareHarness = await httpHarness(join(bareData.dir, 'data'), noBrowser, { chunk3dDir: bareData.dir });
-        bareAppId = (await createApp(bareHarness.client, 'flat', FORM_SHELL)).id;
+        bareAppId = (await createApp(bareHarness.client, 'flat', FORM_ROOT)).id;
     });
 
     afterAll(async () => {
@@ -349,7 +349,7 @@ describe('POST /apps/:appId/files', () => {
     });
 
     it('should answer 409 with the reason once an app holds the most files', async () => {
-        const quotaApp = (await createApp(harness.client, 'quota', shellOf({}))).id;
+        const quotaApp = (await createApp(harness.client, 'quota', rootOf({}))).id;
 
         for (let n = 0; n < MAX_FILES_PER_APP; n++) {
             expect((await upload(`/apps/${quotaApp}/files`, Buffer.from(`file ${n}`), `f${n}.txt`)).status).toBe(201);
@@ -398,11 +398,11 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
 
     it('should answer 409 and keep a file the state of the instance references', async () => {
         const id = await stored('held.txt');
-        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.form.children.email.value', value: id });
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: id });
 
         const response = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
         const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
-        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.form.children.email.value', value: '' });
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: '' });
         const afterLetGo = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
 
         expect(response.status).toBe(409);
@@ -412,7 +412,7 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
     });
 
     it("should answer 404 for another app's file and an unknown app, and 400 for ids that are not UUIDs", async () => {
-        const otherApp = (await createApp(harness.client, 'release-other', shellOf({}))).id;
+        const otherApp = (await createApp(harness.client, 'release-other', rootOf({}))).id;
         const id = await stored('mine.txt');
 
         const fromOther = await fetch(`${origin}/apps/${otherApp}/files/${id}`, { method: 'DELETE' });
@@ -440,8 +440,8 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
 
 describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     const VIEW = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
-    const LIVE_PATH = '$.app.children.form.children.email.value';
-    const TYPED_PATH = '$.app.children.form.children.email.value';
+    const LIVE_PATH = '$.screens.home.children.form.children.email.value';
+    const TYPED_PATH = '$.screens.home.children.form.children.email.value';
 
     interface OpenSocket {
         readonly socket: WebSocket;

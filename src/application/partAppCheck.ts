@@ -49,10 +49,10 @@ export async function checkPartApp(parts: UiPartRepository, validator: UiAppVali
     return { kind: 'checked', warnings: all.filter((error) => !isBlockingError(error)), source };
 }
 
-/** A shell or a screen root: a library pattern with its params, or a node tree */
+/** A screen root: a library or owner screen pattern with its params, or a node tree */
 export type TreeChoice = { readonly pattern: string; readonly params?: JsonObject } | { readonly node: JsonObject };
 
-/** A slot of a copied pattern: where in the new shell or screen the agent fills it, and what goes there */
+/** A slot of a copied pattern: where in the new screen the agent fills it, and what goes there */
 export interface PatternSlot {
     readonly name: string;
     /** The node path in the app, such as `$.screens.cart.children` */
@@ -71,21 +71,18 @@ export type TreeOutcome =
     | { readonly kind: 'tree'; readonly tree: JsonObject; readonly slots: readonly PatternSlot[] }
     /** No pattern of that name in the library; `nearest` are pattern names */
     | { readonly kind: 'unknown-pattern'; readonly pattern: string; readonly nearest: readonly string[] }
-    /** A screen pattern given as a shell, or a shell pattern as a screen */
-    | { readonly kind: 'wrong-pattern-kind'; readonly pattern: string; readonly patternKind: 'shell' | 'screen' }
     /** Param values the pattern refused, each naming its param */
     | { readonly kind: 'pattern-params'; readonly pattern: string; readonly problems: readonly PatternParamProblem[] };
 
 /**
  * The tree a choice gives: the node as given, or a copy of the pattern's tree with each param value (or its default)
  * written at its paths. The copy is ordinary nodes: nothing refers to the pattern afterwards. `base` is the node path
- * of the tree in the app (`$.app` for a shell, `$.screens.<name>` for a screen), which the slot paths start from
+ * of the screen in the app (`$.screens.<name>`), which the slot paths start from
  */
-export function treeOf(choice: TreeChoice, want: 'shell' | 'screen', patterns: PatternCatalog, base: string): TreeOutcome {
+export function treeOf(choice: TreeChoice, patterns: PatternCatalog, base: string): TreeOutcome {
     if ('node' in choice) return { kind: 'tree', tree: choice.node, slots: [] };
     const pattern = patterns.get(choice.pattern);
     if (pattern === undefined) return { kind: 'unknown-pattern', pattern: choice.pattern, nearest: nearestNames(choice.pattern, patterns.names()) };
-    if (pattern.kind !== want) return { kind: 'wrong-pattern-kind', pattern: choice.pattern, patternKind: pattern.kind };
     const applied = applyPattern(pattern, (choice.params ?? {}) as Parameters<typeof applyPattern>[1]);
     if (applied.tree === undefined || applied.errors.length > 0) {
         return {

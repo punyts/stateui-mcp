@@ -1,4 +1,4 @@
-import { OUTLET_COMPONENT, checkPattern, checkRecord, nearestNames, readBlueprint, readModel, readModule, readPattern, validateApp } from '@punyts/stateui-app/core';
+import { APP_COMPONENT, checkPattern, checkRecord, nearestNames, readBlueprint, readModel, readModule, readPattern, validateApp } from '@punyts/stateui-app/core';
 import type { AppBlueprint, ComponentLibrary, JsonValue as LibraryJsonValue, LibraryEntry, Node, PartSource, PatternKind } from '@punyts/stateui-app/core';
 import type { UiPartError } from '../application/ports/UiAppValidator.js';
 import { isJsonObject } from '../domain/JsonValue.js';
@@ -29,10 +29,10 @@ export function assembledErrors(blueprint: AppBlueprint, parts: PartSource, name
     return validateApp(blueprint, parts, context.library, { name, isIconName: context.isIconName, ...(context.hasToken !== undefined && { hasToken: context.hasToken }) }).errors.map((error) => ({ ...error }));
 }
 
-/** The errors one part holds when a probe app uses it: the app is a bare outlet shell with one screen of `root` */
+/** The errors one part holds when a probe app uses it: a bare app node with one screen of `root` */
 function probeErrors(kind: PartKind, name: string, uses: AppBlueprint['uses'], root: Node, parts: PartSource, context: PartCheckContext): UiBuildError[] {
-    const outlet: Node = { component: OUTLET_COMPONENT } as Node;
-    const probe: AppBlueprint = { start: 'main', shell: outlet, screens: { main: { root } }, ...(uses !== undefined && { uses }) };
+    const app: Node = { component: APP_COMPONENT } as Node;
+    const probe: AppBlueprint = { start: 'main', app, screens: { main: { root } }, ...(uses !== undefined && { uses }) };
     return assembledErrors(probe, parts, `probe-${name}`, context).filter((error) => error.part.kind === kind && error.part.name === name);
 }
 
@@ -46,7 +46,7 @@ function themeErrors(name: string, body: UiPartBodies['themes'], parts: PartSour
     if (!isJsonObject(body.tokens)) return [shapeError('themes', name, '$.tokens', 'needs an object of tokens')];
     if (body.overlays !== undefined && !isJsonObject(body.overlays)) return [shapeError('themes', name, '$.overlays', 'must be an object of overlays by name')];
     const themes = { ...parts.themes, [name]: body };
-    return probeErrors('themes', name, { themes: [name] }, { component: OUTLET_COMPONENT } as Node, { ...parts, themes }, context);
+    return probeErrors('themes', name, { themes: [name] }, { component: 'panel' } as Node, { ...parts, themes }, context);
 }
 
 function componentErrors(name: string, body: UiPartBodies['components'], parts: PartSource, context: PartCheckContext): UiBuildError[] {
@@ -80,7 +80,7 @@ export function patternFile(name: string): string {
 
 /**
  * A pattern is checked as the library build checks its patterns (`readPattern` and `checkPattern` of the library):
- * shape and purposes, components, nodes, slot and param paths and the one outlet of a shell. The owner's components
+ * shape and purposes, components, nodes, slot and param paths.  The owner's components
  * count as composed components of the library, so a pattern may use them
  */
 function patternErrors(name: string, body: UiPartBodies['patterns'], parts: PartSource, context: PartCheckContext): UiBuildError[] {

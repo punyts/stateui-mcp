@@ -15,11 +15,18 @@ export const USES_TEXT =
 
 /** What the descriptions teach about a node tree or a pattern */
 const TREE_TEXT =
-    'a node tree ({ component, ...properties, children }) or { pattern, params? }: a library shell pattern from ui_patterns_search, copied once with the params you give (each one left out takes its default) as ordinary nodes';
+    'a node tree ({ component, ...properties, children }) or { pattern, params? }: a library or owner screen pattern from ui_patterns_search, copied once with the params you give (each one left out takes its default) as ordinary nodes';
 
-export const SHELL_ARGUMENT = {
+/** The app node's properties `ui_app_create` takes */
+export const APP_ARGUMENT = {
     type: 'object',
-    description: `The frame around every screen (header, navigation, footer): ${TREE_TEXT}. A node tree needs exactly one { component: "outlet" } node, where the current screen shows`
+    description:
+        "The app node's own properties, all optional: layout (how the app places its screens; one shows at a time, so the default needs none), toasts (the toastRegion node; $.app.toasts is the target of show commands from every screen) and on (app events such as sync.rejected). Its component is app and its _title the title"
+} as const;
+
+export const HOME_ARGUMENT = {
+    type: 'object',
+    description: `The root of the first screen, home: ${TREE_TEXT}. An app is its screens, with no frame around them: a screen pattern such as side-navigation or top-navigation brings a header and a menu, and a header or menu shared by several screens is placed in each (ui_composed_write makes it one composed component). A bare panel when left out`
 } as const;
 
 /** The `ui_app_create` arguments of an app of parts, beside `name` */
@@ -31,7 +38,8 @@ export const PART_APP_FIELDS = {
         description: 'uses.data, each $.data name bound to { dataset: "dataset-name" } or { model: "model-name", scope: "persona" }'
     },
     logic: { type: 'object', description: 'uses.logic, each owner logic module by name with { params: { ... } }' },
-    shell: SHELL_ARGUMENT
+    app: APP_ARGUMENT,
+    home: HOME_ARGUMENT
 } as const;
 
 const CONFIGURE = defineInput({
@@ -60,16 +68,16 @@ function invalidArgument(parsed: { argument: string; message: string }): ToolOut
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
 }
 
-/** A shell argument as the use case takes it, or the error for one that is neither a pattern nor a node */
-export function shellChoice(value: JsonObject): TreeChoice | ToolOutcome {
+/** A screen root argument (`home`) as the use case takes it, or the error for one that is neither a pattern nor a node */
+export function treeChoice(value: JsonObject, argument: string): TreeChoice | ToolOutcome {
     if (Object.hasOwn(value, 'pattern')) {
         const { pattern, params } = value;
-        if (typeof pattern !== 'string') return fail('invalid-argument', 'shell.pattern must be a pattern name', { argument: 'shell.pattern' });
-        if (params !== undefined && !isJsonObject(params)) return fail('invalid-argument', 'shell.params must be an object', { argument: 'shell.params' });
+        if (typeof pattern !== 'string') return fail('invalid-argument', `${argument}.pattern must be a pattern name`, { argument: `${argument}.pattern` });
+        if (params !== undefined && !isJsonObject(params)) return fail('invalid-argument', `${argument}.params must be an object`, { argument: `${argument}.params` });
         return { pattern, ...(params !== undefined && { params }) };
     }
     if (typeof value['component'] !== 'string') {
-        return fail('invalid-argument', 'shell must be a node tree with a "component" or { pattern, params? }', { argument: 'shell' });
+        return fail('invalid-argument', `${argument} must be a node tree with a "component" or { pattern, params? }`, { argument });
     }
     return { node: value };
 }
@@ -111,12 +119,8 @@ function sharedOutcome(result: Exclude<CreatePartAppResult | CreateScreenResult,
                 nearest: result.nearest
             });
         }
-        case 'wrong-pattern-kind': {
-            const tool = result.patternKind === 'shell' ? 'ui_app_create (shell)' : 'ui_screen_create (pattern)';
-            return fail('invalid-argument', `"${result.pattern}" is a ${result.patternKind} pattern, which ${tool} takes; nothing was ${what}`, { argument });
-        }
         case 'pattern-params': {
-            const params = argument === 'shell' ? 'shell.params' : 'patternParams';
+            const params = argument === 'home' ? 'home.params' : 'patternParams';
             return fail('invalid-argument', `${result.problems.map((problem) => problem.message).join('; ')}; nothing was ${what}`, {
                 argument: params,
                 params: result.problems.map((problem) => problem.param)
@@ -140,20 +144,25 @@ export interface PartAppCreateArguments {
     readonly themes?: unknown;
     readonly data?: JsonObject;
     readonly logic?: JsonObject;
-    readonly shell: JsonObject;
+    readonly app?: JsonObject;
+    readonly home?: JsonObject;
 }
 
-/** `ui_app_create` with `shell`: an app of parts */
+/** `ui_app_create`: an app of parts */
 export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartAppCreateArguments): Promise<ToolOutcome> {
     const { themes } = args;
     if (themes !== undefined && (!Array.isArray(themes) || !themes.every((theme) => typeof theme === 'string'))) {
         return fail('invalid-argument', 'themes must be a list of theme names', { argument: 'themes' });
     }
-    const shell = shellChoice(args.shell);
-    if ('isError' in shell) return shell;
+    if (args.app !== undefined && Object.hasOwn(args.app, 'component') && args.app['component'] !== 'app') {
+        return fail('invalid-argument', "app holds the app node's properties; its component is always 'app'", { argument: 'app.component' });
+    }
+    const home = args.home === undefined ? undefined : treeChoice(args.home, 'home');
+    if (home !== undefined && 'isError' in home) return home;
     const result = await createPartApp.execute({
         name: args.name,
-        shell,
+        ...(home !== undefined && { home }),
+        ...(args.app !== undefined && { app: args.app }),
         ...(args.title !== undefined && { title: args.title }),
         ...(themes !== undefined && { themes: themes as string[] }),
         ...(args.data !== undefined && { data: args.data }),
@@ -162,7 +171,7 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
     if (result.kind === 'created') {
         return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', slots: result.slots, warnings: withGuides(result.warnings) });
     }
-    return sharedOutcome(result, 'shell', 'created');
+    return sharedOutcome(result, 'home', 'created');
 }
 
 /** `ui_app_configure` and `ui_screen_create`, when the server has parts */
@@ -203,7 +212,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
         {
             name: 'ui_screen_create',
             description:
-                'Build time: add a screen to an app: a title, typed params and a root, either a node tree (root) or a library screen pattern from ui_patterns_search (pattern, with patternParams for its params; each one left out takes its default), copied once as ordinary nodes. The screen shows in the shell\'s outlet when the app navigates to it: a navigate command names the screen as its target and passes the params as its value. Adding a screen writes the app: expectedRevision is the app\'s, and the result has the app\'s new revision. The app is checked as a whole first. Returns { app, name, revision, slots, warnings }: slots are the places of the pattern to fill, each { name, path, description } with the node path for ui_nodes_write (none for a root).',
+                'Build time: add a screen to an app: a title, typed params and a root, either a node tree (root) or a library screen pattern from ui_patterns_search (pattern, with patternParams for its params; each one left out takes its default), copied once as ordinary nodes. The screen is the whole view while the app shows it (the app\'s layout places it), so it places its own header and menu: a navigate command names the screen as its target and passes the params as its value. Adding a screen writes the app: expectedRevision is the app\'s, and the result has the app\'s new revision. The app is checked as a whole first. Returns { app, name, revision, slots, warnings }: slots are the places of the pattern to fill, each { name, path, description } with the node path for ui_nodes_write (none for a root).',
             inputSchema: SCREEN.schema,
             annotations: WRITES,
             run: async (args) => {

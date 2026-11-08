@@ -29,7 +29,7 @@ export type ConfigureAppResult =
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] };
 
 /**
- * Changes an app's title, `uses` or `start` and nothing else: the other fields are carried over as read. The changed app
+ * Changes an app's title (and the app node's `_title` with it), `uses` or `start` and nothing else: the other fields are carried over as read. The changed app
  * is checked as a whole (`checkPartApp`), so a new `uses` is checked with every binding and module together
  */
 export class ConfigureApp {
@@ -51,9 +51,11 @@ export class ConfigureApp {
         const app = await this.parts.findByName('apps', name);
         if (app === undefined) return { kind: 'not-found', nearest: nearestNames(name, (await this.parts.list('apps')).map((summary) => summary.name)) };
         if (app.revision !== expectedRevision) return { kind: 'conflict', currentRevision: app.revision };
+        const appNode = (app.body as unknown as { app?: Record<string, unknown> }).app;
         const body = {
             ...app.body,
-            ...(title !== undefined && { title }),
+            // the title is also the app node's _title, the document title
+            ...(title !== undefined && { title, ...(appNode !== undefined && { app: { ...appNode, _title: title } }) }),
             ...(uses !== undefined && { uses }),
             ...(start !== undefined && { start })
         } as unknown as UiPartBodies['apps'];

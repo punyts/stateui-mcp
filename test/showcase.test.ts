@@ -12,7 +12,7 @@ interface Node {
 }
 
 interface ShowcaseApp {
-    readonly shell: Node;
+    readonly app: Node;
     readonly screens: Readonly<Record<string, { readonly title: string; readonly root: Node }>>;
 }
 
@@ -51,6 +51,23 @@ function builtApp(): ShowcaseApp {
     throw new Error('The showcase has no app');
 }
 
+/** The trees of the composed parts the showcase brings, by name */
+function builtComposed(): Record<string, Node> {
+    const trees: Record<string, Node> = {};
+    for (const [path, content] of buildShowcase()) {
+        if (!path.startsWith('components/')) continue;
+        const part = JSON.parse(content.toString()) as { name: string; body: { tree: Node } };
+        trees[part.name] = part.body.tree;
+    }
+    return trees;
+}
+
+/** The cards of a category screen: the children of its content panel */
+function cardsOf(app: ShowcaseApp, category: string): Record<string, Node> | undefined {
+    const content = (app.screens[category]?.root['children'] as Record<string, Node> | undefined)?.['content'];
+    return content?.['children'] as Record<string, Node> | undefined;
+}
+
 describe('the showcase build', () => {
     it('should match the committed parts (run npm run showcase:build after changing the catalog or an example)', async () => {
         // Arrange
@@ -70,10 +87,10 @@ describe('the showcase build', () => {
         const app = builtApp();
 
         // Act
-        const missing = catalog.components.filter((component) => !Object.hasOwn(EXCLUDED, component.name) && app.screens[component.category]?.root['children'] === undefined);
+        const missing = catalog.components.filter((component) => !Object.hasOwn(EXCLUDED, component.name) && cardsOf(app, component.category) === undefined);
         const cards = catalog.components
             .filter((component) => !Object.hasOwn(EXCLUDED, component.name))
-            .map((component) => [component, (app.screens[component.category]?.root['children'] as Record<string, Node> | undefined)?.[component.name]] as const);
+            .map((component) => [component, cardsOf(app, component.category)?.[component.name]] as const);
 
         // Assert
         expect(missing).toEqual([]);
@@ -92,7 +109,7 @@ describe('the showcase build', () => {
         const app = builtApp();
 
         // Act
-        const used = componentsIn([app.shell, app.screens]);
+        const used = componentsIn([app.app, app.screens, builtComposed()]);
 
         // Assert
         expect(catalog.components.map((component) => component.name).filter((name) => !used.has(name) && !Object.hasOwn(EXCLUDED, name))).toEqual([]);
@@ -101,12 +118,27 @@ describe('the showcase build', () => {
     it('should have a home screen and a screen per category, each with a menu item', () => {
         // Act
         const app = builtApp();
+        const menu = builtComposed()['showcaseMenu'] as { children: object } & Node;
 
         // Assert
         expect(Object.keys(app.screens)).toEqual(['home', ...CATEGORY_ORDER]);
-        expect(Object.keys(app.shell['nav'] as { children: object } & Node).length).toBeGreaterThan(0);
-        expect(Object.keys((app.shell['nav'] as { children: object }).children)).toEqual(['home', ...CATEGORY_ORDER]);
+        expect(Object.keys(menu.children)).toEqual(['home', ...CATEGORY_ORDER]);
         expect(BUILT_APP).toBe(SHOWCASE_APP);
+    });
+
+    it('should place the shared header and menu in every screen, and keep the toasts on the app node', () => {
+        // Act
+        const app = builtApp();
+
+        // Assert
+        expect(app.app).toMatchObject({ component: 'app', _title: 'Component showcase', toasts: { component: 'toastRegion' } });
+        for (const [name, screen] of Object.entries(app.screens)) {
+            expect(screen.root['children'], name).toMatchObject({
+                header: { component: 'showcaseHeader', placement: { region: 'n' } },
+                menu: { component: 'showcaseMenu', placement: { region: 'w' } },
+                content: { component: 'panel', placement: { region: 'center' } }
+            });
+        }
     });
 });
 

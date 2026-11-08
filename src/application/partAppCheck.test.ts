@@ -33,7 +33,7 @@ describe('treeOf', () => {
         const node = Object.freeze({ component: 'panel' });
 
         // Act
-        const outcome = treeOf({ node }, 'screen', PATTERNS, '$.screens.pay');
+        const outcome = treeOf({ node }, PATTERNS, '$.screens.pay');
 
         // Assert
         expect(outcome).toEqual({ kind: 'tree', tree: node, slots: [] });
@@ -41,7 +41,7 @@ describe('treeOf', () => {
 
     it('should copy the tree of a pattern with its defaults and give the slots as node paths in the app', () => {
         // Act
-        const outcome = treeOf({ pattern: 'checkout' }, 'screen', PATTERNS, '$.screens.pay');
+        const outcome = treeOf({ pattern: 'checkout' }, PATTERNS, '$.screens.pay');
 
         // Assert
         expect(outcome).toEqual({
@@ -54,7 +54,7 @@ describe('treeOf', () => {
 
     it('should write a param value at every path of the param', () => {
         // Act
-        const outcome = treeOf({ pattern: 'checkout', params: { title: 'Pay now' } }, 'screen', PATTERNS, '$.screens.pay');
+        const outcome = treeOf({ pattern: 'checkout', params: { title: 'Pay now' } }, PATTERNS, '$.screens.pay');
 
         // Assert
         expect(outcome.kind === 'tree' && outcome.tree).toEqual({
@@ -64,19 +64,17 @@ describe('treeOf', () => {
         });
     });
 
-    it('should refuse an unknown pattern with the nearest names, and a pattern of the other kind', () => {
+    it('should refuse an unknown pattern with the nearest names', () => {
         // Act
-        const unknown = treeOf({ pattern: 'chekout' }, 'screen', PATTERNS, '$.screens.pay');
-        const wrongKind = treeOf({ pattern: 'checkout' }, 'shell', PATTERNS, '$.app');
+        const unknown = treeOf({ pattern: 'chekout' }, PATTERNS, '$.screens.pay');
 
         // Assert
         expect(unknown).toEqual({ kind: 'unknown-pattern', pattern: 'chekout', nearest: ['checkout'] });
-        expect(wrongKind).toEqual({ kind: 'wrong-pattern-kind', pattern: 'checkout', patternKind: 'screen' });
     });
 
     it('should refuse an unknown param and a value of the wrong type, naming each param', () => {
         // Act
-        const outcome = treeOf({ pattern: 'checkout', params: { title: 3, colour: 'red' } }, 'screen', PATTERNS, '$.screens.pay');
+        const outcome = treeOf({ pattern: 'checkout', params: { title: 3, colour: 'red' } }, PATTERNS, '$.screens.pay');
 
         // Assert
         expect(outcome.kind).toBe('pattern-params');

@@ -1,9 +1,9 @@
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { childCount, isNodeValue } from '../../domain/nodeDepth.js';
-import { MAX_OUTLINE_LINES, OUTLET } from './formatOutline.js';
+import { APP_NODE, MAX_OUTLINE_LINES } from './formatOutline.js';
 
-/** A screen drawn at the shell's outlet: its resolved root and the state path of the root (`$.screens.{name}`) */
+/** A screen drawn below the app node: its resolved root and the state path of the root (`$.screens.{name}`) */
 export interface TreeScreen {
     readonly name: string;
     readonly root: JsonObject;
@@ -15,15 +15,14 @@ export interface TreeSource {
     readonly root: JsonObject;
     /** The key shown for the root node */
     readonly rootKey: string;
-    /** The state path of the root node, such as `$.app` or `$.app.children.main` */
+    /** The state path of the root node, such as `$.app` or `$.screens.home.children.main` */
     readonly rootPath: string;
     /** How many `children` levels to show below the root; deeper nodes end their line with a child count */
     readonly depth: number | undefined;
     /** False leaves the state path off each line */
     readonly paths: boolean;
     /**
-     * The screens of an app of parts, drawn at the shell's `outlet`: one screen takes the outlet's place under the
-     * outlet's key, several are listed one level below the outlet under their names
+     * The screens of an app of parts, drawn below the app node (`$.app`), each under its name: an app is its screens
      */
     readonly screens?: readonly TreeScreen[];
     /** Lines shown after the tree, such as the logic */
@@ -49,7 +48,7 @@ function bullet(level: number): string {
  * state path, indented two spaces per level with bullets that alternate between `-` and `*`. A node held by a slot
  * property (a `footer`, a `row` template) is marked `[slot]` and sits one level below its parent like a child; a
  * `row` template draws once per record. The state paths are the ones ui_interact, ui_state_set and ui_screenshot
- * take. The `screens` of an app of parts are drawn at the outlet, with their own state paths. The `trailer` lines
+ * take. The `screens` of an app of parts are drawn below the app node, each under its name with its own state path. The `trailer` lines
  * follow the tree. Output past `MAX_OUTLINE_LINES` is cut and counted
  */
 export function formatTree(source: TreeSource): Tree {
@@ -58,11 +57,6 @@ export function formatTree(source: TreeSource): Tree {
 
     const screens = source.screens ?? [];
     const emit = (node: NodeValue, key: string, path: string, level: number, childLevel: number, slot: boolean): void => {
-        const only = node.component === OUTLET && screens.length === 1 ? screens[0] : undefined;
-        if (only !== undefined && isNodeValue(only.root)) {
-            emit(only.root, key, only.path, level, childLevel, slot);
-            return;
-        }
         nodeCount += 1;
         const marks = [slot ? '[slot]' : '', slot && key === 'row' ? '(one per record)' : ''].filter((mark) => mark !== '');
         const parts = [`${bullet(level)} ${key} (${node.component})`, ...marks];
@@ -73,7 +67,7 @@ export function formatTree(source: TreeSource): Tree {
             return;
         }
         lines.push(`${'  '.repeat(level)}${parts.join(' ')}`);
-        if (node.component === OUTLET && screens.length > 1) {
+        if (node.component === APP_NODE) {
             for (const screen of screens) {
                 if (isNodeValue(screen.root)) emit(screen.root, screen.name, screen.path, level + 1, childLevel + 1, false);
             }

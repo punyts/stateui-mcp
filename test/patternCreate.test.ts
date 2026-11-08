@@ -14,8 +14,6 @@ import type { InMemoryHarness, TempData } from './helpers.js';
 
 const CATALOG_PATTERNS = loadCatalogFile().patterns as readonly PatternEntry[];
 const SCREENS = CATALOG_PATTERNS.filter((pattern) => pattern.kind === 'screen');
-const SHELLS = CATALOG_PATTERNS.filter((pattern) => pattern.kind === 'shell');
-const STUB_SHELL = Object.freeze({ component: 'page', children: Object.freeze({ body: Object.freeze({ component: 'outlet' }) }) });
 
 /** A model loose enough for the records every pattern's fixture datasets hold */
 const ITEM = { fields: { title: { type: 'string' }, price: { type: 'number' }, description: { type: 'string' }, image: { type: 'string' } } } as unknown as UiPartBodies['models'];
@@ -104,7 +102,7 @@ describe('creating from every pattern of the built catalog', () => {
         // Arrange
         const pattern = SCREENS.find((entry) => entry.name === name) as PatternEntry;
         const values = recordPaths(pattern);
-        const created = await call(harness.client, 'ui_app_create', { name: 'shop', data: await bindAll(dataNames([pattern], values)), shell: STUB_SHELL });
+        const created = await call(harness.client, 'ui_app_create', { name: 'shop', data: await bindAll(dataNames([pattern], values)) });
         expect(created.isError, JSON.stringify(created.body)).toBeFalsy();
 
         // Act
@@ -125,18 +123,23 @@ describe('creating from every pattern of the built catalog', () => {
         expect(validated.body['errors']).toEqual([]);
     });
 
-    it.each(SHELLS.map((pattern) => [pattern.name]))('should create an app from the shell %s that validates with no errors', async (name) => {
+    it.each(SCREENS.map((pattern) => [pattern.name]))('should create an app whose home screen is %s that validates with no errors', async (name) => {
         // Arrange
-        const pattern = SHELLS.find((entry) => entry.name === name) as PatternEntry;
+        const pattern = SCREENS.find((entry) => entry.name === name) as PatternEntry;
+        const values = recordPaths(pattern);
 
         // Act
-        const created = await call(harness.client, 'ui_app_create', { name: 'shop', data: await bindAll(dataNames([pattern])), shell: { pattern: name } });
+        const created = await call(harness.client, 'ui_app_create', {
+            name: 'shop',
+            data: await bindAll(dataNames([pattern], values)),
+            home: { pattern: name, ...(Object.keys(values).length > 0 && { params: values }) }
+        });
         const validated = await call(harness.client, 'ui_validate', { app: 'shop' });
 
         // Assert
         expect(created.isError, JSON.stringify(created.body)).toBeFalsy();
         expect(created.body['slots']).toEqual(
-            Object.entries(pattern.slots).map(([slot, { path, description }]) => ({ name: slot, path: `$.app.${path}`, description }))
+            Object.entries(pattern.slots).map(([slot, { path, description }]) => ({ name: slot, path: `$.screens.home.${path}`, description }))
         );
         expect(validated.body['errors']).toEqual([]);
     });
@@ -144,7 +147,7 @@ describe('creating from every pattern of the built catalog', () => {
 
 describe('pattern params and errors', () => {
     beforeEach(async () => {
-        const created = await call(harness.client, 'ui_app_create', { name: 'shop', data: await bindAll({ products: [] }), shell: STUB_SHELL });
+        const created = await call(harness.client, 'ui_app_create', { name: 'shop', data: await bindAll({ products: [] }) });
         if (created.isError) throw new Error(JSON.stringify(created.body));
     });
 
@@ -189,13 +192,15 @@ describe('pattern params and errors', () => {
         expect(result.body['nearest']).toContain('product-grid');
     });
 
-    it('should refuse a screen pattern as a shell, naming the tool that takes it', async () => {
+    it('should refuse a misspelt home pattern with the nearest names and create nothing', async () => {
         // Act
-        const result = await call(harness.client, 'ui_app_create', { name: 'store', shell: { pattern: 'product-grid' } });
+        const result = await call(harness.client, 'ui_app_create', { name: 'store', home: { pattern: 'product-gird' } });
+        const listed = await call(harness.client, 'ui_list', { kind: 'apps' });
 
         // Assert
-        expect(result.body).toMatchObject({ error: 'invalid-argument', argument: 'shell' });
-        expect(result.body['message']).toContain('is a screen pattern, which ui_screen_create (pattern) takes');
+        expect(result.body).toMatchObject({ error: 'invalid-argument', argument: 'home' });
+        expect(result.body['nearest']).toContain('product-grid');
+        expect(JSON.stringify(listed.body)).not.toContain('"store"');
     });
 
     it('should refuse a screen whose path param names a dataset the app does not bind, naming the path and what to bind', async () => {
@@ -231,7 +236,7 @@ describe('a copied pattern is ordinary nodes', () => {
             presets: () => [],
             withOwner: () => patterns
         };
-        await parts.create({ kind: 'apps', name: 'notes', body: { start: 'home', shell: STUB_SHELL, screens: { home: { root: { component: 'panel' } } } } as unknown as UiPartBodies['apps'] });
+        await parts.create({ kind: 'apps', name: 'notes', body: { start: 'home', app: { component: 'app' }, screens: { home: { root: { component: 'panel' } } } } as unknown as UiPartBodies['apps'] });
         const createScreen = new CreateScreen(parts, validator, patterns, silentReport);
 
         // Act

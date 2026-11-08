@@ -17,7 +17,7 @@ import type { CreatedApp, HttpHarness, TempData } from './helpers.js';
 
 const VIEW = '0c0c0c0c-0c0c-4c0c-8c0c-0c0c0c0c0c0c';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
-const HELD_AT = '$.app.children.form.children.email.value';
+const HELD_AT = '$.screens.home.children.form.children.email.value';
 
 async function eventually<T>(read: () => T | Promise<T>, check: (value: T) => boolean, timeoutMs = 5000): Promise<T> {
     const deadline = Date.now() + timeoutMs;

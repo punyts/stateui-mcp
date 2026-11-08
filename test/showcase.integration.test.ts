@@ -47,7 +47,9 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
 
     it('should keep the theme and mode the user picks in the instance, across a reload, and not a screenshot mode', async () => {
         // Arrange
-        const at = '$.app.header.children.actions.children';
+        // The header is placed by every screen; the one of the home screen is picked, so the preview shows home first
+        const at = '$.screens.home.children.header.children.actions.children';
+        await call(harness.client, 'ui_preview', { app: SHOWCASE_APP, screen: 'home' });
         const active = async (): Promise<unknown> => {
             const state = await call(harness.client, 'ui_state_get', { app: SHOWCASE_APP });
             return (state.body['state'] as { theme?: { active?: unknown } }).theme?.active;

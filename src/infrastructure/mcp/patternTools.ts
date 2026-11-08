@@ -1,5 +1,4 @@
 import { MAX_SUMMARY_LENGTH } from '@punyts/stateui-app/core';
-import { SHELL_SOURCE } from '../../application/use-cases/WritePattern.js';
 import type { PatternSource } from '../../application/use-cases/WritePattern.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
@@ -9,13 +8,13 @@ import type { UiToolDefinition } from './toolKit.js';
 const PATTERN_WRITE = defineInput({
     name: { type: 'string', required: true, description: 'The pattern name (ui_list kind "patterns"); ui_app_create and ui_screen_create take it as pattern. A new name creates the pattern' },
     expectedRevision: { type: 'integer', minimum: 1, description: 'The revision you last read. Leave it out to create the pattern; when it has changed since, nothing is written' },
-    kind: { type: 'string', enum: ['shell', 'screen'], description: 'shell (a frame with exactly one outlet) or screen (no outlet). Required to create; kept when left out' },
+    kind: { type: 'string', enum: ['screen'], description: 'screen, the one kind of pattern. Required to create; kept when left out' },
     summary: { type: 'string', description: `One line, at most ${MAX_SUMMARY_LENGTH} characters: what the pattern is. Required to create; kept when left out` },
     purposes: { type: 'json', description: '3 to 8 one-line phrases of at most 60 characters, the needs it meets ("book a table for tonight"). Required to create; kept when left out' },
     tree: { type: 'object', description: 'The node tree, with a "component" at its root. Give it or from; kept when both are left out' },
     from: {
         type: 'object',
-        description: `Copy the tree once from an owner app: { app, screen }, where screen is a screen name or "${SHELL_SOURCE}" for the app's shell. Give it or tree`
+        description: 'Copy the tree once from an owner app: { app, screen }, the root of that screen. Give it or tree'
     },
     slots: {
         type: 'object',
@@ -32,7 +31,7 @@ const PATTERN_WRITE = defineInput({
 function sourceOf(from: JsonObject): PatternSource | string {
     const { app, screen } = from;
     if (typeof app !== 'string' || app === '') return 'from.app must be the name of an owner app';
-    if (typeof screen !== 'string' || screen === '') return `from.screen must be a screen name or "${SHELL_SOURCE}"`;
+    if (typeof screen !== 'string' || screen === '') return 'from.screen must be a screen name';
     const extra = Object.keys(from).filter((key) => key !== 'app' && key !== 'screen');
     if (extra.length > 0) return `from takes app and screen only, not ${extra.join(', ')}`;
     return { app, screen };
@@ -45,7 +44,7 @@ export function createPatternTools(useCases: Pick<UiBuilderUseCases, 'writePatte
     return [
         {
             name: 'ui_pattern_write',
-            description: `Build time: write an owner pattern, a shell or screen that ui_app_create (shell: { pattern }) and ui_screen_create (pattern) start from, in the format of the library's patterns. Give the tree, or copy it once from an owner app with from: { app, screen } (screen "${SHELL_SOURCE}" for the app's shell), then name its slots and params as paths of that tree. It is checked as the library checks its patterns: every node, every slot and param path, and exactly one outlet in a shell and none in a screen; a failure writes nothing and names its path. A name of a library pattern is refused (invalid-name). Leave expectedRevision out to create the pattern. Returns { name, revision, created }.`,
+            description: `Build time: write an owner pattern, a screen that ui_screen_create (pattern) starts from, in the format of the library's patterns. Give the tree, or copy it once from a screen of an owner app with from: { app, screen }, then name its slots and params as paths of that tree. It is checked as the library checks its patterns: every node and every slot and param path; a failure writes nothing and names its path. A name of a library pattern is refused (invalid-name). Leave expectedRevision out to create the pattern. Returns { name, revision, created }.`,
             inputSchema: PATTERN_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {

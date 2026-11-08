@@ -1,0 +1,24 @@
+{
+  "id": "5a1eb7a2-7ce6-561c-93b5-6dfead72086f",
+  "kind": "models",
+  "name": "showcase-preference",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "theme": {
+        "type": "string",
+        "default": "showcase-clean"
+      },
+      "mode": {
+        "type": "string",
+        "default": "light"
+      }
+    }
+  }
+}

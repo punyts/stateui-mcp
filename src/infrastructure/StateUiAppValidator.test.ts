@@ -13,12 +13,12 @@ const { validator } = createStateUiAdapters();
 
 const NO_PARTS: PartSource = Object.freeze({});
 
-/** An app whose shell holds `children` beside the outlet and whose one screen, home, is empty: state paths of the shell are `$.app...` */
+/** An app whose one screen, home, is a panel that holds `children`: their state paths are `$.screens.home.children...` */
 function appWith(children: object): AppBlueprint {
     return {
         start: 'home',
-        shell: { component: 'page', children: { ...children, main: { component: 'outlet' } } },
-        screens: { home: { root: { component: 'panel' } } }
+        app: { component: 'app' },
+        screens: { home: { root: { component: 'panel', children } } }
     } as unknown as AppBlueprint;
 }
 
@@ -47,9 +47,9 @@ describe('StateUiAppValidator', () => {
 
             expect(errors.map(pair)).toEqual(
                 expect.arrayContaining([
-                    ['SUI-USES-MISSING', '$.shell.children.ghost'],
-                    ['SUI-STATE-UNKNOWN', '$.app.children.extra.nonsense'],
-                    ['SUI-LINK-MISSING', '$.app.children.linked']
+                    ['SUI-USES-MISSING', '$.screens.home.root.children.ghost'],
+                    ['SUI-STATE-UNKNOWN', '$.screens.home.children.extra.nonsense'],
+                    ['SUI-LINK-MISSING', '$.screens.home.children.linked']
                 ])
             );
             expect(errors.every((error) => error.statePath !== undefined && error.part.kind === 'apps' && error.part.name === 'shop')).toBe(true);
@@ -72,16 +72,16 @@ describe('StateUiAppValidator', () => {
             );
 
             expect(errors.map(pair)).toEqual([
-                ['SUI-STATE-TOKEN', '$.app.children.map.children.token.fill'],
-                ['SUI-STATE-PAINT', '$.app.children.map.children.paint.fill'],
-                ['SUI-STATE-LABEL', '$.app.children.map.children.paint']
+                ['SUI-STATE-TOKEN', '$.screens.home.children.map.children.token.fill'],
+                ['SUI-STATE-PAINT', '$.screens.home.children.map.children.paint.fill'],
+                ['SUI-STATE-LABEL', '$.screens.home.children.map.children.paint']
             ]);
         });
 
         it('should report an unknown icon name on an icon-typed property', () => {
             const errors = check(appWith({ go: { component: 'button', icon: 'not-an-icon-at-all' } }));
 
-            expect(errors.map(pair)).toEqual([['SUI-STATE-INVALID', '$.app.children.go.icon']]);
+            expect(errors.map(pair)).toEqual([['SUI-STATE-INVALID', '$.screens.home.children.go.icon']]);
         });
 
         it('should accept a known icon name and an alias', () => {
@@ -120,8 +120,8 @@ describe('StateUiAppValidator', () => {
         it('should accept a node reference to an exposed property and reject one to a property that is not', () => {
             const blueprint = (target: string): AppBlueprint => appWith({ customers: { component: 'list' }, detail: { component: 'text', '<-_text': target } });
 
-            expect(check(blueprint('^app.children.customers.current.name'))).toEqual([]);
-            expect(check(blueprint('^app.children.customers.divided')).map((error) => error.code)).toEqual(['SUI-LINK-MISSING']);
+            expect(check(blueprint('^home.children.customers.current.name'))).toEqual([]);
+            expect(check(blueprint('^home.children.customers.divided')).map((error) => error.code)).toEqual(['SUI-LINK-MISSING']);
         });
 
         it('should report a target that is not $.data, $row or a node reference', () => {
@@ -149,27 +149,10 @@ describe('StateUiAppValidator', () => {
     });
 
     describe('warnings of an assembled app', () => {
-        it('should warn about a page whose side nav never collapses, in the shell and in a screen', () => {
-            const nav = { component: 'page', nav: { component: 'panel' }, navBreakpoint: 0 };
+        it('should warn about each content path a language of the app node or a screen does not translate', () => {
             const blueprint = {
                 start: 'home',
-                shell: { ...nav, children: { main: { component: 'outlet' } } },
-                screens: { home: { root: nav } }
-            } as unknown as AppBlueprint;
-
-            const warnings = check(blueprint);
-
-            expect(warnings.map(pair)).toEqual([
-                ['SUI-VIEWPORT-NARROW', '$.app'],
-                ['SUI-VIEWPORT-NARROW', '$.screens.home']
-            ]);
-            expect(isValid(warnings)).toBe(true);
-        });
-
-        it('should warn about each content path a language of the shell or a screen does not translate', () => {
-            const blueprint = {
-                start: 'home',
-                shell: { component: 'page', _title: 'Shop', children: { main: { component: 'outlet' } } },
+                app: { component: 'app', _title: 'Shop' },
                 locales: { de: {} },
                 screens: { home: { root: { component: 'text', _text: 'Welcome' }, locales: { fr: {} } } }
             } as unknown as AppBlueprint;
@@ -186,7 +169,7 @@ describe('StateUiAppValidator', () => {
 
     describe('resolveNode', () => {
         it('should return the node merged with its component defaults', () => {
-            const node = validator.resolveNode(SAMPLE_FORM_AND_LIST_APP, ['app', 'footer', 'children', 'save']);
+            const node = validator.resolveNode(SAMPLE_FORM_AND_LIST_APP, ['app', 'children', 'footer', 'children', 'save']);
 
             expect(node?.['component']).toBe('button');
             expect(node?.['_title']).toBe('Save');
@@ -194,7 +177,7 @@ describe('StateUiAppValidator', () => {
         });
 
         it('should return undefined for a missing path, a non-node and an unknown component', () => {
-            const document: UiDocument = { app: { component: 'page', children: { ghost: { component: 'nothing' } } } };
+            const document: UiDocument = { app: { component: 'panel', children: { ghost: { component: 'nothing' } } } };
 
             expect(validator.resolveNode(document, ['app', 'nope'])).toBeUndefined();
             expect(validator.resolveNode(document, ['app', 'children'])).toBeUndefined();

@@ -113,7 +113,7 @@ function valueAt(state: JsonObject, path: readonly string[]): JsonValue | undefi
 /**
  * Writes one value into the default persona's running instance of an owner app, never into its definition:
  *
- * - `$.app...` and `$.screens.{screen}...` name an articulation property of a node of the shell or a screen, checked as
+ * - `$.app...` and `$.screens.{screen}...` name an articulation property of a node of the app node or a screen, checked as
  *   `SetState` checks one; content (`_` properties) belongs to the definition and is refused;
  * - `$.data.{binding}...` writes the persona's own records of a persona binding; a shared dataset's records are the
  *   dataset's, written with `ui_data_write`;

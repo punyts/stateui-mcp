@@ -6,8 +6,8 @@ import { childCount, isNodeValue } from '../../domain/nodeDepth.js';
 /** Most lines an outline returns; the rest is counted, not shown */
 export const MAX_OUTLINE_LINES = 400;
 
-/** The shell component the screens of an app of parts are drawn in */
-export const OUTLET = 'outlet';
+/** The component of the app node, below which the screens of an app of parts are drawn */
+export const APP_NODE = 'app';
 
 /** Components whose children are listed on the line of the parent when every child is a leaf */
 const INLINE_CHILDREN: readonly string[] = ['toolbar'];
@@ -20,7 +20,7 @@ const MAX_CONTENT_CHARS = 80;
 
 const LINK_PREFIX = '<-';
 
-/** A screen drawn at the shell's outlet: its resolved root and its part of the state snapshot (`$.screens.{name}`) */
+/** A screen drawn below the app node: its resolved root and its part of the state snapshot (`$.screens.{name}`) */
 export interface OutlineScreen {
     readonly name: string;
     readonly root: JsonObject;
@@ -50,8 +50,7 @@ export interface OutlineSource {
     /** Lines shown after the tree, such as the document's logic */
     readonly trailer?: readonly string[];
     /**
-     * The screens of an app of parts, drawn at the shell's `outlet`: one screen takes the outlet's place under the
-     * outlet's key, several are listed one level below the outlet under their names
+     * The screens of an app of parts, drawn below the app node (`$.app`), each under its name: an app is its screens
      */
     readonly screens?: readonly OutlineScreen[];
 }
@@ -171,11 +170,6 @@ class Formatter {
         scope: Scope = { overlay: this.source.overlay, snapshot: this.source.snapshotApp }
     ): void {
         const screens = this.source.screens ?? [];
-        const only = node.component === OUTLET && screens.length === 1 ? screens[0] : undefined;
-        if (only !== undefined && isNodeValue(only.root)) {
-            this.emit(only.root, key, [], level, indent, suffix, { overlay: undefined, snapshot: only.snapshot });
-            return;
-        }
         const pad = '  '.repeat(indent);
         const { children, slots, ordered } = childNodes(node);
         const { depth } = this.source;
@@ -194,7 +188,7 @@ class Formatter {
             return;
         }
         this.lines.push(base);
-        if (node.component === OUTLET && screens.length > 1) {
+        if (node.component === APP_NODE) {
             for (const screen of screens) {
                 if (isNodeValue(screen.root)) this.emit(screen.root, screen.name, [], level + 1, indent + 1, '', { overlay: undefined, snapshot: screen.snapshot });
             }
@@ -214,7 +208,7 @@ class Formatter {
  * out when it repeats the component), the component, its main content (`_title`, `_label` or `_text`, in the chosen
  * language when an overlay is given), its links as `<-target`, and `(hidden)` or `(closed)` marks. Hidden and closed
  * nodes stay in. A toolbar of leaf nodes shares one line. A `row` template is shown once, with the record count of
- * the link that feeds it; data values are never shown. The `screens` of an app of parts are drawn at the outlet. The
+ * the link that feeds it; data values are never shown. The `screens` of an app of parts are drawn below the app node. The
  * `trailer` lines follow the tree. Output past
  * `MAX_OUTLINE_LINES` is cut and counted
  */

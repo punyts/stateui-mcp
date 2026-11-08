@@ -24,7 +24,7 @@ export const PARTS_DIR = join(root, 'showcase', 'parts');
  * Catalog components the showcase leaves out, each with the reason. Every other component has a card on the screen
  * of its category; the build fails when one has none
  */
-export const EXCLUDED = Object.freeze({});
+export const EXCLUDED = Object.freeze({ app: 'the root of an app, which places its screens; the showcase itself runs in one' });
 
 /** The categories in the order of the category index (COMPONENT_CATEGORIES of @punyts/stateui-app) */
 export const CATEGORY_ORDER = Object.freeze(['layout', 'navigation', 'forms', 'data', 'feedback', 'overlays', 'content', 'conversation', 'graphics']);
@@ -190,17 +190,17 @@ function categoryScreen(category, source, components, markers) {
     const cards = {};
     for (const [name, example] of Object.entries(source.components)) {
         const component = components.find((candidate) => candidate.name === name);
-        cards[name] = cardOf(component, example, `$.screens.${category}.children.${name}`, markers);
+        cards[name] = cardOf(component, example, `$.screens.${category}.children.content.children.${name}`, markers);
     }
     return {
         title: source.title,
-        root: {
+        root: framed({
             component: 'panel',
             _title: source.title,
             _description: `${source.description} ${components.length} components.`,
             layout: { type: 'grid', cols: 2, collapseBelow: 'md' },
             children: cards
-        }
+        })
     };
 }
 
@@ -220,7 +220,7 @@ function homeScreen(sources, counts, total) {
     }
     return {
         title: 'Home',
-        root: {
+        root: framed({
             component: 'panel',
             _title: 'Component showcase',
             children: {
@@ -242,53 +242,116 @@ function homeScreen(sources, counts, total) {
                     }
                 }
             }
+        })
+    };
+}
+
+/** The names of the composed parts every screen places: the header and the menu */
+const HEADER = 'showcaseHeader';
+const MENU = 'showcaseMenu';
+
+/**
+ * A screen root: the shared header on top, the menu down the side (a menu button on a phone) and the content of the
+ * screen in the middle
+ */
+function framed(content) {
+    return {
+        component: 'panel',
+        padding: 'none',
+        layout: { type: 'region', collapseBelow: 'md' },
+        children: {
+            header: { component: HEADER, placement: { region: 'n' } },
+            menu: { component: MENU, placement: { region: 'w' } },
+            content: { ...content, placement: { region: 'center' } }
         }
     };
 }
 
-/** The shell: the library's side-navigation pattern with a menu item per screen, the theme switch and the toasts */
-function shellOf(catalog, sources, total) {
-    const pattern = catalog.patterns.find((candidate) => candidate.name === 'side-navigation');
-    if (pattern === undefined) throw new Error('The catalog has no side-navigation shell pattern');
-    const shell = structuredClone(pattern.tree);
-    shell._title = 'Component showcase';
-    shell.header.children.title._text = 'Component showcase';
-    shell.footer.children.note._text = `${total} components of @punyts/stateui-components`;
-    const menu = { home: { component: 'menuItem', icon: 'home', _label: 'Home', screen: 'home' } };
-    for (const category of CATEGORY_ORDER) menu[category] = { component: 'menuItem', icon: sources[category].icon, _label: sources[category].title, screen: category };
-    shell.nav.children = menu;
+/**
+ * The header each screen places: the title and the theme switch. The pickers show `$.data.preferences.current`, which
+ * they write together with the active theme, so the header of every screen shows the same choice
+ */
+function headerPart() {
     const presets = {};
     for (const preset of PRESET_ORDER) presets[`showcase-${preset}`] = { _label: titleOf(preset) };
-    shell.header.children.actions.children = {
-        theme: {
-            component: 'segmented',
-            size: 'sm',
-            _label: 'Theme preset',
-            options: presets,
-            value: `showcase-${PRESET_ORDER[0]}`,
-            on: { change: { command: 'set', target: '$.theme.active.theme', from: '.value' } }
+    const picker = (kind) => [
+        { command: 'set', target: `$.theme.active.${kind}`, from: '.value' },
+        { command: 'set', target: `$.data.preferences.current.${kind}`, from: '.value' }
+    ];
+    return {
+        summary: 'The header of the showcase: its title and the switches of the theme preset and of light or dark',
+        category: 'layout',
+        purposes: ['header of every showcase screen', 'switch the theme preset and the mode'],
+        tree: {
+            component: 'toolbar',
+            align: 'between',
+            children: {
+                title: { component: 'text', textRole: 'title', _text: 'Component showcase' },
+                actions: {
+                    component: 'toolbar',
+                    align: 'end',
+                    children: {
+                        theme: {
+                            component: 'segmented',
+                            size: 'sm',
+                            _label: 'Theme preset',
+                            options: presets,
+                            '<-value': '$.data.preferences.current.theme',
+                            on: { change: picker('theme') }
+                        },
+                        mode: {
+                            component: 'segmented',
+                            size: 'sm',
+                            iconOnly: true,
+                            _label: 'Light or dark',
+                            options: { light: { _label: 'Light', icon: 'sun' }, dark: { _label: 'Dark', icon: 'moon' } },
+                            '<-value': '$.data.preferences.current.mode',
+                            on: { change: picker('mode') }
+                        }
+                    }
+                }
+            }
         },
-        mode: {
-            component: 'segmented',
-            size: 'sm',
-            iconOnly: true,
-            _label: 'Light or dark',
-            options: { light: { _label: 'Light', icon: 'sun' }, dark: { _label: 'Dark', icon: 'moon' } },
-            value: 'light',
-            on: { change: { command: 'set', target: '$.theme.active.mode', from: '.value' } }
+        exposes: [{ path: 'children.title._text', description: 'The title at the start of the header' }]
+    };
+}
+
+/** The menu each screen places: an item per screen, and the component count below the items */
+function menuPart(sources, total) {
+    const items = { home: { component: 'menuItem', icon: 'home', _label: 'Home', screen: 'home' } };
+    for (const category of CATEGORY_ORDER) items[category] = { component: 'menuItem', icon: sources[category].icon, _label: sources[category].title, screen: category };
+    return {
+        summary: 'The menu of the showcase: a screen per category; a menu button on a phone',
+        category: 'navigation',
+        purposes: ['menu of every showcase screen', 'move between the component categories'],
+        tree: {
+            component: 'nav',
+            collapseBelow: 'md',
+            _label: 'Showcase sections',
+            children: items,
+            footer: { component: 'text', textRole: 'caption', _text: `${total} components of @punyts/stateui-components` }
+        },
+        exposes: [{ path: 'children', description: 'The menu items, one per screen' }]
+    };
+}
+
+/** The app node: the screens in a column, the document title and the toasts the examples show */
+function appNode() {
+    return {
+        component: 'app',
+        _title: 'Component showcase',
+        layout: { type: 'column' },
+        toasts: {
+            component: 'toastRegion',
+            position: 'bottomEnd',
+            duration: 5000,
+            messages: {
+                saved: { tone: 'success', _title: 'Saved', _text: 'Your changes were saved.' },
+                deleted: { tone: 'danger', _title: 'Deleted', _text: 'The record was deleted.' },
+                sent: { tone: 'info', _title: 'Sent', _text: 'The form was sent.' }
+            }
         }
     };
-    shell.toasts = {
-        component: 'toastRegion',
-        position: 'bottomEnd',
-        duration: 5000,
-        messages: {
-            saved: { tone: 'success', _title: 'Saved', _text: 'Your changes were saved.' },
-            deleted: { tone: 'danger', _title: 'Deleted', _text: 'The record was deleted.' },
-            sent: { tone: 'info', _title: 'Sent', _text: 'The form was sent.' }
-        }
-    };
-    return shell;
 }
 
 /**
@@ -327,19 +390,29 @@ export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DI
 
     // Models and datasets of the examples, and the counts the home screen charts
     const data = readJson(join(examplesDir, 'datasets.json'));
-    const models = { ...data.models, share: { fields: { id: { type: 'string', required: true }, label: { type: 'string', required: true }, count: { type: 'integer', default: 0 } } } };
+    const models = { ...data.models, preference: { fields: { id: { type: 'string', required: true }, theme: { type: 'string', default: `showcase-${PRESET_ORDER[0]}` }, mode: { type: 'string', default: 'light' } } }, share: { fields: { id: { type: 'string', required: true }, label: { type: 'string', required: true }, count: { type: 'integer', default: 0 } } } };
     for (const [name, body] of Object.entries(models)) {
         const part = partFile('models', `showcase-${name}`, body);
         output.set(`models/${part.id}.json`, json(part));
     }
     const shares = {};
     for (const category of CATEGORY_ORDER) shares[category] = { id: category, label: sources[category].title, count: counts[category] };
-    const datasets = { ...data.datasets, categories: { model: 'share', records: shares } };
+    const datasets = {
+        ...data.datasets,
+        categories: { model: 'share', records: shares },
+        preferences: { model: 'preference', records: { current: { id: 'current', theme: `showcase-${PRESET_ORDER[0]}`, mode: 'light' } } }
+    };
     const bindings = {};
     for (const [name, dataset] of Object.entries(datasets)) {
         const part = partFile('data', `showcase-${name}`, { model: `showcase-${dataset.model}`, records: dataset.records });
         output.set(`data/${part.id}.json`, json(part));
         bindings[name] = { dataset: part.name };
+    }
+
+    // The header and the menu every screen places
+    for (const [name, body] of [[HEADER, headerPart()], [MENU, menuPart(sources, total)]]) {
+        const part = partFile('components', name, body);
+        output.set(`components/${part.id}.json`, json(part));
     }
 
     // The app: the home screen and a screen per category
@@ -348,7 +421,7 @@ export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DI
     const app = partFile('apps', SHOWCASE_APP, {
         title: 'Component showcase',
         start: 'home',
-        shell: shellOf(catalog, sources, total),
+        app: appNode(),
         screens,
         uses: { themes, data: bindings }
     });

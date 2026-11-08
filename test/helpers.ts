@@ -120,9 +120,9 @@ export async function httpHarness(
     };
 }
 
-/** The shell of the form app: a form with an email field and a Save button that emits, and the outlet every shell needs */
-export const FORM_SHELL = Object.freeze({
-    component: 'page',
+/** The home screen root of the form app: a form with an email field and a Save button that emits */
+export const FORM_ROOT = Object.freeze({
+    component: 'panel',
     children: Object.freeze({
         form: Object.freeze({
             component: 'panel',
@@ -130,15 +130,17 @@ export const FORM_SHELL = Object.freeze({
                 email: Object.freeze({ component: 'textField', _label: 'Email' }),
                 save: Object.freeze({ component: 'button', _title: 'Save', on: Object.freeze({ press: Object.freeze({ command: 'emit', target: 'form.saved', value: 'ok' }) }) })
             })
-        }),
-        main: Object.freeze({ component: 'outlet' })
+        })
     })
 });
 
-/** The shell of a test app from the nodes under its page: they come first and the outlet last */
-export function shellOf(children: Record<string, unknown>): Record<string, unknown> {
-    return { component: 'page', children: { ...children, main: { component: 'outlet' } } };
+/** The home screen root of a test app: a panel holding the nodes */
+export function rootOf(children: Record<string, unknown>): Record<string, unknown> {
+    return { component: 'panel', children };
 }
+
+/** The path of a node of the home screen root: `HOME` plus `.children.form` */
+export const HOME = '$.screens.home';
 
 export interface CreatedApp {
     /** The app's name, which the run-time tools take as `app` */
@@ -148,8 +150,8 @@ export interface CreatedApp {
 }
 
 /** Creates an app part with `ui_app_create`, or throws with the answer */
-export async function createApp(client: Client, name: string, shell: object = FORM_SHELL, extra: Record<string, unknown> = {}): Promise<CreatedApp> {
-    const created = await call(client, 'ui_app_create', { name, shell, ...extra });
+export async function createApp(client: Client, name: string, home: object = FORM_ROOT, extra: Record<string, unknown> = {}): Promise<CreatedApp> {
+    const created = await call(client, 'ui_app_create', { name, home, ...extra });
     if (created.isError) throw new Error(`ui_app_create ${name}: ${JSON.stringify(created.body)}`);
     return { name, id: created.body['id'] as string };
 }

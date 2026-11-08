@@ -2,7 +2,7 @@ import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { formatRenderedTree } from '../../application/outline/formatRenderedTree.js';
 import { BrowserUnavailableError } from '../preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../preview/BrowserPreview.js';
-import { PART_APP_FIELDS, SHELL_ARGUMENT, USES_TEXT, runPartAppCreate } from './partAppTools.js';
+import { PART_APP_FIELDS, USES_TEXT, runPartAppCreate } from './partAppTools.js';
 import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed, withGuides } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 import { isRunTarget, RUN_APP_FIELDS, runName, runTargets } from './runTarget.js';
@@ -14,8 +14,7 @@ const APP_CREATE = defineInput({
         required: true,
         description: 'The app name, unique among the apps: lower-case letters, digits and dashes, starting with a letter'
     },
-    ...PART_APP_FIELDS,
-    shell: { ...SHELL_ARGUMENT, required: true }
+    ...PART_APP_FIELDS
 });
 
 const VALIDATE = defineInput({
@@ -24,7 +23,7 @@ const VALIDATE = defineInput({
 
 const TREE = defineInput({
     ...RUN_APP_FIELDS,
-    screen: { type: 'string', description: 'Draw only this screen at the outlet (and, with rendered, open it first). Without it every screen' },
+    screen: { type: 'string', description: 'Draw only this screen below the app node (and, with rendered, open it first). Without it every screen' },
     content: { type: 'boolean', description: 'true: what the user sees (text, links, marks, record counts) instead of the structure with paths' },
     logic: { type: 'boolean', description: 'true adds the machines with their current state, the rules, guards and tables, those of the logic modules too' },
     path: { type: 'string', description: 'The node to start at, such as "$.app.children.main" or "$.screens.home.children.form"; without it the app root' },
@@ -59,7 +58,7 @@ export function createAppTools(
         {
             name: 'ui_app_create',
             description:
-                `Build time: create an app of the owner's parts, with a title, the parts it uses and a shell. It starts with one screen, home, its start screen, and ui_screen_create adds more. ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, slots, warnings }: slots are the shell pattern's places to fill, each { name, path, description } with the node path for ui_nodes_write (none for a node tree).`,
+                `Build time: create an app of the owner's parts, with a title, the parts it uses, the app node (app: its layout, toasts and app events; the title becomes its _title, the document title) and the first screen, home (its start screen; home: a node tree or a screen pattern such as side-navigation). An app is its screens: there is no frame around them, so a header or menu shared by several screens is placed in each screen (ui_composed_write makes it one composed component). ui_screen_create adds more screens. ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, slots, warnings }: slots are the home pattern's places to fill, each { name, path, description } with the node path for ui_nodes_write (none for a node tree).`,
             inputSchema: APP_CREATE.schema,
             annotations: CREATES,
             run: async (args) => {
@@ -86,7 +85,7 @@ export function createAppTools(
         {
             name: 'ui_tree',
             description:
-                'Run time: show the instance of an app part as a nested list, one line per node, two spaces per level: the shell, with the screens drawn at its outlet (one screen takes the outlet\'s place; several are listed under it by name), each screen node with its own path ($.screens.home.children.form); screen draws only that screen. Default: the structure, key (component) and path per node, bullets alternating - and *; [slot] marks a node held by a slot property (a footer, a row template), and a row template draws once per record. content: true shows what the user sees instead: component, key, text, links, hidden or closed marks and record counts (no data values). logic: true adds the logic after the tree: each machine with its current state in the instance, then the rules, guards and tables, the units of a logic module named with the module as prefix (cart:totals). rendered: true lists what the headless page draws: each row and card with its runtime path (such as ...board.cols.k_open.body.main.slots.0) and each interactive shape of a drawing (...rows.<recordKey> for a drawRepeat copy), the path ui_interact and ui_screenshot need; a node with no box is (hidden) and its subtree is counted. path starts at a node, depth limits the levels, paths: false leaves the paths off. Capped at 400 lines. Returns { app, revision, text, lineCount, cutLines, nodeCount?, screens? }.',
+                'Run time: show the instance of an app part as a nested list, one line per node, two spaces per level: the app node, with each screen drawn below it under its name, each screen node with its own path ($.screens.home.children.form); screen draws only that screen. Default: the structure, key (component) and path per node, bullets alternating - and *; [slot] marks a node held by a slot property (a footer, a row template), and a row template draws once per record. content: true shows what the user sees instead: component, key, text, links, hidden or closed marks and record counts (no data values). logic: true adds the logic after the tree: each machine with its current state in the instance, then the rules, guards and tables, the units of a logic module named with the module as prefix (cart:totals). rendered: true lists what the headless page draws: each row and card with its runtime path (such as ...board.cols.k_open.body.main.slots.0) and each interactive shape of a drawing (...rows.<recordKey> for a drawRepeat copy), the path ui_interact and ui_screenshot need; a node with no box is (hidden) and its subtree is counted. path starts at a node, depth limits the levels, paths: false leaves the paths off. Capped at 400 lines. Returns { app, revision, text, lineCount, cutLines, nodeCount?, screens? }.',
             inputSchema: TREE.schema,
             annotations: READ_ONLY,
             run: async (args) => {

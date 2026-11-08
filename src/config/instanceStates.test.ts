@@ -63,7 +63,7 @@ function store(taxRate: number): UiPartBodies['apps'] {
             logic: { cart: { params: { taxRate, currency: 'EUR' } } }
         },
         start: 'home',
-        shell: { component: 'page', children: { menu: { component: 'modal', _title: 'Menu' }, main: { component: 'outlet' } } },
+        app: { component: 'app', toasts: { component: 'toastRegion' } },
         screens: {
             home: { root: { component: 'form', children: { name: { component: 'textField', _label: 'Name' } } } },
             product: { params: { id: { type: 'string', required: true } }, root: { component: 'text', _text: 'Product' } }
@@ -154,12 +154,12 @@ describe('running instances of owner apps', () => {
         expect(await instances.get(appId)).toEqual({ value: {} });
     });
 
-    it('should keep the articulation of the shell and of a screen as the instance, and load it after a restart', async () => {
+    it('should keep the articulation of the app node and of a screen as the instance, and load it after a restart', async () => {
         // Arrange
         const first = server();
 
         // Act
-        const menu = await first.setState.execute('store', { path: '$.app.children.menu.open', value: true });
+        const toasts = await first.setState.execute('store', { path: '$.app.toasts.position', value: 'topEnd' });
         const name = await first.setState.execute('store', { path: '$.screens.home.children.name.value', value: 'Ann' });
         await first.authorities.close();
         const second = server();
@@ -167,8 +167,8 @@ describe('running instances of owner apps', () => {
         await second.authorities.close();
 
         // Assert
-        expect([menu.kind, name.kind]).toEqual(['written', 'written']);
-        const stored = { app: { children: { menu: { open: true } } }, screens: { home: { children: { name: { value: 'Ann' } } } } };
+        expect([toasts.kind, name.kind]).toEqual(['written', 'written']);
+        const stored = { app: { toasts: { position: 'topEnd' } }, screens: { home: { children: { name: { value: 'Ann' } } } } };
         expect((await instances.get(appId)).value).toEqual(stored);
         expect(state).toMatchObject(stored);
     });
@@ -223,7 +223,7 @@ describe('running instances of owner apps', () => {
     it('should run the edited definition after an app write and keep what the persona did', async () => {
         // Arrange
         const { states, setState, authorities } = server();
-        await setState.execute('store', { path: '$.app.children.menu.open', value: true });
+        await setState.execute('store', { path: '$.app.toasts.position', value: 'topEnd' });
 
         // Act
         await writePart.execute({ kind: 'apps', name: 'store', body: store(0.05), expectedRevision: 1 });
@@ -233,7 +233,7 @@ describe('running instances of owner apps', () => {
 
         // Assert
         expect(state['data']).toMatchObject({ totals: { net: 150, gross: 157.5 } });
-        expect(state['app']).toEqual({ children: { menu: { open: true } } });
+        expect(state['app']).toEqual({ toasts: { position: 'topEnd' } });
     });
 
     it('should start from the definition when the instance file is corrupt, and report it', async () => {

@@ -46,7 +46,7 @@ function appWithReferences(app: Record<string, Json>, kind: PartKind, from: stri
         next['uses'] = uses;
     }
     if (kind === 'components') {
-        if ('shell' in app) next['shell'] = renameComponents(app['shell'], from, to);
+        if ('app' in app) next['app'] = renameComponents(app['app'], from, to);
         if (isRecord(app['screens'])) next['screens'] = renameComponents(app['screens'], from, to);
     }
     return next;
@@ -55,7 +55,7 @@ function appWithReferences(app: Record<string, Json>, kind: PartKind, from: stri
 /**
  * The body of a part of kind `of` with every reference to the part `kind`/`from` naming `to` instead, or undefined
  * when the body names no such part. What is rewritten: an app's theme list, its bindings' `dataset` or `model`, its
- * `uses.logic` key (in its place) and the `component` of its shell and screen nodes; a logic module's `needs` models; a
+ * `uses.logic` key (in its place) and the `component` of its app node and screen nodes; a logic module's `needs` models; a
  * dataset's `model`; the `component` of the nodes of a component's or a pattern's tree. The input is not changed and
  * every key keeps its place
  */

@@ -585,7 +585,7 @@ class LiveView {
         this.revision = app.revision;
     }
 
-    /** The synced state as the runtime's `instance`: the shell, the screens, the data and the route */
+    /** The synced state as the runtime's `instance`: the app node, the screens, the data and the route */
     private instanceOf(state: ViewState): JsonRecord {
         return {
             app: state.app,

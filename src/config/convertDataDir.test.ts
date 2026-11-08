@@ -29,7 +29,7 @@ const FILE_ID = '9f8e7d6c-0000-4000-8000-000000000001';
 const STRIP_LOGIC_APP = deepFreeze({
     ...(JSON.parse(JSON.stringify(SAMPLE_TABS_APP)) as Record<string, unknown>),
     logic: {
-        rules: { toBag: { when: { path: '$.data.bag' }, do: [{ command: 'set', target: '$.app.children.pages.active', value: 'bag' }] } }
+        rules: { toBag: { when: { path: '$.data.bag' }, do: [{ command: 'set', target: '$.app.active', value: 'bag' }] } }
     }
 }) as unknown as UiDocument;
 

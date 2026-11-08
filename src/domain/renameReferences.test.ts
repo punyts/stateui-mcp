@@ -17,7 +17,7 @@ const APP = deepFreeze({
         logic: { tax: {}, cart: { params: { max: 3 } }, ship: {} }
     },
     start: 'home',
-    shell: { component: 'page', children: { title: { component: 'hero' }, main: { component: 'outlet' } } },
+    app: { component: 'app', toasts: { component: 'hero' } },
     screens: {
         home: { root: { component: 'stack', children: { top: { component: 'hero' }, go: { component: 'button', on: { click: [{ command: 'navigate', target: 'about' }] } } } } },
         about: { root: { component: 'text', on: { click: [{ command: 'navigate', target: 'home' }, { command: 'emit', target: 'about' }] } } }
@@ -31,7 +31,7 @@ describe('bodyWithRenamedPart', () => {
 
         // Assert
         expect(renamed.uses.themes).toEqual(['base', 'brand']);
-        expect(renamed.shell).toEqual(APP.shell);
+        expect(renamed.app).toEqual(APP.app);
     });
 
     it('should rename a binding dataset or model and leave the other field alone', () => {
@@ -56,7 +56,7 @@ describe('bodyWithRenamedPart', () => {
         ]);
     });
 
-    it('should rename a component in the shell and in every screen of an app', () => {
+    it('should rename a component in the app node and in every screen of an app', () => {
         // Act
         const renamed = JSON.stringify(bodyWithRenamedPart('apps', APP, 'components', 'hero', 'banner'));
 
@@ -82,7 +82,7 @@ describe('bodyWithRenamedPart', () => {
     it('should give undefined for a body that does not name the part', () => {
         // Arrange
         const dataset = deepFreeze({ model: 'order', records: {} }) as unknown as UiPartBodies['data'];
-        const bare = deepFreeze({ shell: { component: 'page' } }) as unknown as UiPartBodies['apps'];
+        const bare = deepFreeze({ app: { component: 'app' } }) as unknown as UiPartBodies['apps'];
         const module = deepFreeze({ params: {} }) as unknown as UiPartBodies['logic'];
 
         // Act, Assert

@@ -7,7 +7,6 @@ import { PartFolders } from '../src/infrastructure/storage/PartFolders.js';
 import { call, inMemoryHarness, silentReport, tempData } from './helpers.js';
 import type { InMemoryHarness, TempData } from './helpers.js';
 
-const STUB_SHELL = Object.freeze({ component: 'page', children: Object.freeze({ body: Object.freeze({ component: 'outlet' }) }) });
 const ROOT = Object.freeze({
     component: 'panel',
     _title: 'Opening hours',
@@ -26,7 +25,7 @@ async function patternNames(): Promise<string[]> {
 beforeEach(async () => {
     data = await tempData();
     harness = await inMemoryHarness(data.dir);
-    const created = await call(harness.client, 'ui_app_create', { name: 'shop', shell: STUB_SHELL });
+    const created = await call(harness.client, 'ui_app_create', { name: 'shop' });
     if (created.isError) throw new Error(JSON.stringify(created.body));
     const written = await call(harness.client, 'ui_nodes_write', { app: 'shop', screen: 'home', expectedRevision: 1, operations: [{ op: 'set', path: 'root', value: ROOT }] });
     if (written.isError) throw new Error(JSON.stringify(written.body));
@@ -57,14 +56,15 @@ describe('ui_pattern_write', () => {
         expect((read.body['value'] as { tree: unknown }).tree).toEqual(ROOT);
     });
 
-    it('should save the shell of an app with screen "shell"', async () => {
+    it('should refuse a kind other than screen and a copy of the app node, and write nothing', async () => {
         // Act
-        const written = await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'shell', ...SEARCH, from: { app: 'shop', screen: 'shell' } });
-        const read = await call(harness.client, 'ui_get', { kind: 'patterns', name: 'plain-frame' });
+        const kind = await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'shell', ...SEARCH, tree: ROOT });
+        const app = await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'screen', ...SEARCH, from: { app: 'shop', screen: 'app' } });
 
         // Assert
-        expect(written.isError, JSON.stringify(written.body)).toBeFalsy();
-        expect((read.body['value'] as { tree: unknown }).tree).toEqual(STUB_SHELL);
+        expect(kind.body).toMatchObject({ error: 'invalid-argument', argument: 'kind' });
+        expect(app.body).toMatchObject({ error: 'not-found', argument: 'from.screen' });
+        expect(await patternNames()).toEqual([]);
     });
 
     it('should refuse a slot path that is not in the tree, naming the path, and write nothing', async () => {
@@ -84,14 +84,14 @@ describe('ui_pattern_write', () => {
         expect(await patternNames()).toEqual([]);
     });
 
-    it('should refuse a screen pattern that holds an outlet and a shell without one', async () => {
+    it('should refuse a screen pattern rooted at the app node and one that holds an unknown component', async () => {
         // Act
-        const screen = await call(harness.client, 'ui_pattern_write', { name: 'framed', kind: 'screen', ...SEARCH, tree: STUB_SHELL });
-        const shell = await call(harness.client, 'ui_pattern_write', { name: 'frameless', kind: 'shell', ...SEARCH, tree: ROOT });
+        const app = await call(harness.client, 'ui_pattern_write', { name: 'framed', kind: 'screen', ...SEARCH, tree: { component: 'app' } });
+        const unknown = await call(harness.client, 'ui_pattern_write', { name: 'outlined', kind: 'screen', ...SEARCH, tree: { component: 'panel', children: { main: { component: 'outlet' } } } });
 
         // Assert
-        expect(screen.body['error']).toBe('invalid-pattern');
-        expect(shell.body['error']).toBe('invalid-pattern');
+        expect(app.body['error']).toBe('invalid-pattern');
+        expect(unknown.body['error']).toBe('invalid-pattern');
         expect(await patternNames()).toEqual([]);
     });
 
@@ -178,15 +178,17 @@ describe('owner patterns in search and creation', () => {
         expect(results.map((hit) => hit.name)).not.toContain('opening-hours');
     });
 
-    it('should start an app from an owner shell', async () => {
+    it('should start an app whose home screen is an owner pattern', async () => {
         // Arrange
-        await call(harness.client, 'ui_pattern_write', { name: 'plain-frame', kind: 'shell', ...SEARCH, from: { app: 'shop', screen: 'shell' } });
+        await call(harness.client, 'ui_pattern_write', { name: 'opening-hours', kind: 'screen', ...SEARCH, from: { app: 'shop', screen: 'home' } });
 
         // Act
-        const created = await call(harness.client, 'ui_app_create', { name: 'kiosk', shell: { pattern: 'plain-frame' } });
+        const created = await call(harness.client, 'ui_app_create', { name: 'kiosk', home: { pattern: 'opening-hours' } });
+        const read = await call(harness.client, 'ui_get', { kind: 'apps', name: 'kiosk' });
 
         // Assert
         expect(created.isError, JSON.stringify(created.body)).toBeFalsy();
+        expect((read.body['value'] as { screens: Record<string, { root: unknown }> }).screens['home']!.root).toEqual(ROOT);
     });
 });
 

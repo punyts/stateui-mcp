@@ -12,8 +12,8 @@ const COMPONENTS_SEARCH = defineInput({
 });
 
 const PATTERNS_SEARCH = defineInput({
-    need: { type: 'string', required: true, description: 'What the shell or screen is for, in plain words, such as "online store product page" or "sign in"' },
-    kind: { type: 'string', description: 'Only patterns of this kind: shell (the frame around every screen, with the outlet) or screen' },
+    need: { type: 'string', required: true, description: 'What the screen is for, in plain words, such as "online store product page" or "sign in"' },
+    kind: { type: 'string', description: 'Only patterns of this kind: screen, the one kind' },
     limit: { type: 'integer', minimum: 1, description: `How many results (default ${DEFAULT_SEARCH_LIMIT}, at most ${MAX_SEARCH_LIMIT})` }
 });
 
@@ -64,14 +64,14 @@ export function createCatalogTools(
         {
             name: 'ui_patterns_search',
             description:
-                'Find a ready shell or screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start an app or a screen from the one that fits, then fill its slots. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns of the kind (of both kinds when no kind is given).',
+                'Find a ready screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start a screen from the one that fits (ui_app_create home or ui_screen_create pattern), then fill its slots. Frame screens such as side-navigation, top-navigation and marketing bring a header, a menu, a content slot and a footer. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns.',
             inputSchema: PATTERNS_SEARCH.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = PATTERNS_SEARCH.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
                 const { need, kind, limit } = parsed.value;
-                if (need.trim() === '') return fail('invalid-argument', 'need must say what the shell or screen is for', { argument: 'need' });
+                if (need.trim() === '') return fail('invalid-argument', 'need must say what the screen is for', { argument: 'need' });
                 const outcome = await useCases.searchPatterns.execute({ need, ...(kind !== undefined && { kind }), ...(limit !== undefined && { limit }) });
                 if (outcome.kind === 'invalid-argument') {
                     return fail('invalid-argument', `Unknown ${outcome.argument}; use one of: ${outcome.allowed.join(', ')}`, { argument: outcome.argument, allowed: outcome.allowed });

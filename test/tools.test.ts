@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreviewBrowser } from '../src/infrastructure/preview/BrowserPreview.js';
 import { BrowserUnavailableError } from '../src/infrastructure/preview/BrowserPreview.js';
 import type { ViewMessage } from '../src/infrastructure/preview/PreviewHub.js';
-import { call, createApp, inMemoryHarness, noBrowser, shellOf, tempData } from './helpers.js';
+import { call, createApp, inMemoryHarness, noBrowser, rootOf, tempData } from './helpers.js';
 import type { CreatedApp, InMemoryHarness, TempData } from './helpers.js';
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
-const EMAIL = '$.app.children.form.children.email.value';
+const EMAIL = '$.screens.home.children.form.children.email.value';
 
 let data: TempData;
 let harness: InMemoryHarness;
@@ -139,7 +139,7 @@ describe('catalog tools', () => {
         expect(absent.body['error']).toBe('invalid-argument');
         expect(blank.body['error']).toBe('invalid-argument');
         expect(kind.body['error']).toBe('invalid-argument');
-        expect(kind.body['allowed']).toEqual(['shell', 'screen']);
+        expect(kind.body['allowed']).toEqual(['screen']);
     });
 
 
@@ -223,7 +223,7 @@ describe('live tools', () => {
 
         // Act
         synced.send({ type: 'change', change: { id: 'c1', path: EMAIL, op: 'set', value: 'typed', base: 0 } });
-        const state = await call(harness.client, 'ui_state_get', { app: app.name, path: '$.app.children.form' });
+        const state = await call(harness.client, 'ui_state_get', { app: app.name, path: '$.screens.home.children.form' });
 
         // Assert
         expect(synced.received.at(-1)).toMatchObject({ type: 'ack', id: 'c1', result: 'applied' });
@@ -274,22 +274,22 @@ describe('live tools', () => {
     it('should return the screenshot as an MCP image next to a short summary', async () => {
         const app = await createForm();
 
-        const shot = await call(harness.client, 'ui_screenshot', { app: app.name, path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
+        const shot = await call(harness.client, 'ui_screenshot', { app: app.name, path: '$.screens.home.children.form', width: 800, height: 600, mode: 'dark' });
 
-        expect(browser['screenshot']).toHaveBeenCalledWith(app.id, 1, { path: '$.app.children.form', width: 800, height: 600, mode: 'dark' });
+        expect(browser['screenshot']).toHaveBeenCalledWith(app.id, 1, { path: '$.screens.home.children.form', width: 800, height: 600, mode: 'dark' });
         expect(shot.images).toEqual([{ data: PNG.toString('base64'), mimeType: 'image/png' }]);
         expect(shot.body).toMatchObject({ app: app.name, revision: 1, target: 'page', mode: 'dark' });
     });
 
     it('should report a drawing that stayed pending as scenes: pending and still return the capture', async () => {
         const app = await createForm();
-        browser['screenshot']?.mockResolvedValueOnce({ png: PNG, width: 1280, height: 800, target: 'page', pending: ['$.app.children.map'] });
+        browser['screenshot']?.mockResolvedValueOnce({ png: PNG, width: 1280, height: 800, target: 'page', pending: ['$.screens.home.children.map'] });
 
         const shot = await call(harness.client, 'ui_screenshot', { app: app.name });
 
         expect(shot.isError).toBe(false);
         expect(shot.images).toHaveLength(1);
-        expect(shot.body).toMatchObject({ scenes: 'pending', pending: ['$.app.children.map'] });
+        expect(shot.body).toMatchObject({ scenes: 'pending', pending: ['$.screens.home.children.map'] });
     });
 
     it('should leave scenes out of a screenshot whose drawings all drew', async () => {
@@ -303,12 +303,12 @@ describe('live tools', () => {
 
     it('should report a drawing that stayed pending after the actions as scenes: pending', async () => {
         const app = await createForm();
-        browser['interact']?.mockResolvedValueOnce({ results: [{ index: 0, action: 'click', path: '$.app', ok: true }], errors: [], events: [], cursor: 0, pending: ['$.app.children.map'] });
+        browser['interact']?.mockResolvedValueOnce({ results: [{ index: 0, action: 'click', path: '$.app', ok: true }], errors: [], events: [], cursor: 0, pending: ['$.screens.home.children.map'] });
 
         const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app' }] });
 
         expect(result.isError).toBe(false);
-        expect(result.body).toMatchObject({ scenes: 'pending', pending: ['$.app.children.map'] });
+        expect(result.body).toMatchObject({ scenes: 'pending', pending: ['$.screens.home.children.map'] });
     });
 
     it('should say how to install Chromium when a screenshot cannot be taken', async () => {
@@ -324,15 +324,15 @@ describe('live tools', () => {
     it('should run the actions and return the results, errors and emits', async () => {
         const app = await createForm();
         browser['interact']?.mockResolvedValueOnce({
-            results: [{ index: 0, action: 'click', path: '$.app.children.form.children.save', ok: true }],
+            results: [{ index: 0, action: 'click', path: '$.screens.home.children.form.children.save', ok: true }],
             errors: [],
             events: [{ cursor: 1, name: 'form.saved', payload: 'ok', at: 'now', view: 'headless' }],
             cursor: 1
         });
 
-        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app.children.form.children.save' }] });
+        const result = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.screens.home.children.form.children.save' }] });
 
-        expect(browser['interact']).toHaveBeenCalledWith(app.id, 1, [{ action: 'click', path: '$.app.children.form.children.save' }]);
+        expect(browser['interact']).toHaveBeenCalledWith(app.id, 1, [{ action: 'click', path: '$.screens.home.children.form.children.save' }]);
         expect(result.isError).toBe(false);
         expect(result.body['emits']).toEqual([{ cursor: 1, name: 'form.saved', payload: 'ok', at: 'now', view: 'headless' }]);
     });
@@ -378,7 +378,7 @@ describe('live tools', () => {
             app: app.name,
             actions: [
                 { action: 'click', path: '$.app' },
-                { action: 'drag', path: '$.app.children.map.children.block', value: '+40' }
+                { action: 'drag', path: '$.screens.home.children.map.children.block', value: '+40' }
             ]
         });
 
@@ -392,8 +392,8 @@ describe('live tools', () => {
         const app = await createForm();
         browser['interact']?.mockResolvedValueOnce({ results: [], errors: [], events: [], cursor: 0 });
         const actions = [
-            { action: 'drag', path: '$.app.children.map.children.block', value: '+40,-10' },
-            { action: 'drag', path: '$.app.children.board.cols.k_open.body.main.slots.0', value: '$.app.children.board.cols.k_done' }
+            { action: 'drag', path: '$.screens.home.children.map.children.block', value: '+40,-10' },
+            { action: 'drag', path: '$.screens.home.children.board.cols.k_open.body.main.slots.0', value: '$.screens.home.children.board.cols.k_done' }
         ];
 
         const result = await call(harness.client, 'ui_interact', { app: app.name, actions });
@@ -439,31 +439,31 @@ describe('live tools', () => {
     });
 
     it('should say no preview is open when a command has no view to go to', async () => {
-        const app = await createApp(harness.client, 'toasts', shellOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
+        const app = await createApp(harness.client, 'toasts', rootOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
 
-        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.toasts', command: 'show', value: 'saved' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'screens.home.children.toasts', command: 'show', value: 'saved' });
 
         expect(result.isError).toBe(false);
         expect(result.body).toMatchObject({ previewAttached: false, message: 'no preview is open; the command was not delivered' });
     });
 
     it('should deliver a command to every open view, the headless page included', async () => {
-        const app = await createApp(harness.client, 'toasts', shellOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
+        const app = await createApp(harness.client, 'toasts', rootOf({ toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } }));
         const person = openView(app.id, 'browser');
         const headless = openView(app.id, 'headless');
 
-        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.toasts', command: 'show', value: 'saved' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'screens.home.children.toasts', command: 'show', value: 'saved' });
 
         expect(result.body).toMatchObject({ previewAttached: true, message: 'delivered to 2 open views' });
         for (const received of [person, headless]) {
-            expect(received.filter((message) => message.type === 'command')).toMatchObject([{ target: 'app.children.toasts', command: 'show', value: 'saved' }]);
+            expect(received.filter((message) => message.type === 'command')).toMatchObject([{ target: 'screens.home.children.toasts', command: 'show', value: 'saved' }]);
         }
     });
 
     it('should refuse an undeclared command with the declared ones', async () => {
         const app = await createForm();
 
-        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'app.children.form.children.save', command: 'explode' });
+        const result = await call(harness.client, 'ui_command', { app: app.name, target: 'screens.home.children.form.children.save', command: 'explode' });
 
         expect(result.body['error']).toBe('unknown-command');
         expect(result.body['declared']).toEqual(['focus']);

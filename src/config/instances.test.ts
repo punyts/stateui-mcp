@@ -36,7 +36,7 @@ function app(greeting: string): UiPartBodies['apps'] {
     return deepFreeze({
         uses: { data: { notes: { model: 'note', scope: 'persona' } } },
         start: 'main',
-        shell: { component: 'page', children: { body: { component: 'outlet' } } },
+        app: { component: 'app' },
         screens: { main: { root: { component: 'text', _text: greeting } } }
     }) as unknown as UiPartBodies['apps'];
 }

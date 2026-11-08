@@ -95,16 +95,6 @@
                     "review": { "_label": "Review" }
                 }
             }
-        },
-        "outlet": {
-            "example": {
-                "component": "panel",
-                "padding": "none",
-                "children": {
-                    "text": { "component": "text", "element": "p", "_text": "The outlet is where the screens of an app show. The shell of this showcase holds one: every screen you open from the menu, this one too, appears in it." },
-                    "home": { "component": "link", "_text": "Open another screen in the outlet", "screen": "home" }
-                }
-            }
         }
     }
 }

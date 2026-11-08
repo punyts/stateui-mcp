@@ -3,7 +3,7 @@ import type { JsonValue, PatternKind, PatternPart, ThemePart } from '@punyts/sta
 /** Where a pattern comes from: the component library, or the owner's `patterns` parts */
 export type PatternSource = 'library' | 'owner';
 
-/** A pattern by name: a shell or screen tree with its slots and params (the `*.pattern.json` format) */
+/** A pattern by name: a screen tree with its slots and params (the `*.pattern.json` format) */
 export interface PatternEntry extends PatternPart {
     readonly name: string;
     /** The names of the components the tree uses, sorted; the build lists them */
@@ -31,10 +31,10 @@ export interface ThemePresetSummary {
     readonly summary: string;
 }
 
-/** What a person needs a shell or screen for, in plain words, with an optional kind */
+/** What a person needs a screen for, in plain words, with an optional kind */
 export interface PatternSearchQuery {
     readonly need: string;
-    /** Only patterns of this kind: `shell` or `screen` */
+    /** Only patterns of this kind: `screen`, the one kind */
     readonly kind?: string;
     /** How many results; 5 by default, at most 20 */
     readonly limit?: number;
@@ -74,7 +74,7 @@ export interface PatternSearchResult {
 }
 
 /**
- * The shell and screen patterns and theme presets of the library, and with `withOwner` of the owner too, read only. `search` ranks patterns for a need and
+ * The screen patterns and theme presets of the library, and with `withOwner` of the owner too, read only. `search` ranks patterns for a need and
  * throws `InvalidSearchArgumentError` for an unknown kind. Until the built catalog has a `themePresets` section,
  * `preset` returns `undefined` and `presets` is empty
  */

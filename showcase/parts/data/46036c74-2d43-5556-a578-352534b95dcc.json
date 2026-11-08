@@ -1,0 +1,58 @@
+{
+  "id": "46036c74-2d43-5556-a578-352534b95dcc",
+  "kind": "data",
+  "name": "showcase-categories",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-share",
+    "records": {
+      "layout": {
+        "id": "layout",
+        "label": "Layout",
+        "count": 8
+      },
+      "navigation": {
+        "id": "navigation",
+        "label": "Navigation",
+        "count": 8
+      },
+      "forms": {
+        "id": "forms",
+        "label": "Forms",
+        "count": 25
+      },
+      "data": {
+        "id": "data",
+        "label": "Data",
+        "count": 13
+      },
+      "feedback": {
+        "id": "feedback",
+        "label": "Feedback",
+        "count": 8
+      },
+      "overlays": {
+        "id": "overlays",
+        "label": "Overlays",
+        "count": 5
+      },
+      "content": {
+        "id": "content",
+        "label": "Content",
+        "count": 7
+      },
+      "conversation": {
+        "id": "conversation",
+        "label": "Conversation",
+        "count": 2
+      },
+      "graphics": {
+        "id": "graphics",
+        "label": "Graphics",
+        "count": 20
+      }
+    }
+  }
+}

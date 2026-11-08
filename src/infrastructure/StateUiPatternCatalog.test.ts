@@ -6,10 +6,10 @@ import { loadCatalogFile } from './stateUiLibrary.js';
 
 const TOP_NAV: PatternEntry = Object.freeze({
     name: 'top-nav',
-    kind: 'shell',
+    kind: 'screen',
     summary: 'A header with links over the screen',
     purposes: ['site header'],
-    tree: { component: 'page', children: { body: { component: 'outlet' } } },
+    tree: { component: 'panel', children: { body: { component: 'panel' } } },
     slots: {},
     params: {}
 }) as PatternEntry;
@@ -104,37 +104,17 @@ describe('StateUiPatternCatalog', () => {
             expect(result.results.every((hit) => hit.matched.length === 0)).toBe(true);
         });
 
-        it('should answer kind shell with only shells, or with the weak result of the other kind while the library has none', () => {
-            // Arrange
-            const catalog = real();
-            const hasShells = loadCatalogFile().patterns.some((pattern) => pattern.kind === 'shell');
-
-            // Act
-            const result = catalog.search({ need: 'app frame with a side nav', kind: 'shell' });
-
-            // Assert
-            expect(result.results.length).toBeGreaterThan(0);
-            if (hasShells) {
-                expect(result.results.every((hit) => hit.kind === 'shell')).toBe(true);
-            } else {
-                expect(result.weak).toBe(true);
-                expect(result.results.some((hit) => hit.kind === 'shell')).toBe(false);
-            }
-        });
-
-        it('should keep to the kind asked for', () => {
+        it('should keep to the screen kind and refuse the kind of the old shells', () => {
             // Arrange
             const catalog = new StateUiPatternCatalog({ patterns: [TOP_NAV, ...loadCatalogFile().patterns] });
 
             // Act
-            const shells = catalog.search({ need: 'product page', kind: 'shell' });
             const screens = catalog.search({ need: 'site header', kind: 'screen' });
 
             // Assert
-            expect(shells.results.length).toBeGreaterThan(0);
-            expect(shells.results.every((hit) => hit.kind === 'shell')).toBe(true);
             expect(screens.results.length).toBeGreaterThan(0);
             expect(screens.results.every((hit) => hit.kind === 'screen')).toBe(true);
+            expect(() => catalog.search({ need: 'app frame with a side nav', kind: 'shell' })).toThrow(InvalidSearchArgumentError);
         });
 
         it('should mark weak a best match that holds no purpose phrase', () => {

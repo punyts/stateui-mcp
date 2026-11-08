@@ -23,7 +23,7 @@ const SHOP = deepFreeze({
     title: 'Corner shop',
     uses: { themes: ['store'], data: { products: { dataset: 'catalog' } } },
     start: 'home',
-    shell: { component: 'page', children: { header: { component: 'text', _text: 'Shop' }, body: { component: 'outlet' } } },
+    app: { component: 'app', _title: 'Corner shop', toasts: { component: 'toastRegion', messages: { saved: { _text: 'Saved' } } } },
     screens: {
         home: { title: 'Home', root: { component: 'panel', children: { intro: { component: 'text', _text: 'Welcome' } } } },
         about: { title: 'About us', root: { component: 'text', _text: 'About' } }
@@ -117,13 +117,13 @@ describe('ui_get', () => {
         // Act
         const whole = await call(harness.client, 'ui_get', { kind: 'data', name: 'catalog' });
         const record = await call(harness.client, 'ui_get', { kind: 'data', name: 'catalog', path: '$.records.p2' });
-        const shallow = await call(harness.client, 'ui_get', { kind: 'apps', name: 'shop', path: 'shell', depth: 0 });
+        const shallow = await call(harness.client, 'ui_get', { kind: 'apps', name: 'shop', path: 'screens.home.root', depth: 0 });
 
         // Assert
         expect(whole.body).toMatchObject({ kind: 'data', name: 'catalog', revision: 1, path: '', value: CATALOG, resolved: false });
         expect(whole.body['id']).toMatch(/^[0-9a-f-]{36}$/);
         expect(record.body['value']).toEqual({ name: 'Chair', price: 90 });
-        expect(shallow.body['value']).toEqual({ component: 'page', children: { header: { component: 'text', childCount: 0 }, body: { component: 'outlet', childCount: 0 } } });
+        expect(shallow.body['value']).toEqual({ component: 'panel', children: { intro: { component: 'text', childCount: 0 } } });
     });
 
     it('should read a screen with its app\'s revision', async () => {
@@ -199,8 +199,8 @@ describe('ui_delete', () => {
         // Arrange: a running instance whose state was changed, an uploaded file and a reported runtime error
         const form = deepFreeze({
             start: 'home',
-            shell: { component: 'page', children: { search: { component: 'textField', _label: 'Search' }, main: { component: 'outlet' } } },
-            screens: { home: { root: { component: 'panel' } } }
+            app: { component: 'app' },
+            screens: { home: { root: { component: 'panel', children: { search: { component: 'textField', _label: 'Search' } } } } }
         }) as unknown as UiPartBodies['apps'];
         await write('apps', 'form', form);
         const id = (await call(harness.client, 'ui_get', { kind: 'apps', name: 'form', path: 'start' })).body['id'] as string;
@@ -212,7 +212,7 @@ describe('ui_delete', () => {
             })()
         });
         await harness.services.useCases.recordPreviewErrors.execute(id, [{ code: 'SUI-RUN-BINDING', message: 'boom' }]);
-        const typed = await call(harness.client, 'ui_state_set', { app: 'form', path: '$.app.children.search.value', value: 'lamp' });
+        const typed = await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.search.value', value: 'lamp' });
         const side = folders.dir(id);
         const instance = folders.instanceFile(LOCAL_OWNER_ID, id);
         expect((await stat(side)).isDirectory()).toBe(true);

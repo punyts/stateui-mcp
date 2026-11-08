@@ -36,7 +36,7 @@ export type WriteNodesResult =
 
 /** The tree of the target in an app body, or `undefined` for a screen the app does not have */
 export function targetTree(body: UiPartBodies['apps'], target: TreeTarget): JsonObject | undefined {
-    if (target.kind === 'shell') return body.shell as unknown as JsonObject;
+    if (target.kind === 'app') return body.app as unknown as JsonObject;
     const screens = body.screens as unknown as JsonObject;
     const screen = Object.hasOwn(screens, target.screen) ? screens[target.screen] : undefined;
     return isJsonObject(screen) ? (screen['root'] as JsonObject) : undefined;
@@ -44,13 +44,13 @@ export function targetTree(body: UiPartBodies['apps'], target: TreeTarget): Json
 
 /** The app body with the target's tree replaced */
 function withTree(body: UiPartBodies['apps'], target: TreeTarget, tree: JsonObject | undefined): UiPartBodies['apps'] {
-    if (target.kind === 'shell') return { ...body, shell: tree } as unknown as UiPartBodies['apps'];
+    if (target.kind === 'app') return { ...body, app: tree } as unknown as UiPartBodies['apps'];
     const screen = body.screens[target.screen];
     return { ...body, screens: { ...body.screens, [target.screen]: { ...screen, root: tree } } } as unknown as UiPartBodies['apps'];
 }
 
 /**
- * Writes the nodes of one tree of an app, the shell or one screen, with the operations of `set`, `remove`, `merge` and `move` plus
+ * Writes the nodes of one tree of an app, the app node or one screen, with the operations of `set`, `remove`, `merge` and `move` plus
  * `add`: the operations apply in order to a copy of the tree, then the app is checked as a whole (assembled with its
  * parts) and stored only when nothing blocks, as one write of the app that raises its revision once
  */

@@ -56,7 +56,7 @@ describe('searchWorkflowSection', () => {
         const text = searchWorkflowSection(INDEX);
 
         // Assert
-        const steps = ['1. Plan', '2. Theme', '3. Data', '4. App and shell', '5. Screens', '6. Sections', '7. Logic', '8. Check'].map((step) => text.indexOf(step));
+        const steps = ['1. Plan', '2. Theme', '3. Data', '4. App', '5. Screens', '6. Sections', '7. Logic', '8. Check'].map((step) => text.indexOf(step));
         expect(steps.every((at) => at >= 0)).toBe(true);
         expect(steps).toEqual([...steps].sort((left, right) => left - right));
         const firsts = STEP_TOOLS.map((name) => text.indexOf(name));

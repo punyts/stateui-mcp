@@ -15,7 +15,7 @@ const HOLDER = deepFreeze({
 }) as unknown as JsonObject;
 
 const SCREEN = { kind: 'screen', screen: 'product' } as const;
-const SHELL = { kind: 'shell' } as const;
+const SHELL = { kind: 'app' } as const;
 
 describe('treePath', () => {
     it('should keep a root path and map the run-time forms of the tree', () => {

@@ -18,7 +18,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 const STORE = deepFreeze({ tokens: { button: { fill: '#204080' } }, overlays: { night: { kind: 'mode', tokens: { color: { surface: { base: '#101010' } } } } } }) as unknown as UiPartBodies['themes'];
-const APP = deepFreeze({ uses: { themes: ['store'] }, start: 'main', shell: { component: 'outlet' }, screens: { main: { root: { component: 'button' } } } }) as unknown as UiPartBodies['apps'];
+const APP = deepFreeze({ uses: { themes: ['store'] }, start: 'main', app: { component: 'app' }, screens: { main: { root: { component: 'button' } } } }) as unknown as UiPartBodies['apps'];
 const PRESET = deepFreeze({ name: 'calm', tokens: { color: { accent: { base: '#305070' } } } });
 
 /** An app is broken while its theme has no `button.fill`, standing in for a component token the app relies on */

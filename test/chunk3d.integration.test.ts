@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import type { Browser, Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
-import { call, createApp, httpHarness, shellOf, tempData } from './helpers.js';
+import { call, createApp, httpHarness, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 
 const installed = await BrowserPreview.isInstalled();
@@ -194,11 +194,11 @@ describe.skipIf(!installed)('the 3D chunk in the headless browser', () => {
 
     it('should wait in ui_screenshot for a scene that loses its context after its first frame, and capture the frame after the restore (G3.10)', async () => {
         // Arrange
-        await createApp(harness.client, 'loses-context', shellOf({ viewer: sceneWith('lose') }));
+        await createApp(harness.client, 'loses-context', rootOf({ viewer: sceneWith('lose') }));
 
         // Act: the first frame is ready at once; the loss comes while the capture settles, the restore 1.2 s later
         const started = performance.now();
-        const shot = await call(harness.client, 'ui_screenshot', { app: 'loses-context', path: '$.app.children.viewer' });
+        const shot = await call(harness.client, 'ui_screenshot', { app: 'loses-context', path: '$.screens.home.children.viewer' });
         const took = performance.now() - started;
 
         // Assert
@@ -210,7 +210,7 @@ describe.skipIf(!installed)('the 3D chunk in the headless browser', () => {
 
     it('should return the capture with scenes: pending and the scene path when a scene never draws (G3.10)', { timeout: 40_000 }, async () => {
         // Arrange
-        await createApp(harness.client, 'never-draws', shellOf({ viewer: sceneWith('stuck') }));
+        await createApp(harness.client, 'never-draws', rootOf({ viewer: sceneWith('stuck') }));
 
         // Act: the wait for the scene runs out after 10 s
         const shot = await call(harness.client, 'ui_screenshot', { app: 'never-draws' });
@@ -218,6 +218,6 @@ describe.skipIf(!installed)('the 3D chunk in the headless browser', () => {
         // Assert
         expect(shot.isError).toBe(false);
         expect(shot.images).toHaveLength(1);
-        expect(shot.body).toMatchObject({ target: 'page', scenes: 'pending', pending: ['$.app.children.viewer'] });
+        expect(shot.body).toMatchObject({ target: 'page', scenes: 'pending', pending: ['$.screens.home.children.viewer'] });
     });
 });

@@ -1,0 +1,48 @@
+{
+  "id": "502ee127-4f25-5e55-9a0e-b51d2ec4ff65",
+  "kind": "data",
+  "name": "showcase-tasks",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-task",
+    "records": {
+      "t1": {
+        "id": "t1",
+        "title": "Draft the release notes",
+        "column": "todo",
+        "order": 1,
+        "assignee": "Ada"
+      },
+      "t2": {
+        "id": "t2",
+        "title": "Review the date picker",
+        "column": "todo",
+        "order": 2,
+        "assignee": "Grace"
+      },
+      "t3": {
+        "id": "t3",
+        "title": "Tune the chart colours",
+        "column": "doing",
+        "order": 1,
+        "assignee": "Katherine"
+      },
+      "t4": {
+        "id": "t4",
+        "title": "Write the 3D guide",
+        "column": "doing",
+        "order": 2,
+        "assignee": "Margaret"
+      },
+      "t5": {
+        "id": "t5",
+        "title": "Ship the board",
+        "column": "done",
+        "order": 1,
+        "assignee": "Alan"
+      }
+    }
+  }
+}

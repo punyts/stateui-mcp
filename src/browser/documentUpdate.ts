@@ -11,6 +11,9 @@ export type JsonRecord = { [key: string]: Json };
 export const MAX_WRITES = 500;
 export const SEGMENT = /^[^.\s]+$/;
 
+/** The paths a write never replaces whole: the data, the app node and the root of each screen */
+const TREE_ROOT = /^\$\.(?:data|app|screens\.[^.\s]+)$/;
+
 export interface PathWrite {
     path: string;
     value?: Json;
@@ -101,7 +104,7 @@ export function diffComplete(path: string, a: unknown, b: unknown, writes: PathW
         if (a.length !== b.length) return false;
         return a.every((item, index) => diffComplete(`${path}.${index}`, item, b[index], writes, reordered));
     }
-    if (path === '$.data' || path === '$.app' || !isJson(b)) return false;
+    if (TREE_ROOT.test(path) || !isJson(b)) return false;
     writes.push({ path, value: b });
     return writes.length <= MAX_WRITES;
 }
@@ -131,20 +134,28 @@ function isAtOrBelow(path: string, base: string): boolean {
     return path === base || path.startsWith(`${base}.`);
 }
 
+/** A node tree the writes change: the app node at `$.app`, or the root of a screen at `$.screens.<name>` */
+interface Tree {
+    readonly base: string;
+    readonly root: unknown;
+}
+
 /**
- * The path and value of the node in `app` (at `$.app`) that a write below `$.app` belongs to: the written value when
- * it is a whole node, else the nearest node above the path. Undefined when the owner is the root node, which only a
- * load mounts
+ * The path and value of the node of a tree that a write below the tree's base belongs to: the written value when it
+ * is a whole node, else the nearest node above the path. Undefined when the owner is the root node of the tree, which
+ * only a load mounts
  */
-function owningNode(app: unknown, write: PathWrite): { path: string; value: JsonRecord } | undefined {
+function owningNode(trees: readonly Tree[], write: PathWrite): { path: string; value: JsonRecord } | undefined {
     if (write.remove !== true && isNode(write.value)) return { path: write.path, value: write.value };
-    const segments = write.path.split('.').slice(2);
+    const tree = trees.find((candidate) => isAtOrBelow(write.path, candidate.base));
+    if (tree === undefined) return undefined;
+    const segments = write.path.slice(tree.base.length + 1).split('.');
     let owner: { path: string; value: JsonRecord } | undefined;
-    let value: unknown = app;
+    let value: unknown = tree.root;
     for (let index = 0; index < segments.length - 1; index += 1) {
         value = isRecord(value) || Array.isArray(value) ? (value as Record<string, unknown>)[segments[index]!] : undefined;
         if (value === undefined) break;
-        if (isNode(value)) owner = { path: `$.app.${segments.slice(0, index + 1).join('.')}`, value };
+        if (isNode(value)) owner = { path: `${tree.base}.${segments.slice(0, index + 1).join('.')}`, value };
     }
     return owner;
 }
@@ -155,11 +166,11 @@ function owningNode(app: unknown, write: PathWrite): { path: string; value: Json
  * stays before it (a key that moves is removed and written again, so it comes last in its record). 'load' when a change
  * belongs to the root node
  */
-function liftNodeWrites(app: unknown, writes: readonly PathWrite[]): PathWrite[] | 'load' {
+function liftNodeWrites(trees: readonly Tree[], writes: readonly PathWrite[]): PathWrite[] | 'load' {
     const owners: { path: string; value: JsonRecord }[] = [];
     for (const write of writes) {
         if (!mountsNodes(write)) continue;
-        const owner = owningNode(app, write);
+        const owner = owningNode(trees, write);
         if (!owner) return 'load';
         if (owners.some((known) => isAtOrBelow(owner.path, known.path))) continue;
         for (let index = owners.length - 1; index >= 0; index -= 1) if (isAtOrBelow(owners[index]!.path, owner.path)) owners.splice(index, 1);
@@ -171,19 +182,42 @@ function liftNodeWrites(app: unknown, writes: readonly PathWrite[]): PathWrite[]
 }
 
 /**
- * A document change as writes: the `app` tree changes through writes, anything else (theme, locales, composed) is a
- * full load. `data` is the synced state's. The order of a node's children counts (it is the order they render in):
+ * Each screen of a document as the tree its root is (at `$.screens.<name>`, the path the runtime keeps it under) and the
+ * rest of the screen, in order. Empty for a document without screens, undefined when a screen cannot be read
+ */
+function screenTrees(screens: Json | undefined): (Tree & { readonly rest: JsonRecord })[] | undefined {
+    if (screens === undefined) return [];
+    if (!isRecord(screens)) return undefined;
+    const trees: (Tree & { readonly rest: JsonRecord })[] = [];
+    for (const [name, screen] of Object.entries(screens)) {
+        if (!SEGMENT.test(name) || !isRecord(screen)) return undefined;
+        const { root, ...rest } = screen;
+        trees.push({ base: `$.screens.${name}`, root, rest });
+    }
+    return trees;
+}
+
+/**
+ * A document change as writes: the `app` tree and the root of each screen change through writes, anything else
+ * (theme, locales, composed, the screens themselves or a screen's title, params or locales) is a full load. `data` is the synced state's. The order of a node's children counts (it is the order they render in):
  * children that moved are removed and written again. A reorder inside a node that is written whole would be merged
  * into the old order by the runtime store, so that is a full load
  */
 export function planDocumentUpdate(previous: JsonRecord, next: JsonRecord): PathWrite[] | 'none' | 'load' {
-    const { data: _previousData, app: previousApp, ...previousRest } = previous;
-    const { data: _nextData, app: nextApp, ...nextRest } = next;
+    const { data: _previousData, app: previousApp, screens: previousScreens, ...previousRest } = previous;
+    const { data: _nextData, app: nextApp, screens: nextScreens, ...nextRest } = next;
     if (!deepEqual(previousRest, nextRest)) return 'load';
+    const previousTrees = screenTrees(previousScreens);
+    const nextTrees = screenTrees(nextScreens);
+    if (previousTrees === undefined || nextTrees === undefined) return 'load';
+    if (previousTrees.length !== nextTrees.length || previousTrees.some((tree, index) => tree.base !== nextTrees[index]!.base || !deepEqual(tree.rest, nextTrees[index]!.rest))) return 'load';
     const writes: PathWrite[] = [];
     const reordered: string[] = [];
     if (!diffComplete('$.app', previousApp, nextApp, writes, reordered) || writes.length > MAX_WRITES) return 'load';
-    const lifted = liftNodeWrites(nextApp, writes);
+    for (const [index, tree] of nextTrees.entries()) {
+        if (!diffComplete(tree.base, previousTrees[index]!.root, tree.root, writes, reordered) || writes.length > MAX_WRITES) return 'load';
+    }
+    const lifted = liftNodeWrites([{ base: '$.app', root: nextApp }, ...nextTrees], writes);
     if (lifted === 'load') return 'load';
     if (reordered.some((path) => lifted.some((write) => write.remove !== true && isAtOrBelow(path, write.path)))) return 'load';
     return lifted.length === 0 ? 'none' : lifted;

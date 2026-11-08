@@ -9,8 +9,11 @@ import type { UiBuildError } from './UiBuildError.js';
 /** The key a tree is held under while it is written: node paths start with it (`root.children.hero`) */
 export const TREE_ROOT = 'root';
 
-/** The shell of an app, or one of its screens */
-export type TreeTarget = { readonly kind: 'shell' } | { readonly kind: 'screen'; readonly screen: string };
+/** The name the node tools take for the app node (`$.app`) in place of a screen name; no screen is named so */
+export const APP_TREE = 'app';
+
+/** The app node of an app (its layout, toasts and app events), or one of its screens */
+export type TreeTarget = { readonly kind: 'app' } | { readonly kind: 'screen'; readonly screen: string };
 
 /** Adds the node `value` to the `children` of the node at `path` under `key` (made from its component when absent), at the end or next to a sibling */
 export interface AddOperation {
@@ -29,21 +32,21 @@ export type NodeOperationResult =
     | { readonly ok: true; readonly tree: JsonObject; readonly added?: string }
     | { readonly ok: false; readonly error: UiBuildError };
 
-/** The state path of a tree's root at run time: `$.app` for the shell, `$.screens.{screen}` for a screen */
+/** The state path of a tree's root at run time: `$.app` for the app node, `$.screens.{screen}` for a screen */
 export function treeStatePath(target: TreeTarget): string {
-    return target.kind === 'shell' ? '$.app' : `$.screens.${target.screen}`;
+    return target.kind === 'app' ? '$.app' : `$.screens.${target.screen}`;
 }
 
 /**
  * A path given to a tree tool, made relative to the tree (`root...`). It may already start with `root`, or name the
- * tree's run-time path: `app...` for the shell, `screens.{screen}...` for the screen (a leading `$.` is allowed).
+ * tree's run-time path: `app...` for the app node, `screens.{screen}...` for the screen (a leading `$.` is allowed).
  * `undefined` for a path of another tree or of no tree
  */
 export function treePath(text: string, target: TreeTarget): string | undefined {
     const plain = text === '$' ? '' : text.startsWith('$.') ? text.slice(2) : text;
     const segments = plain === '' ? [] : plain.split('.');
     if (segments[0] === TREE_ROOT) return plain;
-    const anchor = target.kind === 'shell' ? ['app'] : ['screens', target.screen];
+    const anchor = target.kind === 'app' ? ['app'] : ['screens', target.screen];
     if (anchor.some((segment, index) => segments[index] !== segment)) return undefined;
     return [TREE_ROOT, ...segments.slice(anchor.length)].join('.');
 }

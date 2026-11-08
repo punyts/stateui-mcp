@@ -37,14 +37,14 @@ const STORED = deepFreeze([
         {
             uses: { themes: ['store'], data: { stock: { dataset: 'stock' }, wishes: { model: 'product' } }, logic: { cart: {} } },
             start: 'home',
-            shell: { component: 'page', children: { main: { component: 'outlet' } } },
+            app: { component: 'app' },
             screens: {
                 home: { root: { component: 'hero', on: { click: [{ command: 'navigate', target: 'about' }] } } },
                 about: { root: { component: 'text', _text: 'About' } }
             }
         }
     ],
-    ['apps', 'kiosk', { uses: { themes: ['store'], data: { picks: { model: 'product' } } }, shell: { component: 'hero' } }]
+    ['apps', 'kiosk', { uses: { themes: ['store'], data: { picks: { model: 'product' } } }, start: 'main', app: { component: 'app' }, screens: { main: { root: { component: 'hero' } } } }]
 ] as const);
 
 let dir: string;
@@ -133,7 +133,7 @@ describe('RenamePart over part files', () => {
         expect(Object.keys(shop.uses)).toEqual(['themes', 'data', 'logic']);
         expect(shop.uses.logic).toEqual({ basket: {} });
         expect(shop.screens.home.root.component).toBe('banner');
-        expect(((await body(parts, 'apps', 'kiosk')) as { shell: unknown }).shell).toEqual({ component: 'banner' });
+        expect(((await body(parts, 'apps', 'kiosk')) as { screens: { main: { root: unknown } } }).screens.main.root).toEqual({ component: 'banner' });
     });
 
     it('should finish a rename stopped after its second file when a new repository recovers, and a second recovery changes nothing', async () => {

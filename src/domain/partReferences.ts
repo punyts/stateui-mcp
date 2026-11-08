@@ -54,7 +54,7 @@ function appReferences(app: UiPartBodies['apps'], refs: Refs): void {
         else refs.add('models', binding['model']);
     }
     for (const module of Object.keys(isRecord(uses.logic) ? uses.logic : {})) refs.add('logic', module);
-    const names = componentNames(app.shell);
+    const names = componentNames(app.app);
     for (const screen of Object.values(isRecord(app.screens) ? app.screens : {})) {
         if (isRecord(screen)) componentNames(screen['root'], names);
     }
@@ -63,7 +63,7 @@ function appReferences(app: UiPartBodies['apps'], refs: Refs): void {
 
 /**
  * The parts a part names directly, once each, in the order found. An app: its themes, its datasets (a persona
- * binding names a model), its logic modules and the components in its shell and screens; a logic module: the models of
+ * binding names a model), its logic modules and the components in its app node and screens; a logic module: the models of
  * its `needs`; a dataset: its model; a component or a pattern: the components in its tree. Component names include
  * library components, which are no parts: the caller keeps only the names the owner has. Bodies are read loosely, so a
  * part that does not read as its kind gives what can be found

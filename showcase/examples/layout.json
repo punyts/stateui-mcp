@@ -1,7 +1,7 @@
 {
     "title": "Layout",
     "icon": "layout",
-    "description": "Boxes, rows, folding sections and whole page frames that hold other components.",
+    "description": "Boxes, rows, folding sections, and settings and dashboard panels that hold other components.",
     "components": {
         "panel": {
             "example": {
@@ -97,29 +97,6 @@
                 }
             }
         },
-        "page": {
-            "wide": true,
-            "example": {
-                "component": "page",
-                "navPosition": "none",
-                "_title": "Mini app",
-                "header": {
-                    "component": "toolbar",
-                    "align": "between",
-                    "children": {
-                        "title": { "component": "text", "textRole": "heading", "_text": "Mini app" },
-                        "account": { "component": "avatar", "size": "sm", "_name": "Ada Lovelace" }
-                    }
-                },
-                "children": {
-                    "body": { "component": "text", "element": "p", "_text": "A page is the root of an app: a header, navigation, the main content and a footer. This showcase itself is a page with a side menu." }
-                },
-                "footer": {
-                    "component": "toolbar",
-                    "children": { "note": { "component": "text", "textRole": "caption", "_text": "Footer: version 1.0" } }
-                }
-            }
-        },
         "dashboardGrid": {
             "wide": true,
             "example": {
@@ -131,10 +108,10 @@
                 }
             }
         },
-        "settingsPage": {
+        "settingsPanel": {
             "wide": true,
             "example": {
-                "component": "settingsPage",
+                "component": "settingsPanel",
                 "_title": "Account settings"
             }
         }

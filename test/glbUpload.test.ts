@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ALLOWED_FILE_TYPES, GLB_TYPE } from '../src/domain/UiFile.js';
-import { FORM_SHELL, call, createApp, httpHarness, noBrowser, tempData } from './helpers.js';
+import { FORM_ROOT, call, createApp, httpHarness, noBrowser, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
 let data: TempData;
@@ -14,7 +14,7 @@ beforeAll(async () => {
     data = await tempData();
     harness = await httpHarness(data.dir, noBrowser);
     origin = harness.server.origin;
-    appId = (await createApp(harness.client, 'models', FORM_SHELL)).id;
+    appId = (await createApp(harness.client, 'models', FORM_ROOT)).id;
 });
 
 afterAll(async () => {

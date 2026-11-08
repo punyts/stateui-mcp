@@ -1,0 +1,62 @@
+{
+  "id": "0df03cf3-69b6-597e-b2e1-4373baa4ec46",
+  "kind": "data",
+  "name": "showcase-markers",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-marker",
+    "records": {
+      "s1": {
+        "id": "s1",
+        "x": 24,
+        "y": 18,
+        "r": 1.6,
+        "fill": "#fff7d6"
+      },
+      "s2": {
+        "id": "s2",
+        "x": 58,
+        "y": 30,
+        "r": 1.2,
+        "fill": "#ffffff"
+      },
+      "s3": {
+        "id": "s3",
+        "x": 92,
+        "y": 12,
+        "r": 2,
+        "fill": "#fff7d6"
+      },
+      "s4": {
+        "id": "s4",
+        "x": 140,
+        "y": 26,
+        "r": 1.3,
+        "fill": "#ffffff"
+      },
+      "s5": {
+        "id": "s5",
+        "x": 176,
+        "y": 14,
+        "r": 1.7,
+        "fill": "#fff7d6"
+      },
+      "s6": {
+        "id": "s6",
+        "x": 214,
+        "y": 34,
+        "r": 1.1,
+        "fill": "#ffffff"
+      },
+      "s7": {
+        "id": "s7",
+        "x": 262,
+        "y": 20,
+        "r": 1.5,
+        "fill": "#fff7d6"
+      }
+    }
+  }
+}

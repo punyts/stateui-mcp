@@ -4,9 +4,9 @@ import type { JsonRecord, PathWrite } from '../src/browser/documentUpdate.js';
 
 const text = (value: string): JsonRecord => ({ component: 'text', _text: value });
 
-/** A document whose root page holds one panel `list` with the given children, in the given order */
+/** A document whose root panel holds one panel `list` with the given children, in the given order */
 function documentWith(children: JsonRecord, list: JsonRecord = { component: 'panel' }): JsonRecord {
-    return { app: { component: 'page', children: { list: { ...list, children } } } };
+    return { app: { component: 'panel', children: { list: { ...list, children } } } };
 }
 
 const LIST = '$.app.children.list.children';
@@ -91,6 +91,42 @@ describe('the live view host turning a document change into writes', () => {
 
         // Act
         const plan = planDocumentUpdate(before, after);
+
+        // Assert
+        expect(plan).toBe('load');
+    });
+
+    it('should write a move inside a screen at the screen path the runtime keeps it under', () => {
+        // Arrange
+        const screen = (children: JsonRecord): JsonRecord => ({
+            app: { component: 'app' },
+            start: 'home',
+            screens: { home: { title: 'Home', root: { component: 'panel', children } } }
+        });
+        const before = screen({ a: text('alpha'), b: text('beta') });
+        const after = screen({ b: text('beta'), a: text('alpha') });
+
+        // Act
+        const plan = planDocumentUpdate(before, after);
+
+        // Assert
+        expect(plan).toEqual([
+            { path: '$.screens.home.children.a', remove: true },
+            { path: '$.screens.home.children.b', remove: true },
+            { path: '$.screens.home.children.b', value: text('beta') },
+            { path: '$.screens.home.children.a', value: text('alpha') }
+        ]);
+    });
+
+    it('should load when a screen itself changes, not only its root', () => {
+        // Arrange
+        const screen = (title: string): JsonRecord => ({
+            app: { component: 'app' },
+            screens: { home: { title, root: { component: 'panel' } } }
+        });
+
+        // Act
+        const plan = planDocumentUpdate(screen('Home'), screen('Start'));
 
         // Assert
         expect(plan).toBe('load');

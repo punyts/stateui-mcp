@@ -10,7 +10,7 @@ function deepFreeze<T>(value: T): T {
     return value;
 }
 
-const SHELL = deepFreeze({ component: 'page', children: { header: { component: 'text', _text: 'Shop' }, body: { component: 'outlet' } } });
+const TOASTS = deepFreeze({ component: 'toastRegion', messages: { saved: { tone: 'success', _title: 'Saved' } } });
 const HOME = deepFreeze({
     component: 'panel',
     children: { title: { component: 'text', _text: 'Welcome' }, intro: { component: 'text', _text: 'Lamps and more' }, box: { component: 'panel' } }
@@ -39,7 +39,7 @@ async function nodes(operations: readonly object[], screen = 'home', expectedRev
 beforeEach(async () => {
     data = await tempData();
     harness = await inMemoryHarness(data.dir);
-    const created = await call(harness.client, 'ui_app_create', { name: 'shop', shell: SHELL });
+    const created = await call(harness.client, 'ui_app_create', { name: 'shop', title: 'Shop' });
     if (created.isError) throw new Error(JSON.stringify(created.body));
     const home = await call(harness.client, 'ui_nodes_write', { app: 'shop', screen: 'home', expectedRevision: 1, operations: [{ op: 'set', path: 'root', value: HOME }] });
     if (home.isError) throw new Error(JSON.stringify(home.body));
@@ -111,7 +111,7 @@ describe('ui_nodes_write', () => {
 
     it('should refuse a path of another tree, a missing screen and a missing app', async () => {
         // Act
-        const other = await nodes([{ op: 'remove', path: '$.app.children.header' }]);
+        const other = await nodes([{ op: 'remove', path: '$.app._title' }]);
         const screen = await nodes([{ op: 'remove', path: 'root.children.intro' }], 'hom');
         const app = await call(harness.client, 'ui_nodes_write', { app: 'shpo', screen: 'home', expectedRevision: 2, operations: [{ op: 'remove', path: 'root' }] });
         const key = await nodes([{ op: 'set', path: 'root.children.title._text', key: 'x', value: 'y' }]);
@@ -123,17 +123,16 @@ describe('ui_nodes_write', () => {
         expect(key.body).toMatchObject({ error: 'invalid-argument', argument: 'operations[0].key' });
     });
 
-    it('should write the shell and refuse a shell left without its outlet with SUI-SHELL-OUTLET', async () => {
+    it('should write the app node with screen "app" and refuse an app node of another component', async () => {
         // Act
-        const header = await nodes([{ op: 'set', path: '$.app.children.header._text', value: 'Lamp shop' }], 'shell');
-        const outlet = await nodes([{ op: 'remove', path: 'root.children.body' }], 'shell', 3);
+        const toasts = await nodes([{ op: 'set', path: '$.app.toasts', value: TOASTS }], 'app');
+        const other = await nodes([{ op: 'set', path: 'root.component', value: 'panel' }], 'app', 3);
         const body = await appBody();
 
         // Assert
-        expect(header.body).toMatchObject({ screen: 'shell', revision: 3 });
-        expect(outlet.body['error']).toBe('invalid-app');
-        expect((outlet.body['errors'] as { code: string }[]).map((error) => error.code)).toContain('SUI-SHELL-OUTLET');
-        expect(body['shell']).toEqual({ component: 'page', children: { header: { component: 'text', _text: 'Lamp shop' }, body: { component: 'outlet' } } });
+        expect(toasts.body).toMatchObject({ screen: 'app', revision: 3 });
+        expect(other.body['error']).toBe('invalid-app');
+        expect(body['app']).toEqual({ _title: 'Shop', component: 'app', toasts: TOASTS });
     });
 });
 
@@ -177,20 +176,20 @@ describe('ui_locale_write', () => {
         expect((body['screens'] as Record<string, Record<string, unknown>>)['home']).not.toHaveProperty('locales');
     });
 
-    it('should write the shell overlay into the app locales', async () => {
+    it('should write the app node overlay into the app locales', async () => {
         // Act
-        const result = await locale([{ op: 'set', path: '$.app.children.header._text', value: 'Laden' }], 2, 'shell');
+        const result = await locale([{ op: 'set', path: '$.app._title', value: 'Laden' }], 2, 'app');
         const body = await appBody();
 
         // Assert
-        expect(result.body).toMatchObject({ screen: 'shell', revision: 3 });
-        expect(body['locales']).toEqual({ de: { children: { header: { _text: 'Laden' } } } });
+        expect(result.body).toMatchObject({ screen: 'app', revision: 3 });
+        expect(body['locales']).toEqual({ de: { _title: 'Laden' } });
     });
 
     it('should refuse a bad language, a path off the tree, a non-content path and a stale revision', async () => {
         // Act
         const language = await locale([{ op: 'set', path: 'root.children.title._text', value: 'x' }], 2, 'home', 'German');
-        const offTree = await locale([{ op: 'set', path: '$.app.children.header._text', value: 'x' }]);
+        const offTree = await locale([{ op: 'set', path: '$.app._title', value: 'x' }]);
         const rootOnly = await locale([{ op: 'set', path: 'root', value: {} }]);
         const notContent = await locale([{ op: 'set', path: 'root.children.nope._text', value: 'x' }]);
         const stale = await locale([{ op: 'set', path: 'root.children.title._text', value: 'x' }], 1);
