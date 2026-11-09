@@ -6,6 +6,7 @@ import type {
     LogicChange,
     LogicEngine,
     LogicFailure,
+    LogicFunctions,
     LogicHost,
     LogicTraceRun,
     LogicWrite,
@@ -81,7 +82,8 @@ export class AppLogic {
         private readonly onEvent: AppLogicEvent,
         private readonly report: (message: string, failure: LogicFailure) => void,
         private readonly onCall?: AppLogicCall,
-        private readonly gate?: DataGate
+        private readonly gate?: DataGate,
+        private readonly functions?: LogicFunctions
     ) {
         this.removers.push(
             authority.onApplied((change) => {
@@ -121,7 +123,7 @@ export class AppLogic {
                 return typeof screen === 'string' ? screen : undefined;
             }
         });
-        const { logic: valid } = readLogic(logic, { resolve: index.resolve });
+        const { logic: valid } = readLogic(logic, { resolve: index.resolve, ...(this.functions === undefined ? {} : { functions: this.functions }) });
         const read = (path: string): AppValue | undefined => {
             const stored = this.authority.get(path) as AppValue | undefined;
             return covers(APP_ROOT, path) ? overlay(index.initial(path), stored) : stored;
@@ -138,6 +140,7 @@ export class AppLogic {
             },
             ...(this.gate !== undefined && { guard: (change: LogicChange) => (this.gate as DataGate).check([toServerWrite(change)]) }),
             resolve: index.resolve,
+            ...(this.functions === undefined ? {} : { functions: this.functions }),
             screens: () => (isJsonObject(document['screens']) ? (document['screens'] as unknown as RouteScreens) : undefined),
             fields: index.fields,
             initial: index.initial,

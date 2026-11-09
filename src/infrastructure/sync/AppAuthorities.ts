@@ -1,5 +1,5 @@
 import type { Report } from '@punyts/core';
-import type { ComponentLibrary, LogicTraceRun } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, LogicFunctions, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage, ServerWrite } from '@punyts/state-sync/authority';
@@ -31,6 +31,8 @@ export interface AppLogicOptions {
     report: Pick<Report, 'info'>;
     /** The server procedures a `call` runs by name; a call to any other name waits for the agent (`ui_call_answer`) */
     procedures?: Readonly<Record<string, AppProcedure>>;
+    /** The compute, expression and effect functions the logic runs by name */
+    functions?: LogicFunctions;
 }
 
 /**
@@ -134,7 +136,8 @@ export class AppAuthorities {
             (name, payload) => this.onEmit(appId, name, payload, LOGIC_VIEW_ID),
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             (name, payload) => this.calls.ask(appId, name, payload),
-            this.gateOf(namespace)
+            this.gateOf(namespace),
+            this.logic.functions
         );
         this.logics.set(namespace, logic);
         try {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
+import type { LogicFunctions } from '@punyts/stateui-app/core';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
 import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
@@ -42,6 +43,8 @@ export interface ServicesOptions {
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
     readonly procedures?: Readonly<Record<string, AppProcedure>>;
+    /** The compute, expression and effect functions Full-mode logic runs by name */
+    readonly logicFunctions?: LogicFunctions;
     /** A file that gets one JSON line per tool call; absent: no log */
     readonly toolLog?: string;
     /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
@@ -93,7 +96,12 @@ export function createServices(options: ServicesOptions): Services {
             hub.touch(appId, viewId);
         },
         options.serverKey,
-        { library, report: options.report, ...(options.procedures !== undefined && { procedures: options.procedures }) },
+        {
+            library,
+            report: options.report,
+            ...(options.procedures !== undefined && { procedures: options.procedures }),
+            ...(options.logicFunctions !== undefined && { functions: options.logicFunctions })
+        },
         datasets
     );
     const ownerId = options.ownerId ?? LOCAL_OWNER_ID;

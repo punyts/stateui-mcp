@@ -221,6 +221,47 @@ describe('AppLogic', () => {
         }
     });
 
+    it('should run an effect the server registers, keeping its records in $.server', async () => {
+        // Arrange
+        const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true, serverKey: new Uint8Array(32) });
+        const requests: JsonValue[] = [];
+        const failures: string[] = [];
+        const logic = new AppLogic(authority, library, () => undefined, (_message, failure) => failures.push(failure.reason), undefined, undefined, {
+            effects: {
+                'orders.fetch': async (request) => {
+                    requests.push(request as JsonValue);
+                    return { first: 0, total: 1, records: [{ id: 'o1', name: 'First' }] };
+                }
+            }
+        });
+        logic.setDocument({
+            data: {},
+            app: { component: 'page' },
+            logic: {
+                effects: {
+                    fetchOrders: {
+                        request: '$.data.orders.request',
+                        run: 'orders.fetch',
+                        status: '$.data.orders.status',
+                        records: { into: '$.server.orders', key: 'id' },
+                        window: '$.data.orders.view'
+                    }
+                }
+            }
+        } as unknown as UiDocument);
+
+        // Act
+        logic.write('$.data.orders.request', { first: 0, count: 10 });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Assert
+        expect(failures).toEqual([]);
+        expect(requests).toEqual([{ first: 0, count: 10 }]);
+        expect(authority.get('$.server.orders')).toEqual({ o1: { id: 'o1', name: 'First' } });
+        expect(authority.get('$.data.orders.view')).toEqual({ records: { 0: { id: 'o1', name: 'First' } }, total: 1 });
+        expect(authority.get('$.data.orders.status.state')).toBe('ready');
+    });
+
     it('should give a call the answer of its procedure', async () => {
         // Arrange
         const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true });
