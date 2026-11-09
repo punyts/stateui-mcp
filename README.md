@@ -16,7 +16,7 @@ npx playwright install chromium   # once, for ui_preview, ui_screenshot and ui_i
 
 Without Chromium everything else works. `ui_preview` still returns the address a person can open (with `rendered: false` and a note), and `ui_screenshot` and `ui_interact` answer `browser-unavailable`.
 
-The runtime bundle comes from `@punyts/stateui-app` (`dist/runtime-bundle/`, built by `npm run build:runtime-bundle` in that package). Use `--runtime-dir` to point at another build.
+The runtime bundle comes from `@punyts/stateui-app` (`dist/runtime-bundle/`, built by `npm run build:runtime-bundle` in that package). Use `--runtime-dir` to point at another build. The server will not start with a bundle built before a component was added to the library; it names the missing components and asks for a rebuild.
 
 The 3D renderer chunk comes from `@punyts/stateui-3d` (`dist/runtime-chunk/`, an optional dependency). When it is installed and built the server serves it beside the runtime and names it to the view, so an app with a `scene3d` loads it on first mount; without it the server starts normally, names no chunk, and a scene shows its `_fallback` text.
 

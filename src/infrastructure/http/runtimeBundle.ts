@@ -20,8 +20,13 @@ export function resolveRuntimeDir(dir: string | undefined): string | undefined {
     }
 }
 
-/** Reads the manifest and the script, or throws a message that says how to build the bundle */
-export function loadRuntimeBundle(dir: string | undefined): RuntimeBundle {
+/**
+ * Reads the manifest and the script, or throws a message that says how to build the bundle. With `components` (the
+ * names in the component catalog the server serves), it also throws when the bundle was built without some of them:
+ * a bundle older than the library would draw those components as unknown nodes. A manifest without a component list
+ * (from an older build) is not checked
+ */
+export function loadRuntimeBundle(dir: string | undefined, components?: readonly string[]): RuntimeBundle {
     const resolved = resolveRuntimeDir(dir);
     if (resolved === undefined) {
         throw new Error('The StateUI runtime bundle was not found. Build it with "npm run build:runtime-bundle" in @punyts/stateui-app, or pass --runtime-dir');
@@ -29,6 +34,16 @@ export function loadRuntimeBundle(dir: string | undefined): RuntimeBundle {
     const manifest: unknown = JSON.parse(readFileSync(join(resolved, 'manifest.json'), 'utf8'));
     if (typeof manifest !== 'object' || manifest === null || !('hash' in manifest) || typeof manifest.hash !== 'string' || !HASH_PATTERN.test(manifest.hash)) {
         throw new Error(`manifest.json in ${resolved} has no valid hash`);
+    }
+    if (components !== undefined && 'components' in manifest && Array.isArray(manifest.components)) {
+        const built = new Set<unknown>(manifest.components);
+        const missing = components.filter((name) => !built.has(name));
+        if (missing.length > 0) {
+            throw new Error(
+                `The StateUI runtime bundle in ${resolved} is older than the component library: it has no ${missing.map((name) => `"${name}"`).join(', ')}. ` +
+                    'Rebuild it with "npm run build:runtime-bundle" in @punyts/stateui-app'
+            );
+        }
     }
     return { hash: manifest.hash, script: readFileSync(join(resolved, `${manifest.hash}.js`)) };
 }

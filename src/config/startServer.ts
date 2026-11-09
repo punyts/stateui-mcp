@@ -6,6 +6,7 @@ import { startHttpServer } from '../infrastructure/http/HttpServer.js';
 import { packageRoot } from '../infrastructure/http/packageRoot.js';
 import { loadChunk3d, loadRuntimeBundle } from '../infrastructure/http/runtimeBundle.js';
 import { McpHttpSessions } from '../infrastructure/mcp/McpHttpSessions.js';
+import { loadCatalogFile } from '../infrastructure/stateUiLibrary.js';
 import { createStateUiMcpServer } from '../infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
 import { createServices } from './createServices.js';
@@ -67,7 +68,10 @@ function loadHostScript(): Buffer {
 
 /** Starts the HTTP server (MCP at /mcp and the browser endpoint), and the stdio transport when asked */
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
-    const runtime = loadRuntimeBundle(options.runtimeDir);
+    const runtime = loadRuntimeBundle(
+        options.runtimeDir,
+        loadCatalogFile().components.map((component) => component.name)
+    );
     const chunk3d = loadChunk3d(options.chunk3dDir);
     const hostScript = loadHostScript();
     // Before anything reads a part: a new data directory gets the showcase app
