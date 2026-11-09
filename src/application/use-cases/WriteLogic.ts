@@ -15,7 +15,7 @@ import type { UseCaseReport } from '../ports/UseCaseReport.js';
 import type { AppWarning, WritePart } from './WritePart.js';
 
 /** The groups of a logic document that hold units by name */
-export const LOGIC_GROUPS = ['machines', 'rules', 'tables'] as const;
+export const LOGIC_GROUPS = ['machines', 'rules', 'tables', 'computes', 'effects'] as const;
 export type LogicGroup = (typeof LOGIC_GROUPS)[number];
 
 /** A unit of a group set (added or replaced whole) or removed */
@@ -93,7 +93,7 @@ function applyOperations(logic: JsonObject, operations: readonly LogicOperation[
 
 /** The places of the units the write leaves set (whose last operation is a set), in the order they were first written */
 function writtenUnits(order: readonly LogicUnitPlace[], operations: readonly LogicOperation[]): WrittenUnit[] {
-    const kinds: Record<LogicGroup, LogicUnitPlace['kind']> = { machines: 'machine', rules: 'rule', tables: 'table' };
+    const kinds: Record<LogicGroup, LogicUnitPlace['kind']> = { machines: 'machine', rules: 'rule', tables: 'table', computes: 'compute', effects: 'effect' };
     const last = new Map<string, LogicOperation>();
     for (const operation of operations) last.set(`${operation.group}.${operation.name}`, operation);
     const units: WrittenUnit[] = [];
@@ -108,7 +108,7 @@ function writtenUnits(order: readonly LogicUnitPlace[], operations: readonly Log
 }
 
 /**
- * Writes machines, rules and tables by name in an app's own logic or in a logic module. The units are set whole or
+ * Writes machines, rules, tables, compute units and effects by name in an app's own logic or in a logic module. The units are set whole or
  * removed; an app is then checked as a whole (assembled with its parts, `checkPartApp`) and a module by the module
  * reader through `WritePart` (`SUI-MODULE-*`), and stored only when nothing blocks. The result places each written unit
  * in the engine's run order (`logicRunOrder`): an app's assembled logic, modules included, or the module's own

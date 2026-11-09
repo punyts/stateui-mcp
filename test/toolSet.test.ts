@@ -37,6 +37,7 @@ const RUN_TIME_TOOLS = Object.freeze([
     'ui_command',
     'ui_events_read',
     'ui_call_answer',
+    'ui_effect_answer',
     'ui_logic_trace',
     'ui_file_read',
     'ui_tree'
@@ -65,12 +66,12 @@ afterEach(async () => {
 });
 
 describe('the registered tools', () => {
-    it('should be exactly EXPECTED_TOOLS, the 35 tools of the design and ui_guide', async () => {
+    it('should be exactly EXPECTED_TOOLS, the 36 tools of the design and ui_guide', async () => {
         // Act
         const { tools } = await harness.client.listTools();
 
         // Assert
-        expect(EXPECTED_TOOLS).toHaveLength(36);
+        expect(EXPECTED_TOOLS).toHaveLength(37);
         expect(tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
         expect(EXPECTED_TOOLS).toContain('ui_patterns_search');
         expect(EXPECTED_TOOLS).toContain('ui_pattern_write');

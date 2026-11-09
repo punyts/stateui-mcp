@@ -1,5 +1,5 @@
 import type { Report } from '@punyts/core';
-import type { ComponentLibrary, LogicFunctions, LogicTraceRun } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, LogicEffectInfo, LogicFunctions, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage, ServerWrite } from '@punyts/state-sync/authority';
@@ -8,6 +8,7 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import { AppCalls } from './AppCalls.js';
 import type { AppProcedure } from './AppCalls.js';
+import { AppEffects } from './AppEffects.js';
 import type { DataGate } from './AppLogic.js';
 import { AppLogic } from './AppLogic.js';
 import { appNamespace } from './FileNamespaceStorage.js';
@@ -52,6 +53,8 @@ export class AppAuthorities {
     private readonly appIds = new Map<string, string>();
     /** The answers to the apps' `call` commands */
     readonly calls: AppCalls;
+    /** The effects of Full-mode logic that wait for the agent's answer */
+    readonly effects: AppEffects;
 
     constructor(
         private readonly onEmit: AppEmitHandler,
@@ -62,6 +65,7 @@ export class AppAuthorities {
         private readonly dataGate?: InstanceDataGate
     ) {
         this.calls = new AppCalls((appId, name, payload) => this.onEmit(appId.toLowerCase(), name, payload, LOGIC_VIEW_ID), logic?.procedures);
+        this.effects = new AppEffects((appId, name, payload) => this.onEmit(appId.toLowerCase(), name, payload, LOGIC_VIEW_ID));
     }
 
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
@@ -137,7 +141,8 @@ export class AppAuthorities {
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             (name, payload) => this.calls.ask(appId, name, payload),
             this.gateOf(namespace),
-            this.logic.functions
+            this.logic.functions,
+            (request, signal) => this.effects.ask(appId, request, signal)
         );
         this.logics.set(namespace, logic);
         try {
@@ -169,6 +174,11 @@ export class AppAuthorities {
         return this.logics.get(namespace)?.trace();
     }
 
+    /** The effects of the logic of a namespace: token, running and cache size; undefined when no logic runs there */
+    effectsOf(namespace: string): LogicEffectInfo[] | undefined {
+        return this.logics.get(namespace)?.effects();
+    }
+
     clearTraceOf(namespace: string): void {
         this.logics.get(namespace)?.clearTrace();
     }
@@ -189,6 +199,7 @@ export class AppAuthorities {
         this.logics.get(namespace)?.dispose();
         this.logics.delete(namespace);
         this.calls.forget(this.appIds.get(namespace) ?? '');
+        this.effects.forget(this.appIds.get(namespace) ?? '');
         this.appIds.delete(namespace);
         const created = await authority.catch(() => undefined);
         if (created === undefined) return;

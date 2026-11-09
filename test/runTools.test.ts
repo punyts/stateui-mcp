@@ -23,6 +23,7 @@ const RUN_TIME_TOOLS = Object.freeze([
     'ui_command',
     'ui_events_read',
     'ui_call_answer',
+    'ui_effect_answer',
     'ui_logic_trace',
     'ui_file_read'
 ]);

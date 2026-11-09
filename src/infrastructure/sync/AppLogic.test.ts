@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import { loadCatalogFile } from '../stateUiLibrary.js';
+import { AppEffects } from './AppEffects.js';
 import { AppLogic } from './AppLogic.js';
 
 const NAMESPACE = 'apps.contacts';
@@ -260,6 +261,33 @@ describe('AppLogic', () => {
         expect(authority.get('$.server.orders')).toEqual({ o1: { id: 'o1', name: 'First' } });
         expect(authority.get('$.data.orders.view')).toEqual({ records: { 0: { id: 'o1', name: 'First' } }, total: 1 });
         expect(authority.get('$.data.orders.status.state')).toBe('ready');
+    });
+
+    it('should ask the agent for an effect the server does not have and commit the answer it gives', async () => {
+        // Arrange
+        const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true });
+        const queued: JsonValue[] = [];
+        const effects = new AppEffects((_appId, _name, payload) => queued.push(payload), () => 'e1');
+        const logic = new AppLogic(authority, library, () => undefined, () => undefined, undefined, undefined, undefined, (request, signal) => effects.ask('a1', request, signal));
+        logic.setDocument({
+            data: {},
+            app: { component: 'page' },
+            logic: { effects: { fetchOrders: { request: '$.data.orders.request', run: 'orders.fetch', status: '$.data.orders.status', records: { into: '$.data.orders.records', key: 'id' }, window: '$.data.orders.view' } } }
+        } as unknown as UiDocument);
+
+        // Act
+        logic.write('$.data.orders.request', { page: 1 });
+        const loading = authority.get('$.data.orders.status.state');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const answered = effects.answer('a1', 'e1', { answer: { total: 1, records: [{ id: 'o1' }] } });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Assert
+        expect(queued).toEqual([{ id: 'e1', name: 'fetchOrders', token: authority.get('$.data.orders.status.token'), request: { page: 1 } }]);
+        expect([loading, answered]).toEqual(['loading', true]);
+        expect(authority.get('$.data.orders.records')).toEqual({ o1: { id: 'o1' } });
+        expect(authority.get('$.data.orders.status.state')).toBe('ready');
+        expect(logic.effects()).toEqual([{ name: 'fetchOrders', token: authority.get('$.data.orders.status.token'), running: false, cached: 0 }]);
     });
 
     it('should give a call the answer of its procedure', async () => {

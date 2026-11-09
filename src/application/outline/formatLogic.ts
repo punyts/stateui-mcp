@@ -60,7 +60,9 @@ function isGuard(rule: JsonObject): boolean {
 /**
  * The lines of a document's `logic`: each machine with its current state (from `stateAt`, else its initial state)
  * and one line per transition, each rule and guard with its trigger and commands, then each table with its inputs (and
- * their values), its outputs and one line per row (or where its rows come from). Empty when there is no logic
+ * their values), its outputs and one line per row (or where its rows come from), each compute unit with its function,
+ * inputs and outputs, and each effect with its function, request, records and window and its status (from `stateAt`).
+ * Empty when there is no logic
  */
 export function formatLogic(logic: JsonValue | undefined, stateAt: (path: string) => JsonValue | undefined): string[] {
     if (!isJsonObject(logic)) return [];
@@ -100,6 +102,31 @@ export function formatLogic(logic: JsonValue | undefined, stateAt: (path: string
             const values = outputs.filter(([output]) => Object.hasOwn(row, output)).map(([output]) => `${output} ${show(row[output])}`);
             lines.push(`    ${conditions.length === 0 ? 'otherwise' : conditions.map(([input, value]) => `${input} ${show(value)}`).join(', ')} → ${values.join(', ')}`);
         }
+    }
+    const computes = isJsonObject(logic['computes']) ? logic['computes'] : {};
+    for (const [name, compute] of Object.entries(computes)) {
+        if (!isJsonObject(compute)) continue;
+        const inputs = isJsonObject(compute['inputs']) ? Object.keys(compute['inputs']) : [];
+        const outputs = isJsonObject(compute['outputs']) ? Object.entries(compute['outputs']) : [];
+        lines.push(`  compute ${name} runs ${show(compute['run'])} inputs ${inputs.join(', ')} → ${outputs.map(([output, path]) => `${output} ${show(path)}`).join(', ')}`);
+    }
+    const effects = isJsonObject(logic['effects']) ? logic['effects'] : {};
+    for (const [name, effect] of Object.entries(effects)) {
+        if (!isJsonObject(effect)) continue;
+        const records = isJsonObject(effect['records']) ? ` records into ${show(effect['records']['into'])} by ${show(effect['records']['key'])}` : '';
+        const window = typeof effect['window'] === 'string' ? ` window ${effect['window']}` : '';
+        const cache = typeof effect['cache'] === 'number' && effect['cache'] > 0 ? ` cache ${effect['cache']}` : '';
+        lines.push(`  effect ${name} runs ${show(effect['run'])} on ${show(effect['request'])}${records}${window}${cache}`);
+        const status = typeof effect['status'] === 'string' ? stateAt(effect['status']) : undefined;
+        const state = isJsonObject(status) && typeof status['state'] === 'string' ? status['state'] : 'idle';
+        const detail = isJsonObject(status)
+            ? [
+                  typeof status['total'] === 'number' ? `total ${status['total']}` : '',
+                  typeof status['reason'] === 'string' ? `"${shorten(status['reason'])}"` : '',
+                  typeof status['token'] === 'string' ? `token ${status['token']}` : ''
+              ].filter((part) => part !== '')
+            : [];
+        lines.push(`    status ${state}${detail.length === 0 ? '' : `, ${detail.join(', ')}`} (at ${show(effect['status'])})`);
     }
     return lines.length === 0 ? [] : ['logic', ...lines];
 }

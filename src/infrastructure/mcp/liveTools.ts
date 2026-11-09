@@ -7,8 +7,9 @@ import { DRAG_OFFSET_FORM, dragTargetOf } from '../preview/dragTarget.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { PreviewHub } from '../preview/PreviewHub.js';
-import type { LogicAnswer } from '@punyts/stateui-app/core';
+import type { LogicAnswer, LogicEffectAnswer } from '@punyts/stateui-app/core';
 import type { AppCalls } from '../sync/AppCalls.js';
+import type { AgentEffectAnswer, AppEffects } from '../sync/AppEffects.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import { isRunTarget, RUN_APP_FIELDS, runName, runTargets } from './runTarget.js';
 import type { RunTarget } from './runTarget.js';
@@ -86,6 +87,16 @@ const CALL_ANSWER = defineInput({
     reason: { type: 'string', description: 'Why, for rejected; shown to the machine as $result.reason' }
 });
 
+const EFFECT_ANSWER = defineInput({
+    ...RUN_APP_FIELDS,
+    id: { type: 'string', required: true, description: 'The id of the logic.effect event from ui_events_read' },
+    records: { type: 'json', description: 'The records of the answer, a list in the order to show them; each holds its primary key in the field the effect names' },
+    first: { type: 'integer', minimum: 0, description: 'The position of the first record in the window; 0 when absent' },
+    total: { type: 'integer', minimum: 0, description: 'How many records there are in all, for the window and the status' },
+    value: { type: 'json', description: 'A value the effect writes at its value path' },
+    error: { type: 'string', description: 'Why the request failed, instead of an answer: the status becomes error with this reason' }
+});
+
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
 }
@@ -122,8 +133,10 @@ export interface LiveToolDependencies {
     readonly liveViews: Pick<LiveViews, 'command'>;
     readonly browser: Pick<PreviewBrowser, 'open' | 'screenshot' | 'interact'>;
     readonly calls: Pick<AppCalls, 'answer'>;
+    /** The effects that wait for the agent; absent: ui_effect_answer finds none waiting */
+    readonly effects?: Pick<AppEffects, 'answer'>;
     /** The trace of the logic that runs on the server; absent: ui_logic_trace answers that the logic does not run here */
-    readonly logic?: Pick<AppAuthorities, 'traceOf' | 'clearTraceOf'>;
+    readonly logic?: Pick<AppAuthorities, 'traceOf' | 'clearTraceOf' | 'effectsOf'>;
     readonly instanceViews: Pick<InstanceViews, 'view' | 'namespace'>;
     /** The URL a person opens for an app, such as `http://127.0.0.1:4100/apps/<id>` */
     readonly viewUrl: (appId: string) => string;
@@ -131,7 +144,7 @@ export interface LiveToolDependencies {
 
 /** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and `emit` events */
 export function createLiveTools(dependencies: LiveToolDependencies): readonly UiToolDefinition[] {
-    const { useCases, hub, liveViews, browser, viewUrl, calls, logic, instanceViews } = dependencies;
+    const { useCases, hub, liveViews, browser, viewUrl, calls, effects, logic, instanceViews } = dependencies;
     const resolve = runTargets({ useCases, instanceViews });
 
     /** The runtime errors the views of the target reported */
@@ -270,7 +283,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Run time: read the events the running app raised, oldest first, for the instance of an app part: emit events (a button with an emit action, a form submit), logic.failed, and logic.call (payload { id, name, payload }; answer it with ui_call_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Run time: read the events the running app raised, oldest first, for the instance of an app part: emit events (a button with an emit action, a form submit), logic.failed, logic.call (payload { id, name, payload }; answer it with ui_call_answer) and logic.effect (payload { id, name, token, request }: an effect whose function the server does not have; answer it with ui_effect_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -286,7 +299,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_logic_trace',
             description:
-                'Run time: read the latest runs of the logic of the instance of an app part, newest last. A run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its chain step (depth) and outcome: fired (with the transition, table row and writes), failed (with the reason), refused (a guard), condition (is, was or if was false, or no table row matched), other-state (the machine was in another state), unchanged (the value did not change), parent-removed (removed with its record), already-fired (once per chain) or debounced. Use it when a rule did not fire or fired twice. Reading changes nothing; clear empties the trace only. Returns { app, runs }.',
+                'Run time: read the latest runs of the logic of the instance of an app part, newest last. A run has its cause (change, result, timer, answer, start, guard), the paths that changed, and one event per machine, rule, table or guard whose trigger matched, with its chain step (depth) and outcome: fired (with the transition, table row and writes), failed (with the reason), refused (a guard), condition (is, was or if was false, or no table row matched), other-state (the machine was in another state), unchanged (the value did not change), parent-removed (removed with its record), already-fired (once per chain) or debounced. Effects run after a chain (cause effect, with the writes of loading, an answer or a cached answer). Use it when a rule did not fire or fired twice. Reading changes nothing; clear empties the trace only. Returns { app, runs, effects }: effects lists each effect with the token of the request it last acted on, whether a call is running and how many answers its cache holds.',
             inputSchema: LOGIC_TRACE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -299,7 +312,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if (runs === undefined) {
                     return fail('no-logic', 'The logic of this app does not run on the server: it has no logic, its logic did not start (see ui_validate), nothing has used the instance yet', runName(target));
                 }
-                return succeed({ ...runName(target), runs: runs.slice(-(limit ?? 10)) });
+                return succeed({ ...runName(target), runs: runs.slice(-(limit ?? 10)), effects: logic?.effectsOf(instanceViews.namespace(target.part)) ?? [] });
             }
         },
         {
@@ -319,6 +332,35 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                         ? { status: 'accepted' as const, ...(value !== undefined && { value: value as LogicAnswer['value'] }) }
                         : { status: 'rejected' as const, ...(reason !== undefined && { reason }) };
                 if (!calls.answer(target.appId, id, answer)) return fail('not-waiting', 'No call with this id is waiting for an answer', { ...runName(target), id });
+                return succeed({ ...runName(target), id, answered: true });
+            }
+        },
+        {
+            name: 'ui_effect_answer',
+            description:
+                'Run time: answer an effect of the logic of the instance of an app part whose function the server does not have: the logic.effect event from ui_events_read carries its id, the effect name, the request token and the request. Give records (a list, in the order to show them), first, total and value, or error. The answer commits like a function\'s: the records merge into the effect\'s data map by their key, the window shows them by position from first with total, and the status becomes ready (or error with the reason). Only the latest request of an effect waits: a newer request drops the older one, whose id is then not waiting. The answer goes to the running logic only, never to the definition. Returns { app, id, answered }; an id that is not waiting (answered already, replaced by a newer request, or lost on a restart) is the error not-waiting.',
+            inputSchema: EFFECT_ANSWER.schema,
+            annotations: WRITES,
+            run: async (args) => {
+                const parsed = EFFECT_ANSWER.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const { id, records, first, total, value, error } = parsed.value;
+                if (records !== undefined && !Array.isArray(records)) return fail('invalid-argument', 'records must be a list of records', { argument: 'records' });
+                if (error !== undefined && (records !== undefined || value !== undefined)) return fail('invalid-argument', 'Give an answer (records, value) or an error, not both', { argument: 'error' });
+                const target = await resolve(parsed.value);
+                if (!isRunTarget(target)) return target;
+                const answer: AgentEffectAnswer =
+                    error !== undefined
+                        ? { error }
+                        : {
+                              answer: {
+                                  ...(records !== undefined && { records: records as LogicEffectAnswer['records'] }),
+                                  ...(first !== undefined && { first }),
+                                  ...(total !== undefined && { total }),
+                                  ...(value !== undefined && { value: value as LogicEffectAnswer['value'] })
+                              }
+                          };
+                if (effects?.answer(target.appId, id, answer) !== true) return fail('not-waiting', 'No effect with this id is waiting for an answer', { ...runName(target), id });
                 return succeed({ ...runName(target), id, answered: true });
             }
         },

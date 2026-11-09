@@ -27,6 +27,7 @@ import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
+import type { AppEffects } from '../infrastructure/sync/AppEffects.js';
 import type { ToolCallLog } from '../application/ports/ToolCallLog.js';
 
 export interface ServicesOptions {
@@ -62,6 +63,8 @@ export interface Services {
     readonly authorities: AppAuthorities;
     /** The calls of Full-mode logic that wait for the agent's answer */
     readonly calls: AppCalls;
+    /** The effects of Full-mode logic that wait for the agent's answer */
+    readonly effects: AppEffects;
     readonly liveViews: LiveViews;
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
@@ -128,6 +131,7 @@ export function createServices(options: ServicesOptions): Services {
         hub,
         authorities,
         calls: authorities.calls,
+        effects: authorities.effects,
         liveViews,
         instanceViews,
         categoryIndex: catalog.categoryIndex(),

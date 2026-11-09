@@ -5,6 +5,7 @@ import type {
     LogicAnswer,
     LogicChange,
     LogicEngine,
+    LogicEffectInfo,
     LogicFailure,
     LogicFunctions,
     LogicHost,
@@ -26,6 +27,9 @@ const APP_ROOT = '$.app';
 
 /** What the app server learns from an app's logic: an `emit` or a failure, for `ui_events_read` */
 export type AppLogicEvent = (name: string, payload: JsonValue | undefined) => void;
+
+/** Answers an app's effects whose function the server does not have (`LogicHost.effect`) */
+export type AppLogicEffect = NonNullable<LogicHost['effect']>;
 
 /** Answers an app's `call` commands */
 export type AppLogicCall = (name: string, payload: JsonValue) => Promise<LogicAnswer>;
@@ -83,7 +87,8 @@ export class AppLogic {
         private readonly report: (message: string, failure: LogicFailure) => void,
         private readonly onCall?: AppLogicCall,
         private readonly gate?: DataGate,
-        private readonly functions?: LogicFunctions
+        private readonly functions?: LogicFunctions,
+        private readonly onEffect?: AppLogicEffect
     ) {
         this.removers.push(
             authority.onApplied((change) => {
@@ -152,6 +157,7 @@ export class AppLogic {
                 timer.unref?.();
                 return () => clearTimeout(timer);
             },
+            ...(this.onEffect === undefined ? {} : { effect: this.onEffect }),
             ...(this.onCall === undefined ? {} : { call: (name: string, payload: AppValue) => (this.onCall as AppLogicCall)(name, payload as JsonValue) }),
             failed: (failure) => {
                 this.report('Logic failed', failure);
@@ -209,6 +215,11 @@ export class AppLogic {
     }
 
     /** The engine's last runs: what started each and what every unit whose trigger matched did; empty without logic */
+    /** Each effect: the token it last acted on, whether a call is running, and how many answers its cache holds */
+    effects(): LogicEffectInfo[] {
+        return this.engine?.effects() ?? [];
+    }
+
     trace(): LogicTraceRun[] {
         return this.engine?.trace() ?? [];
     }

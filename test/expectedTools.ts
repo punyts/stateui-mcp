@@ -2,7 +2,8 @@
  * The tools the server registers, in the order of the design's table (`stateui-owner-tree-and-tools.md`): build time,
  * the owner's data, run time. The design's 35 names: 33 at the owner-tree release, 34 with `ui_patterns_search`
  * (search epic 2, story S2.5), 35 with `ui_pattern_write` (owner-tree epic 3, story O3.9, shipped with search epic 2),
- * 36 with `ui_guide` (K1.1 of the guide-tool epic), which is neither build time nor run time
+ * 36 with `ui_guide` (K1.1 of the guide-tool epic), which is neither build time nor run time, and 37 with
+ * `ui_effect_answer` (L3.6 of logic epic 3)
  */
 export const EXPECTED_TOOLS: readonly string[] = Object.freeze([
     // The guide
@@ -45,6 +46,7 @@ export const EXPECTED_TOOLS: readonly string[] = Object.freeze([
     'ui_command',
     'ui_events_read',
     'ui_call_answer',
+    'ui_effect_answer',
     'ui_logic_trace',
     'ui_file_read',
     'ui_tree'

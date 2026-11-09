@@ -94,6 +94,38 @@ describe('formatLogic', () => {
         ]);
     });
 
+    it('should list compute units, and effects with their status', () => {
+        // Arrange
+        const logic = {
+            computes: { tax: { inputs: { amount: '$.data.lines.{id}.amount' }, run: 'pricing.tax', outputs: { tax: '$.data.lines.{id}.tax' } } },
+            effects: {
+                fetchOrders: {
+                    request: '$.data.orders.request',
+                    run: 'orders.fetch',
+                    status: '$.data.orders.status',
+                    records: { into: '$.data.orders.records', key: 'id' },
+                    window: '^orders',
+                    cache: 20
+                },
+                ping: { request: '$.data.ping', run: 'ping', status: '$.data.pong' }
+            }
+        } as unknown as JsonValue;
+        const state: Record<string, JsonValue> = { '$.data.orders.status': { token: 'abc', state: 'ready', total: 120, at: '2026-01-01T00:00:00.000Z' } };
+
+        // Act
+        const lines = formatLogic(logic, (path) => state[path]);
+
+        // Assert
+        expect(lines).toEqual([
+            'logic',
+            '  compute tax runs pricing.tax inputs amount → tax $.data.lines.{id}.tax',
+            '  effect fetchOrders runs orders.fetch on $.data.orders.request records into $.data.orders.records by id window ^orders cache 20',
+            '    status ready, total 120, token abc (at $.data.orders.status)',
+            '  effect ping runs ping on $.data.ping',
+            '    status idle (at $.data.pong)'
+        ]);
+    });
+
     it('should return no lines when the document has no logic', () => {
         expect(formatLogic(undefined, () => undefined)).toEqual([]);
     });

@@ -6,12 +6,12 @@ import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
 import { WRITES, defineInput, fail, succeed, withGuides } from './toolKit.js';
 import type { ParsedArguments, ToolOutcome, UiToolDefinition } from './toolKit.js';
 
-const UNIT = /^(machines|rules|tables)\.([A-Za-z_][A-Za-z0-9_-]*)$/;
+const UNIT = /^(machines|rules|tables|computes|effects)\.([A-Za-z_][A-Za-z0-9_-]*)$/;
 
 const LOGIC_ITEMS = {
     op: { type: 'string', required: true, enum: ['set', 'remove'], description: 'set adds a unit or replaces it whole; remove takes it out' },
-    unit: { type: 'string', required: true, description: 'The unit: "machines.<name>", "rules.<name>" or "tables.<name>"' },
-    value: { type: 'json', description: 'set only: the whole machine, rule or table' }
+    unit: { type: 'string', required: true, description: 'The unit: "machines.<name>", "rules.<name>", "tables.<name>", "computes.<name>" or "effects.<name>"' },
+    value: { type: 'json', description: 'set only: the whole machine, rule, table, compute unit or effect' }
 } as const;
 
 const LOGIC_WRITE = defineInput({
@@ -37,7 +37,7 @@ type LogicItem = ParsedArguments<typeof LOGIC_ITEMS>;
 function toOperation(item: LogicItem, index: number): LogicOperation | ToolOutcome {
     const match = UNIT.exec(item.unit);
     if (match === null) {
-        return fail('invalid-argument', `operations[${index}].unit must be "machines.<name>", "rules.<name>" or "tables.<name>"; got "${item.unit}"`, {
+        return fail('invalid-argument', `operations[${index}].unit must be "machines.<name>", "rules.<name>", "tables.<name>", "computes.<name>" or "effects.<name>"; got "${item.unit}"`, {
             argument: `operations[${index}].unit`,
             allowed: LOGIC_GROUPS
         });
@@ -53,10 +53,11 @@ function toOperation(item: LogicItem, index: number): LogicOperation | ToolOutco
 }
 
 const DESCRIPTION = [
-    'Build time: write machines, rules and tables by name in an app\'s own logic (app) or in a logic module (module), set whole or removed.',
+    'Build time: write machines, rules, tables, compute units and effects by name in an app\'s own logic (app) or in a logic module (module), set whole or removed.',
     'Triggers: "when" is a state path ("$.data.bag.{id}.qty"; * and {name} match one segment) or the "result" of a save-data or delete-data command, narrowed by "is", "was" (the value the change replaced, $previous) and "if" (an expression).',
     'Commands ("do"): set, merge, copy, toggle, increment, reset, save-data, delete-data, pull-data, query, notify, emit, navigate, reject; a rule whose only command is reject is a guard that refuses the change.',
     'Machines: { state, initial, transitions: [{ from?, when, do?, to? }] }. Tables: { inputs, outputs, rows } write values only: an input is a path, or { path | value, values | breaks }; a row gives conditions for those inputs and values for the outputs, the first matching row wins, and every combination needs a row (a last row with no conditions is the default). rows: { from } takes the rows from a data map.',
+    'Computes: { inputs, run, outputs } run a host function on the inputs and write its answer to the outputs. Effects: { request, run, status, records?: { into, key }, window?, value?, cache? } run an async host function when the request changes (token, abort, records by key, window by position, status); see the effects guide topic.',
     'Timers: "debounce": ms waits for a path to be quiet; "after": ms on a machine transition with "from" fires that long after the machine entered the state.',
     'call (machines only) asks a server procedure and the machine gets the answer as its "as" result.',
     'A module names no node or screen and touches only the data in its needs (SUI-MODULE-NODE, SUI-MODULE-NEEDS); it reads its params as $params.<name>. Create it with needs and params on its first write (no expectedRevision); an app uses it through ui_app_configure.',
