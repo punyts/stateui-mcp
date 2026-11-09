@@ -222,6 +222,46 @@ describe('AppLogic', () => {
         }
     });
 
+    it('should stop logic whose timers fire more often than the limit, and report it once', async () => {
+        vi.useFakeTimers();
+        try {
+            // Arrange: a machine that flips between two states every 10 ms, forever
+            const document = {
+                ...DOCUMENT,
+                logic: {
+                    machines: {
+                        blink: {
+                            state: '$.app.blink',
+                            initial: 'on',
+                            transitions: [
+                                { from: 'on', when: { after: 10 }, to: 'off' },
+                                { from: 'off', when: { after: 10 }, to: 'on' }
+                            ]
+                        }
+                    }
+                }
+            } as unknown as UiDocument;
+            const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true });
+            const failures: string[] = [];
+            const logic = new AppLogic(authority, library, () => undefined, (_message, failure) => failures.push(`${failure.name}: ${failure.reason}`), undefined, undefined, undefined, undefined, {
+                timerRunsPerSecond: 5
+            });
+            logic.setDocument(document);
+
+            // Act
+            vi.advanceTimersByTime(55);
+            const stoppedAt = authority.get('$.app.blink');
+            vi.advanceTimersByTime(1000);
+
+            // Assert
+            expect(failures).toEqual(['timers: more than 5 timers fired in one second, so the logic stopped until the app changes']);
+            expect(authority.get('$.app.blink')).toBe(stoppedAt);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('should run an effect the server registers, keeping its records in $.server', async () => {
         // Arrange
         const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true, serverKey: new Uint8Array(32) });

@@ -60,7 +60,8 @@ export interface RunningServer {
     stop(): Promise<void>;
 }
 
-function loadHostScript(): Buffer {
+/** The compiled browser host script of the app page (`/assets/host.js`) */
+export function loadHostScript(): Buffer {
     const path = join(packageRoot(), 'dist', 'browser', 'host.js');
     if (!existsSync(path)) throw new Error('The browser host script is not built. Run "npm run build" first');
     return readFileSync(path);
@@ -96,10 +97,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         host: options.host,
         port: options.port,
         runtimePort: options.runtimePort ?? (options.port === 0 ? 0 : options.port + 1),
-        useCases: services.useCases,
-        hub: services.hub,
-        liveViews: services.liveViews,
-        instances: services.instanceViews,
+        tenant: { useCases: services.useCases, hub: services.hub, liveViews: services.liveViews, instances: services.instanceViews },
         mcp: sessions,
         runtime,
         ...(chunk3d !== undefined && { chunk3d }),

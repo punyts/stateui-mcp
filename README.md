@@ -260,7 +260,7 @@ An app that is not converted keeps its folder; fix what the report names in that
 ## Security notes
 
 - **Local only by default.** The server binds `127.0.0.1`. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused.
-- **No authentication.** Anyone who can reach the port can read, change and delete every app and use the headless browser. `--host 0.0.0.0` exposes all of that to the network and turns the Host check off. Do it only on a network you trust, or put your own authentication in front.
+- **No authentication.** Anyone who can reach the port can read, change and delete every app and use the headless browser. `--host 0.0.0.0` exposes all of that to the network and turns the Host check off. Do it only on a network you trust, or put your own authentication in front. `@punyts/magnetic` does that: it embeds `startHttpServer` with a `tenant` function that finds the signed-in user's workspace, so each user reaches only their own apps.
 - **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network (`connect-src 'none'`) and no forms. Its origin has its own storage, and it can read cookies that other local servers set for the same host name, but it has no way to send them anywhere except as app events to this server. The headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
 - **Paths.** Only UUIDs reach a file path. A file name is metadata and never part of a path.
 - **Uploads.** The type is sniffed from the bytes; the type the client claims is ignored. HTML, SVG, XML and executables are refused.

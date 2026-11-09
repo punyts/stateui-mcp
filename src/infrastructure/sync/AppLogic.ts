@@ -34,6 +34,15 @@ export type AppLogicEffect = NonNullable<LogicHost['effect']>;
 /** Answers an app's `call` commands */
 export type AppLogicCall = (name: string, payload: JsonValue) => Promise<LogicAnswer>;
 
+/** Bounds on what one instance's logic may do, for a server that runs logic other people wrote */
+export interface AppLogicLimits {
+    /**
+     * The `after` and `debounce` timers that may fire in any one second. One more stops the logic until the document
+     * changes, with a `logic.failed` of kind `chain` named `timers`. Absent: no limit
+     */
+    readonly timerRunsPerSecond?: number;
+}
+
 function covers(outer: string, inner: string): boolean {
     return outer === inner || inner.startsWith(`${outer}.`);
 }
@@ -88,7 +97,8 @@ export class AppLogic {
         private readonly onCall?: AppLogicCall,
         private readonly gate?: DataGate,
         private readonly functions?: LogicFunctions,
-        private readonly onEffect?: AppLogicEffect
+        private readonly onEffect?: AppLogicEffect,
+        private readonly limits: AppLogicLimits = {}
     ) {
         this.removers.push(
             authority.onApplied((change) => {
@@ -153,7 +163,9 @@ export class AppLogic {
             notify: (name, payload) => this.authority.emit(`${NOTIFY_PREFIX}${name}`, payload as SyncValue),
             emit: (name, payload) => this.onEvent(name, payload as JsonValue),
             schedule: (ms, run) => {
-                const timer = setTimeout(run, ms);
+                const timer = setTimeout(() => {
+                    if (this.timerAllowed(host)) run();
+                }, ms);
                 timer.unref?.();
                 return () => clearTimeout(timer);
             },
@@ -168,6 +180,25 @@ export class AppLogic {
         };
         this.engine = createLogicEngine(valid, host);
         this.engine.start({ derive: options.derive !== false });
+    }
+
+    /** When the timers that fired in the last second did, oldest first (`limits.timerRunsPerSecond`) */
+    private readonly timerRuns: number[] = [];
+
+    /** Whether a timer may fire now; past the limit the logic stops and the failure is reported */
+    private timerAllowed(host: LogicHost): boolean {
+        const limit = this.limits.timerRunsPerSecond;
+        if (limit === undefined) return true;
+        const now = Date.now();
+        while (this.timerRuns.length > 0 && (this.timerRuns[0] as number) <= now - 1000) this.timerRuns.shift();
+        if (this.timerRuns.length < limit) {
+            this.timerRuns.push(now);
+            return true;
+        }
+        this.engine?.stop();
+        this.engine = undefined;
+        host.failed?.({ kind: 'chain', name: 'timers', reason: `more than ${limit} timers fired in one second, so the logic stopped until the app changes` });
+        return false;
     }
 
     /** Runs the rules that only derive values, once, as at start (`LogicEngine.derive`) */

@@ -27,17 +27,42 @@ export interface McpEndpoint {
     close(): Promise<void>;
 }
 
-export interface HttpServerOptions {
-    readonly host: string;
-    readonly port: number;
-    /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
-    readonly runtimePort: number;
+/** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
+export interface HttpTenant {
     readonly useCases: UiBuilderUseCases;
     readonly hub: PreviewHub;
     readonly liveViews: LiveViews;
     /** The views of the owner's apps (parts): what a view is sent and the authority its socket talks to */
     readonly instances: InstanceViews;
-    readonly mcp: McpEndpoint;
+    /**
+     * Told when a view's socket opens, with a function that closes it (with 1008 and the reason given, such as on
+     * sign-out); the function it returns is called when the socket closes
+     */
+    readonly retain?: (close: (reason: string) => void) => () => void;
+}
+
+/**
+ * Whose apps a request reaches: the tenant, or a refusal with its status. A page request (`GET` of `/` or of an app)
+ * with a `location` is redirected there instead, such as to a sign-in page
+ */
+export type TenantAnswer = { readonly tenant: HttpTenant } | { readonly refuse: 401 | 403 | 404; readonly location?: string };
+
+export interface HttpServerOptions {
+    readonly host: string;
+    readonly port: number;
+    /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
+    readonly runtimePort: number;
+    /** The one owner of a local server, or how a request finds its owner on a server with many */
+    readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
+    /** MCP at `/mcp`; absent: `/mcp` is not found */
+    readonly mcp?: McpEndpoint;
+    /**
+     * Routes of the embedding server, tried before the endpoint's own and after the host and origin checks: true when
+     * they answered the request. A thrown `HttpError` is answered with its status and code
+     */
+    readonly routes?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+    /** The text frames one view's socket may send per second, with a burst of twice as many; absent: no limit */
+    readonly socketMessagesPerSecond?: number;
     readonly runtime: RuntimeBundle;
     /** The 3D renderer chunk of `@punyts/stateui-3d`, served beside the runtime; absent when it is not installed */
     readonly chunk3d?: RuntimeChunk;
@@ -63,7 +88,8 @@ const MAX_SYNC_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_REPORTED_ERRORS = 50;
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
-class HttpError extends Error {
+/** An error a route answers with: its status, and `{ error: code, message }` as the body */
+export class HttpError extends Error {
     constructor(
         readonly status: number,
         message: string,
@@ -154,7 +180,22 @@ function toBuildErrors(value: unknown): UiBuildError[] {
  * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
-    const { useCases, hub, liveViews, instances, runtime, chunk3d, report } = options;
+    const { runtime, chunk3d, report } = options;
+    const fixed = typeof options.tenant === 'function' ? undefined : { tenant: options.tenant };
+    const findTenant = fixed === undefined ? (options.tenant as (request: IncomingMessage) => Promise<TenantAnswer>) : async (): Promise<TenantAnswer> => fixed;
+
+    /** The tenant of a request; a refusal is thrown, or redirected for a page with a location (then `undefined`) */
+    async function tenantOf(request: IncomingMessage, response: ServerResponse, page: boolean): Promise<HttpTenant | undefined> {
+        const answer = await findTenant(request);
+        if ('tenant' in answer) return answer.tenant;
+        if (page && answer.location !== undefined) {
+            response.writeHead(303, { ...COMMON_HEADERS, Location: answer.location, 'Cache-Control': 'no-store' });
+            response.end();
+            return undefined;
+        }
+        if (answer.refuse === 404) throw new HttpError(404, 'Not found', 'not_found');
+        throw new HttpError(answer.refuse, answer.refuse === 401 ? 'Sign in first' : 'Not allowed', answer.refuse === 401 ? 'unauthorized' : 'forbidden');
+    }
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
     // Both known after listen, so a port of 0 works
@@ -195,14 +236,17 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const path = url.pathname;
         const method = request.method ?? 'GET';
 
-        if (path === '/mcp') {
+        if (options.routes !== undefined && (await options.routes(request, response))) return;
+        if (path === '/mcp' && options.mcp !== undefined) {
             const body = method === 'POST' ? await readJsonBody(request, MAX_JSON_BODY_BYTES) : undefined;
             await options.mcp.handle(request, response, body);
             return;
         }
         if (method === 'GET' && path === '/') {
+            const tenant = await tenantOf(request, response, true);
+            if (tenant === undefined) return;
             // The owner's app parts, the most recently changed first
-            const apps = [...(await instances.list())].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+            const apps = [...(await tenant.instances.list())].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
             send(response, 200, 'text/html; charset=utf-8', indexPage(apps), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
             return;
         }
@@ -220,16 +264,22 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const appId = parts[1];
             if (!isAppId(appId)) throw new HttpError(400, 'An app id is a UUID', 'invalid_id');
             const rest = parts.slice(2);
-            if (method === 'GET' && rest.length === 0) return appRoute(request, response, appId);
-            if (method === 'POST' && rest.length === 1 && rest[0] === 'report') return reportRoute(request, response, appId);
-            if (method === 'POST' && rest.length === 1 && rest[0] === 'files') return uploadRoute(request, response, appId);
-            if (method === 'GET' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return downloadRoute(response, appId, rest[1]);
-            if (method === 'DELETE' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return releaseRoute(response, appId, rest[1]);
+            const page = method === 'GET' && rest.length === 0;
+            const fileId = rest.length === 2 && rest[0] === 'files' ? rest[1] : undefined;
+            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
+            if (known) {
+                const tenant = await tenantOf(request, response, page);
+                if (tenant === undefined) return;
+                if (page) return appRoute(tenant, request, response, appId);
+                if (method === 'POST') return rest[0] === 'report' ? reportRoute(tenant, request, response, appId) : uploadRoute(tenant, request, response, appId);
+                if (method === 'GET') return downloadRoute(tenant, response, appId, fileId as string);
+                return releaseRoute(tenant, response, appId, fileId as string);
+            }
         }
         throw new HttpError(404, 'Not found', 'not_found');
     }
 
-    async function appRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function appRoute({ instances }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
@@ -250,7 +300,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         );
     }
 
-    async function reportRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function reportRoute({ hub, useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const body = await readJsonBody(request, MAX_REPORT_BODY_BYTES);
         if (!isJsonObject(body) || !isUuid(typeof body['viewId'] === 'string' ? body['viewId'] : null)) {
             throw new HttpError(400, 'A report is a JSON object with a viewId', 'invalid_report');
@@ -281,7 +331,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
     }
 
-    async function uploadRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function uploadRoute({ useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const contentType = request.headers['content-type'] ?? '';
         if (!/^multipart\/form-data/i.test(contentType)) throw new HttpError(400, 'Send multipart/form-data with one field named file', 'invalid_upload');
         const result = await new Promise<UploadFileResult | undefined>((resolve, reject) => {
@@ -320,7 +370,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
     }
 
-    async function downloadRoute(response: ServerResponse, appId: string, fileId: string): Promise<void> {
+    async function downloadRoute({ useCases }: HttpTenant, response: ServerResponse, appId: string, fileId: string): Promise<void> {
         if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
         const result = await useCases.readFile.execute(appId, fileId);
         if (result.kind === 'not-found') throw new HttpError(404, 'No file with this id', 'not_found');
@@ -339,7 +389,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
      * Releases a file (`fileRelease` of the runtime, through the host page). The host and same-origin checks of `handler`
      * apply, as to every method but GET and HEAD. A file the app's definition or live state still references stays: `409`
      */
-    async function releaseRoute(response: ServerResponse, appId: string, fileId: string): Promise<void> {
+    async function releaseRoute({ useCases }: HttpTenant, response: ServerResponse, appId: string, fileId: string): Promise<void> {
         if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
         const result = await useCases.releaseFile.execute(appId, fileId);
         switch (result.kind) {
@@ -397,6 +447,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const viewId = url.searchParams.get('view');
         if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
         if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
+        const answer = await findTenant(request);
+        if (!('tenant' in answer)) return refuseUpgrade(socket, answer.refuse, answer.refuse === 404 ? 'Not Found' : answer.refuse === 401 ? 'Unauthorized' : 'Forbidden');
+        const { instances, liveViews, hub, retain } = answer.tenant;
         const part = await instances.find(appId);
         if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
         const first = await liveViews.attachMessage(appId);
@@ -409,6 +462,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             };
             const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
             const detach = hub.attach(appId, connection);
+            const release = retain?.((reason) => ws.close(1008, reason.slice(0, 120)));
             sendView(first);
             const session = authority.connect({
                 send: (text) => {
@@ -417,10 +471,24 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 close: () => ws.close()
             });
             const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
+            const rate = options.socketMessagesPerSecond;
+            // A token bucket: `rate` frames a second, at most twice that many at once
+            let tokens = rate === undefined ? 0 : rate * 2;
+            let filledAt = Date.now();
             ws.on('message', (data, isBinary) => {
                 if (isBinary) {
                     ws.close(1003, 'Text frames only');
                     return;
+                }
+                if (rate !== undefined) {
+                    const now = Date.now();
+                    tokens = Math.min(rate * 2, tokens + ((now - filledAt) / 1000) * rate);
+                    filledAt = now;
+                    if (tokens < 1) {
+                        ws.close(1008, 'Too many messages');
+                        return;
+                    }
+                    tokens -= 1;
                 }
                 hub.touch(appId, viewId);
                 session.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
@@ -430,6 +498,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 clearInterval(timer);
                 session.close();
                 detach();
+                release?.();
             });
         });
     }

@@ -9,7 +9,7 @@ import type { UiDocument } from '../../domain/UiApp.js';
 import { AppCalls } from './AppCalls.js';
 import type { AppProcedure } from './AppCalls.js';
 import { AppEffects } from './AppEffects.js';
-import type { DataGate } from './AppLogic.js';
+import type { AppLogicLimits, DataGate } from './AppLogic.js';
 import { AppLogic } from './AppLogic.js';
 import { appNamespace } from './FileNamespaceStorage.js';
 import type { InstanceStart } from './InstanceStart.js';
@@ -34,6 +34,13 @@ export interface AppLogicOptions {
     procedures?: Readonly<Record<string, AppProcedure>>;
     /** The compute, expression and effect functions the logic runs by name */
     functions?: LogicFunctions;
+    /**
+     * Whether a `call` with no procedure and an effect with no function wait for the agent (`ui_call_answer`,
+     * `ui_effect_answer`); false: they fail at once, as on a server where no agent answers them. Default true
+     */
+    agentAnswers?: boolean;
+    /** Bounds on each instance's logic */
+    limits?: AppLogicLimits;
 }
 
 /**
@@ -133,16 +140,20 @@ export class AppAuthorities {
 
     private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true): void {
         if (this.logic === undefined) return;
-        const { library, report } = this.logic;
+        const { library, report, procedures, agentAnswers = true } = this.logic;
         const logic = new AppLogic(
             authority,
             library,
             (name, payload) => this.onEmit(appId, name, payload, LOGIC_VIEW_ID),
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
-            (name, payload) => this.calls.ask(appId, name, payload),
+            agentAnswers || procedures !== undefined
+                ? (name, payload) =>
+                      agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
+                : undefined,
             this.gateOf(namespace),
             this.logic.functions,
-            (request, signal) => this.effects.ask(appId, request, signal)
+            agentAnswers ? (request, signal) => this.effects.ask(appId, request, signal) : undefined,
+            this.logic.limits
         );
         this.logics.set(namespace, logic);
         try {

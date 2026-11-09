@@ -28,6 +28,7 @@ import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanc
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
 import type { AppEffects } from '../infrastructure/sync/AppEffects.js';
+import type { AppLogicLimits } from '../infrastructure/sync/AppLogic.js';
 import type { ToolCallLog } from '../application/ports/ToolCallLog.js';
 
 export interface ServicesOptions {
@@ -50,6 +51,10 @@ export interface ServicesOptions {
     readonly toolLog?: string;
     /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
     readonly ownerId?: string;
+    /** Whether logic `call`s and effects the server has no function for wait for the agent's answer; default true (`AppLogicOptions.agentAnswers`) */
+    readonly agentAnswers?: boolean;
+    /** Bounds on each instance's logic, for a server that runs logic other people wrote */
+    readonly logicLimits?: AppLogicLimits;
 }
 
 /** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
@@ -103,7 +108,9 @@ export function createServices(options: ServicesOptions): Services {
             library,
             report: options.report,
             ...(options.procedures !== undefined && { procedures: options.procedures }),
-            ...(options.logicFunctions !== undefined && { functions: options.logicFunctions })
+            ...(options.logicFunctions !== undefined && { functions: options.logicFunctions }),
+            ...(options.agentAnswers !== undefined && { agentAnswers: options.agentAnswers }),
+            ...(options.logicLimits !== undefined && { limits: options.logicLimits })
         },
         datasets
     );
