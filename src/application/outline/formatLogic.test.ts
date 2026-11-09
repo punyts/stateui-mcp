@@ -59,12 +59,21 @@ describe('formatLogic', () => {
             },
             tables: {
                 shipping: {
-                    when: { path: '$.data.order' },
-                    inputs: { country: '$.data.order.country' },
+                    inputs: {
+                        country: { path: '$.data.order.country', values: ['NL', '*'] },
+                        total: { path: '$.data.order.total', breaks: [50] },
+                        note: '$.data.order.note'
+                    },
+                    outputs: { fee: '$.data.order.shipping' },
                     rows: [
-                        { match: { country: 'NL' }, if: '$total >= 50', do: [{ command: 'set', target: '$.data.order.shipping', value: 0 }] },
-                        { do: [{ command: 'set', target: '$.data.order.shipping', value: 5 }] }
+                        { country: 'NL', total: '>=50', fee: 0 },
+                        { country: '*', fee: '{{ $total / 10 }}' }
                     ]
+                },
+                rate: {
+                    inputs: { country: { path: '$.data.order.country', values: { keys: '$.data.countries' } } },
+                    outputs: { fee: '$.data.order.fee' },
+                    rows: { from: '$.data.rates' }
                 }
             }
         } as unknown as JsonValue;
@@ -78,9 +87,10 @@ describe('formatLogic', () => {
             '  machine lookup: idle (at $.app.lookup)',
             '    idle → waiting when $.app.query was none debounce 300 ms: call find as found',
             '    waiting → idle after 5000 ms',
-            '  table shipping when $.data.order inputs country',
-            '    country = NL, if $total >= 50: set',
-            '    otherwise: set'
+            '  table shipping inputs country (NL, *), total (breaks 50), note → fee $.data.order.shipping',
+            '    country NL, total >=50 → fee 0',
+            '    otherwise → fee {{ $total / 10 }}',
+            '  table rate inputs country (keys of $.data.countries) rows from $.data.rates → fee $.data.order.fee'
         ]);
     });
 

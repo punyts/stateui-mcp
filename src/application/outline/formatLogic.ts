@@ -41,6 +41,16 @@ function commands(list: JsonValue | undefined): string {
     return `: ${names.join(', ')}`;
 }
 
+/** How an input's values show: ` (NL, BE, *)`, ` (breaks 50, 100)`, ` (keys of $.data.countries)`, or nothing for a plain input */
+function inputValues(raw: JsonValue | undefined): string {
+    if (!isJsonObject(raw)) return '';
+    const values = raw['values'];
+    if (Array.isArray(values)) return ` (${shorten(values.map((value) => (typeof value === 'string' ? value : JSON.stringify(value))).join(', '))})`;
+    if (isJsonObject(values) && typeof values['keys'] === 'string') return ` (keys of ${values['keys']})`;
+    if (Array.isArray(raw['breaks'])) return ` (breaks ${raw['breaks'].join(', ')})`;
+    return '';
+}
+
 /** A rule whose only command is `reject` refuses changes instead of reacting to them */
 function isGuard(rule: JsonObject): boolean {
     const list = rule['do'];
@@ -49,8 +59,8 @@ function isGuard(rule: JsonObject): boolean {
 
 /**
  * The lines of a document's `logic`: each machine with its current state (from `stateAt`, else its initial state)
- * and one line per transition, each rule and guard with its trigger and commands, then each table with its trigger
- * and one line per row. Empty when there is no logic
+ * and one line per transition, each rule and guard with its trigger and commands, then each table with its inputs (and
+ * their values), its outputs and one line per row (or where its rows come from). Empty when there is no logic
  */
 export function formatLogic(logic: JsonValue | undefined, stateAt: (path: string) => JsonValue | undefined): string[] {
     if (!isJsonObject(logic)) return [];
@@ -78,15 +88,17 @@ export function formatLogic(logic: JsonValue | undefined, stateAt: (path: string
     const tables = isJsonObject(logic['tables']) ? logic['tables'] : {};
     for (const [name, table] of Object.entries(tables)) {
         if (!isJsonObject(table)) continue;
-        const inputs = isJsonObject(table['inputs']) ? Object.keys(table['inputs']) : [];
-        lines.push(`  table ${name} ${trigger(table['when'])}${inputs.length === 0 ? '' : ` inputs ${inputs.join(', ')}`}`);
-        const rows = Array.isArray(table['rows']) ? (table['rows'] as readonly JsonValue[]) : [];
-        for (const row of rows) {
+        const inputs = isJsonObject(table['inputs']) ? table['inputs'] : {};
+        const outputs = isJsonObject(table['outputs']) ? Object.entries(table['outputs']) : [];
+        const shownInputs = Object.entries(inputs).map(([input, raw]) => `${input}${inputValues(raw)}`);
+        const rows = table['rows'];
+        const source = isJsonObject(rows) && typeof rows['from'] === 'string' ? ` rows from ${rows['from']}` : '';
+        lines.push(`  table ${name} inputs ${shownInputs.join(', ')}${source} → ${outputs.map(([output, path]) => `${output} ${show(path)}`).join(', ')}`);
+        for (const row of Array.isArray(rows) ? (rows as readonly JsonValue[]) : []) {
             if (!isJsonObject(row)) continue;
-            const parts: string[] = [];
-            if (isJsonObject(row['match'])) parts.push(...Object.entries(row['match']).map(([input, value]) => `${input} = ${show(value)}`));
-            if (typeof row['if'] === 'string') parts.push(`if ${show(row['if'])}`);
-            lines.push(`    ${parts.length === 0 ? 'otherwise' : parts.join(', ')}${commands(row['do'])}`);
+            const conditions = Object.entries(row).filter(([key]) => Object.hasOwn(inputs, key) && row[key] !== '*');
+            const values = outputs.filter(([output]) => Object.hasOwn(row, output)).map(([output]) => `${output} ${show(row[output])}`);
+            lines.push(`    ${conditions.length === 0 ? 'otherwise' : conditions.map(([input, value]) => `${input} ${show(value)}`).join(', ')} → ${values.join(', ')}`);
         }
     }
     return lines.length === 0 ? [] : ['logic', ...lines];

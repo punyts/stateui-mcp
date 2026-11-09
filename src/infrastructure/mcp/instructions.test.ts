@@ -378,9 +378,9 @@ ${START_HERE}`;
         const text = buildServerInstructions(INDEX, PRESETS);
 
         // Assert
-        expect(pointed.map((topic) => topic.name)).toEqual(['parts', 'paths', 'revisions', 'modules', 'logic', 'live-view', 'files', 'drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'safety']);
+        expect(pointed.map((topic) => topic.name)).toEqual(['parts', 'paths', 'revisions', 'modules', 'logic', 'tables', 'live-view', 'files', 'drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'safety']);
         expect(text.endsWith(`\n\n${pointed.map(pointerLine).join('\n')}`)).toBe(true);
-        expect(pointerLine(guideTopic('logic')!)).toBe('Before a machine, rule or table, read ui_guide topic logic.');
+        expect(pointerLine(guideTopic('logic')!)).toBe('Before a machine or rule, read ui_guide topic logic.');
         for (const topic of pointed) expect(text).not.toContain(topic.text({ index: INDEX, presets: PRESETS }));
     });
 

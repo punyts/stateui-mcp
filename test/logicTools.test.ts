@@ -21,8 +21,9 @@ const SHOP = deepFreeze({
 
 const TOTALS_RULE = deepFreeze({ when: { path: '$.data.bag' }, do: [{ command: 'set', target: '$.data.totals.net', value: "{{ sum($.data.bag, 'lineTotal') }}" }] });
 const LINES_TABLE = deepFreeze({
-    when: { path: '$.data.bag.{id}.qty' },
-    rows: [{ do: [{ command: 'set', target: '$.data.bag.{id}.lineTotal', value: '{{ $value * 10 }}' }] }]
+    inputs: { qty: '$.data.bag.{id}.qty' },
+    outputs: { lineTotal: '$.data.bag.{id}.lineTotal' },
+    rows: [{ lineTotal: '{{ $qty * 10 }}' }]
 });
 
 let data: TempData;

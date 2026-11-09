@@ -105,7 +105,7 @@ describe('buildServerInstructions from the topics', () => {
 
         // Assert
         expect(text).not.toContain(guideText('logic', CATALOG));
-        expect(text.endsWith('\n\nBefore a machine, rule or table, read ui_guide topic logic.')).toBe(true);
+        expect(text.endsWith('\n\nBefore a machine or rule, read ui_guide topic logic.')).toBe(true);
         expect(text.match(/read ui_guide topic/g)).toHaveLength(1);
     });
 
