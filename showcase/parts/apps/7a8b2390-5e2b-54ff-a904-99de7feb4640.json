@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **96** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **97** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -85,7 +85,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 8
+                          "value": 9
                         },
                         "open": {
                           "component": "link",
@@ -285,7 +285,7 @@
             "content": {
               "component": "panel",
               "_title": "Layout",
-              "_description": "Boxes, rows, folding sections, and settings and dashboard panels that hold other components. 8 components.",
+              "_description": "Boxes, rows, folding sections, and settings and dashboard panels that hold other components. 9 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -479,6 +479,39 @@
                             "element": "p",
                             "_text": "Revenue grew by 12% this quarter. Drag the divider to give this pane more room, or fold the inbox away."
                           }
+                        }
+                      }
+                    }
+                  }
+                },
+                "window": {
+                  "component": "card",
+                  "_title": "window",
+                  "_subtitle": "A window with a title bar and frame buttons; dragged and resized in an adhoc layout, written on release",
+                  "children": {
+                    "example": {
+                      "component": "window",
+                      "_title": "Release notes",
+                      "icon": "notes",
+                      "controls": [
+                        "minimize",
+                        "maximize",
+                        "close"
+                      ],
+                      "layout": {
+                        "type": "column",
+                        "gap": "sm"
+                      },
+                      "children": {
+                        "version": {
+                          "component": "text",
+                          "textRole": "caption",
+                          "_text": "Version 2.4, out today"
+                        },
+                        "body": {
+                          "component": "text",
+                          "element": "p",
+                          "_text": "On a desktop with an adhoc layout this window is dragged by its title bar and resized by its edge. Here it holds its content as a framed panel."
                         }
                       }
                     }

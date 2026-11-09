@@ -97,6 +97,19 @@
                 }
             }
         },
+        "window": {
+            "example": {
+                "component": "window",
+                "_title": "Release notes",
+                "icon": "notes",
+                "controls": ["minimize", "maximize", "close"],
+                "layout": { "type": "column", "gap": "sm" },
+                "children": {
+                    "version": { "component": "text", "textRole": "caption", "_text": "Version 2.4, out today" },
+                    "body": { "component": "text", "element": "p", "_text": "On a desktop with an adhoc layout this window is dragged by its title bar and resized by its edge. Here it holds its content as a framed panel." }
+                }
+            }
+        },
         "dashboardGrid": {
             "wide": true,
             "example": {
