@@ -4,7 +4,7 @@ export { loadHostScript, startServer } from './config/startServer.js';export { i
 export { HttpError, startHttpServer } from './infrastructure/http/HttpServer.js';
 export type { HttpServerOptions, HttpTenant, RunningHttpServer, TenantAnswer } from './infrastructure/http/HttpServer.js';
 export { escapeHtml, PAGE_CSS } from './infrastructure/http/pages.js';
-export { COMMON_HEADERS, isSameOrigin } from './infrastructure/http/security.js';
+export { COMMON_HEADERS, hostPageCsp, isSameOrigin, requestHostName } from './infrastructure/http/security.js';
 export { loadChunk3d, loadRuntimeBundle } from './infrastructure/http/runtimeBundle.js';
 export { loadCatalogFile } from './infrastructure/stateUiLibrary.js';
 export { BrowserPreview } from './infrastructure/preview/BrowserPreview.js';
@@ -15,3 +15,5 @@ export type { AppLogicLimits } from './infrastructure/sync/AppLogic.js';
 export type { Services, ServicesOptions } from './config/createServices.js';
 export { createStateUiMcpServer, createStateUiTools, STATEUI_MCP_SERVER_NAME } from './infrastructure/mcp/StateUiMcpServer.js';
 export type { StateUiToolDependencies } from './infrastructure/mcp/StateUiMcpServer.js';
+export { buildServerInstructions } from './infrastructure/mcp/instructions.js';
+export type { ToolOutcome, UiToolDefinition } from './infrastructure/mcp/toolKit.js';
