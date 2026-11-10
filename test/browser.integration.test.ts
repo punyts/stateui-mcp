@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, Page, WebSocketRoute } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
-import { call, createApp, httpHarness, rootOf, tempData } from './helpers.js';
+import { call, createApp, FORM_ROOT, httpHarness, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -1865,5 +1865,92 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
         expect(Math.hypot(...(after as number[]))).toBeCloseTo(5, 3);
         expect((after as number[])[0]).not.toBeCloseTo(0, 2);
         expect(await valueAt('$.data.ui.p1.chosen')).toBe('none');
+    });
+});
+
+describe.skipIf(!installed)('the host script serving an editor over the page (stateuiHost)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    let page: Page;
+    const SAVE = '$.screens.home.children.form.children.save';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        await step(harness, 'ui_model_write', { model: 'note', operations: [{ op: 'set', field: 'title', type: 'string', required: true }] });
+        await createApp(harness.client, 'editing', FORM_ROOT, { data: { notes: { model: 'note', scope: 'persona' } } });
+        const preview = await call(harness.client, 'ui_preview', { app: 'editing' });
+        browser = await chromium.launch();
+        page = await browser.newPage();
+        await page.goto(String(preview.body['url']));
+        await page.frameLocator('iframe').getByRole('button', { name: 'Save' }).waitFor();
+        await page.evaluate(() => {
+            const seen: unknown[] = [];
+            (window as unknown as { seen: unknown[] }).seen = seen;
+            window.addEventListener('stateui:change', (event) => seen.push((event as CustomEvent).detail));
+        });
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    type Answer = { at?: string; nodes: { path: string; component: string; rect: { x: number; y: number; width: number; height: number }; children: { path: string }[] }[] };
+    const inspect = (query: object): Promise<Answer | undefined> =>
+        page.evaluate((q) => (window as unknown as { stateuiHost: { inspect(q: object): Promise<Answer | undefined> } }).stateuiHost.inspect(q), query);
+
+    it('should answer inspect with the nodes of some paths, and with the node at a point and its ancestors', async () => {
+        // Act
+        const byPath = await inspect({ paths: [SAVE] });
+        const box = byPath?.nodes[0]?.rect ?? { x: 0, y: 0, width: 0, height: 0 };
+        const byPoint = await inspect({ at: { x: box.x + box.width / 2, y: box.y + box.height / 2 } });
+
+        // Assert
+        expect(byPath?.nodes.map((node) => node.path)).toEqual([SAVE]);
+        expect(box.width).toBeGreaterThan(0);
+        expect(byPoint?.at).toBe(SAVE);
+        expect(byPoint?.nodes.map((node) => node.path)).toEqual([SAVE, '$.screens.home.children.form', '$.screens.home', '$.app']);
+        expect(byPoint?.nodes[1]?.children.map((child) => child.path)).toEqual(['$.screens.home.children.form.children.email', SAVE]);
+    });
+
+    it("should raise stateui:change for the person's own change and for a change from the server", async () => {
+        // Act
+        await page.frameLocator('iframe').getByLabel('Email').fill('x@y.test');
+        await call(harness.client, 'ui_state_set', { app: 'editing', path: '$.data.notes.n1', value: { title: 'one' } });
+        await page.waitForFunction(() => (window as unknown as { seen: { origin: string }[] }).seen.some((change) => change.origin === 'server'));
+        const seen = await page.evaluate(() => (window as unknown as { seen: { path: string; value: unknown; origin: string }[] }).seen);
+
+        // Assert
+        expect(seen.some((change) => change.origin === 'user' && change.path.startsWith('$.screens.home.children.form.children.email'))).toBe(true);
+        expect(seen).toContainEqual({ path: '$.data.notes.n1', value: { title: 'one' }, origin: 'server' });
+    });
+
+    it('should mount a frame the page drives: it takes a write and raises its emits on its element', async () => {
+        // Arrange
+        const panel = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', on: { press: { command: 'emit', target: 'picked', value: 'x' } } } } } };
+
+        // Act
+        await page.evaluate((document_) => {
+            const element = document.createElement('div');
+            element.id = 'inspector';
+            document.body.append(element);
+            const emits: unknown[] = [];
+            (window as unknown as { emits: unknown[] }).emits = emits;
+            element.addEventListener('stateui:emit', (event) => emits.push((event as CustomEvent).detail));
+            const host = (window as unknown as { stateuiHost: { mount(e: HTMLElement, a: object): { write(w: object[]): void } } }).stateuiHost;
+            host.mount(element, { document: document_ }).write([{ path: '$.app.children.go._title', value: 'Pick' }]);
+        }, panel);
+        const mounted = page.frameLocator('#inspector iframe');
+        await mounted.getByRole('button', { name: 'Pick' }).click();
+        await page.waitForFunction(() => (window as unknown as { emits: unknown[] }).emits.length > 0);
+        const emits = await page.evaluate(() => (window as unknown as { emits: unknown[] }).emits);
+        const appEmits = await call(harness.client, 'ui_events_read', { app: 'editing' });
+
+        // Assert
+        expect(emits).toEqual([{ name: 'picked', payload: 'x' }]);
+        expect((appEmits.body['events'] as { name: string }[]).some((event) => event.name === 'picked')).toBe(false);
     });
 });

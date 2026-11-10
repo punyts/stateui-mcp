@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **An editor can work over the page (`window.stateuiHost`).** `inspect({ at: { x, y } } | { paths })` asks the app
+  frame about its nodes (the runtime's `inspect` message) and resolves with the `inspected` answer, or undefined after
+  2 s. Every change of the synced state is raised on `window` as `stateui:change` (`detail.path`, `detail.value`,
+  `detail.origin`: `user` or `server`). `mount(element, { document, icons? })` puts a second runtime frame in
+  `element`, driven by the page alone in `standalone` mode: it takes `write(writes)` and `command(...)`, raises its
+  emits on `element` as `stateui:emit`, and never syncs. Magnetic draws its inspector with it.
 - **A page can take keys and hear events.** A host page may name keys in `data-host-keys` (space-separated chords
   such as `mod+shift+e`). The host script sends them in `load`, and a key the runtime posts back is raised on
   `window` as the `stateui:key` event (`detail.key`). Every `emit` of the app is raised as `stateui:emit`

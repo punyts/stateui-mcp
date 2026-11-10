@@ -35,7 +35,16 @@
  * The page it runs in can take part: `data-host-keys` on the body names key chords (`mod+shift+e`, space-separated)
  * the runtime gives the page instead of the app, each raised on `window` as a `stateui:key` event (`detail.key`),
  * and every `emit` of the app is raised there too, as a `stateui:emit` event (`detail.name`, `detail.payload`), as
- * well as sent to the server.
+ * well as sent to the server. Every change of the synced state is raised as `stateui:change` (`detail.path`,
+ * `detail.value`, undefined for a delete, and `detail.origin`, `user` for the person's own change in this view, else
+ * `server`; a whole state the sync client loads comes as one change of `$.data`).
+ *
+ * `window.stateuiHost` serves an editor laid over the page:
+ * - `inspect({ at: { x, y } } | { paths })` asks the app frame about its nodes (the `inspect` message of the runtime)
+ *   and resolves with its `inspected` answer, or undefined when the frame does not answer within `INSPECT_TIMEOUT_MS`.
+ * - `mount(element, { document, icons? })` puts a second runtime frame in `element`, driven by the page alone: it is
+ *   loaded in `standalone` mode with the document given, takes the page's writes and commands, and raises its emits on
+ *   `element` (not on `window`) as `stateui:emit`. It never syncs. Magnetic draws its inspector with it.
  *
  * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
@@ -77,6 +86,8 @@ const CHUNK_HASH = /^[0-9a-f]{16}$/;
 const NODE_KEYS: readonly string[] = ['component', 'on', 'layout', 'placement', 'theme'];
 const CONTENT_PREFIX = '_';
 const VIEW_FRAME = '{"type":"view"';
+/** How long `stateuiHost.inspect` waits for the frame to answer */
+const INSPECT_TIMEOUT_MS = 2000;
 
 interface AppMessage {
     type: 'app';
@@ -325,6 +336,9 @@ class LiveView {
     private readonly uploads = new Map<number, XMLHttpRequest>();
     /** Holds a file release back until the frame's changes have reached the server (`fileRelease.ts`) */
     private readonly releaseGate = createReleaseGate();
+    /** The `inspect` messages waiting for their answer, by id */
+    private readonly inspections = new Map<number, (answer: JsonRecord | undefined) => void>();
+    private inspection = 0;
 
     constructor(private readonly body: HTMLElement) {
         this.appId = body.dataset['appId'] ?? '';
@@ -387,11 +401,16 @@ class LiveView {
     /** The sync client's view of the frame: state comes in as loads and writes, the frame's own changes go out */
     private bridge(): StoreBridge {
         return {
-            load: (state) => this.showState(viewState(state)),
+            load: (state) => {
+                const next = viewState(state);
+                this.showState(next);
+                changed('$.data', next.data, 'server');
+            },
             write: (path, value) => {
                 const next = copy(this.synced ?? this.shown);
                 applyTo(next, path, value === undefined ? 'delete' : 'set', value);
                 this.showState(next);
+                changed(path, value, 'server');
             },
             subscribe: (onChanges) => {
                 this.listeners.add(onChanges);
@@ -663,6 +682,9 @@ class LiveView {
             case 'key':
                 if (typeof message['key'] === 'string' && this.hostKeys.includes(message['key'])) window.dispatchEvent(new CustomEvent('stateui:key', { detail: { key: message['key'] } }));
                 break;
+            case 'inspected':
+                if (typeof message['id'] === 'number') this.inspections.get(message['id'])?.({ ...message } as JsonRecord);
+                break;
             case 'error':
                 if (Array.isArray(message['errors'])) this.report({ type: 'errors', errors: message['errors'], revision: this.revision, load: this.load });
                 break;
@@ -713,6 +735,25 @@ class LiveView {
         if (this.synced !== undefined) applyTo(this.synced, synced.path, synced.op, synced.value);
         const local: LocalChange = { id: crypto.randomUUID(), ...synced };
         for (const listener of [...this.listeners]) listener([local]);
+        changed(synced.path, synced.value, 'user');
+    }
+
+    /** Asks the frame about its nodes; undefined when it is not loaded or does not answer in time */
+    inspect(query: { at: { x: number; y: number } } | { paths: string[] }): Promise<JsonRecord | undefined> {
+        if (!this.ready) return Promise.resolve(undefined);
+        const id = ++this.inspection;
+        return new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                this.inspections.delete(id);
+                resolve(undefined);
+            }, INSPECT_TIMEOUT_MS);
+            this.inspections.set(id, (answer) => {
+                clearTimeout(timer);
+                this.inspections.delete(id);
+                resolve(answer);
+            });
+            this.post({ type: 'inspect', id, ...query });
+        });
     }
 
     /** Applies an overlay in this view only: the change it causes is not synced */
@@ -812,4 +853,89 @@ class LiveView {
     }
 }
 
-new LiveView(document.body).start();
+/** Raises a change of the synced state on the page, for an editor that shows the state as it changes */
+function changed(path: string, value: Json | undefined, origin: 'user' | 'server'): void {
+    window.dispatchEvent(new CustomEvent('stateui:change', { detail: { path, value, origin } }));
+}
+
+/**
+ * A runtime frame the page drives alone: loaded in `standalone` mode with a document the page gives, it takes the
+ * page's writes and commands and raises its emits on its element. Nothing of it is synced or stored
+ */
+class PageView {
+    private readonly nonce = createNonce();
+    private readonly frame: HTMLIFrameElement;
+    private ready = false;
+    private readonly queued: Record<string, unknown>[] = [];
+    private readonly listener = (event: MessageEvent<unknown>): void => this.onMessage(event);
+
+    constructor(
+        private readonly element: HTMLElement,
+        private readonly runtimeUrl: string,
+        private readonly runtimeOrigin: string,
+        app: { document: JsonRecord; icons?: Record<string, string> },
+        title: string
+    ) {
+        const frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        frame.title = title;
+        frame.addEventListener('load', () => {
+            const icons = iconsMessage(app.icons ?? {}, new Set());
+            this.send({ type: 'load', document: app.document, mode: 'standalone', ...(icons !== undefined && { icons }) });
+        });
+        frame.src = `${this.runtimeUrl}#${this.nonce}`;
+        window.addEventListener('message', this.listener);
+        element.append(frame);
+        this.frame = frame;
+    }
+
+    /** Writes paths of the frame's store (`$.data`, whole nodes below `$.screens`), once it is ready */
+    write(writes: PathWrite[]): void {
+        for (let start = 0; start < writes.length; start += MAX_WRITES) this.later({ type: 'write', writes: writes.slice(start, start + MAX_WRITES) });
+    }
+
+    /** Runs a command of a node, or `navigate` to a screen */
+    command(target: string, command: string, value?: Json): void {
+        this.later({ type: 'command', target, command, ...(value !== undefined && { value }) });
+    }
+
+    dispose(): void {
+        window.removeEventListener('message', this.listener);
+        this.frame.remove();
+    }
+
+    private later(message: Record<string, unknown>): void {
+        if (this.ready) this.send(message);
+        else this.queued.push(message);
+    }
+
+    private send(message: Record<string, unknown>): void {
+        this.frame.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
+    }
+
+    private onMessage(event: MessageEvent<unknown>): void {
+        if (event.source !== this.frame.contentWindow || event.origin !== this.runtimeOrigin) return;
+        const message = event.data as RuntimeMessage;
+        if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
+        if (message['type'] === 'ready') {
+            this.ready = true;
+            for (const queued of this.queued.splice(0)) this.send(queued);
+            this.element.dispatchEvent(new CustomEvent('stateui:ready'));
+        } else if (message['type'] === 'emit' && typeof message['name'] === 'string') {
+            this.element.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
+        } else if (message['type'] === 'error') {
+            this.element.dispatchEvent(new CustomEvent('stateui:error', { detail: { errors: message['errors'] } }));
+        }
+    }
+}
+
+const live = new LiveView(document.body);
+(window as unknown as { stateuiHost: unknown }).stateuiHost = {
+    inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => live.inspect(query),
+    mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string> }, title = 'Panel') => {
+        const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
+        const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
+        return { write: (writes: PathWrite[]) => view.write(writes), command: (target: string, command: string, value?: Json) => view.command(target, command, value), dispose: () => view.dispose() };
+    }
+};
+live.start();
