@@ -32,6 +32,11 @@
  * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
  * and its errors.
  *
+ * The page it runs in can take part: `data-host-keys` on the body names key chords (`mod+shift+e`, space-separated)
+ * the runtime gives the page instead of the app, each raised on `window` as a `stateui:key` event (`detail.key`),
+ * and every `emit` of the app is raised there too, as a `stateui:emit` event (`detail.name`, `detail.payload`), as
+ * well as sent to the server.
+ *
  * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
  */
@@ -43,6 +48,9 @@ import { readStoredFile } from './fileRead.js';
 import { createReleaseGate, releaseStoredFile } from './fileRelease.js';
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
+
+/** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
+const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?[a-z0-9]$/;
 
 /** The app events an app server's logic sends to the views: failures and `notify.<name>` */
 function isLogicEvent(name: string): boolean {
@@ -279,6 +287,8 @@ class LiveView {
     /** The hash of the 3D renderer chunk the runtime origin serves (`data-chunk-3d`), sent in `load` as `chunks`; undefined when there is none */
     private readonly chunk3d: string | undefined;
     private readonly namespace: string;
+    /** The key chords the page handles itself (`data-host-keys`), sent in `load` as `keys` */
+    private readonly hostKeys: string[];
     /** An owner app's view: the state is the default persona's instance */
     private readonly instance: boolean;
     /** `?screen=` and `?params=`: where the view navigates once the app is first ready */
@@ -325,6 +335,7 @@ class LiveView {
         this.chunk3d = CHUNK_HASH.test(chunk3d) ? chunk3d : undefined;
         this.namespace = body.dataset['namespace'] || `apps.${this.appId.toLowerCase()}`;
         this.instance = this.namespace.startsWith('instances.');
+        this.hostKeys = (body.dataset['hostKeys'] ?? '').split(/\s+/).filter((key) => HOST_KEY.test(key)).slice(0, 16);
         this.syncStatus = { mode: 'full', status: 'connecting', waiting: 0 };
         const query = new URLSearchParams(window.location.search);
         this.mode = query.get('mode') ?? undefined;
@@ -589,7 +600,8 @@ class LiveView {
             mode: 'full',
             ...(this.synced !== undefined && (this.instance ? { instance: this.instanceOf(this.synced) } : { state: { data: this.synced.data, app: this.synced.app } })),
             ...(icons !== undefined && { icons }),
-            ...(this.chunk3d !== undefined && { chunks: { '3d': this.chunk3d } })
+            ...(this.chunk3d !== undefined && { chunks: { '3d': this.chunk3d } }),
+            ...(this.hostKeys.length > 0 && { keys: this.hostKeys })
         });
         this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
         this.loaded = true;
@@ -643,7 +655,13 @@ class LiveView {
                 this.onChange(message['change']);
                 break;
             case 'emit':
-                if (typeof message['name'] === 'string') this.client?.emit(message['name'], message['payload'] as Json | undefined);
+                if (typeof message['name'] === 'string') {
+                    this.client?.emit(message['name'], message['payload'] as Json | undefined);
+                    window.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
+                }
+                break;
+            case 'key':
+                if (typeof message['key'] === 'string' && this.hostKeys.includes(message['key'])) window.dispatchEvent(new CustomEvent('stateui:key', { detail: { key: message['key'] } }));
                 break;
             case 'error':
                 if (Array.isArray(message['errors'])) this.report({ type: 'errors', errors: message['errors'], revision: this.revision, load: this.load });

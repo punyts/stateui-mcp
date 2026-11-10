@@ -268,15 +268,14 @@ function framed(content) {
 }
 
 /**
- * The header each screen places: the title and the theme switch. The pickers show `$.data.preferences.current`, which
- * they write together with the active theme, so the header of every screen shows the same choice
+ * The header each screen places: the title and the theme switch. The pickers show and save `$.data.preferences.current`
+ * through their link, and set the active theme on change, so the header of every screen shows the same choice
  */
 function headerPart() {
     const presets = {};
     for (const preset of PRESET_ORDER) presets[`showcase-${preset}`] = { _label: titleOf(preset) };
     const picker = (kind) => [
-        { command: 'set', target: `$.theme.active.${kind}`, from: '.value' },
-        { command: 'set', target: `$.data.preferences.current.${kind}`, from: '.value' }
+        { command: 'set', target: `$.theme.active.${kind}`, from: '.value' }
     ];
     return {
         summary: 'The header of the showcase: its title and the switches of the theme preset and of light or dark',

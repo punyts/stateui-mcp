@@ -50,11 +50,6 @@
                     "command": "set",
                     "target": "$.theme.active.theme",
                     "from": ".value"
-                  },
-                  {
-                    "command": "set",
-                    "target": "$.data.preferences.current.theme",
-                    "from": ".value"
                   }
                 ]
               }
@@ -80,11 +75,6 @@
                   {
                     "command": "set",
                     "target": "$.theme.active.mode",
-                    "from": ".value"
-                  },
-                  {
-                    "command": "set",
-                    "target": "$.data.preferences.current.mode",
                     "from": ".value"
                   }
                 ]

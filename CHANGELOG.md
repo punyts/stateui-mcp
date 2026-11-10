@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **A page can take keys and hear events.** A host page may name keys in `data-host-keys` (space-separated chords
+  such as `mod+shift+e`). The host script sends them in `load`, and a key the runtime posts back is raised on
+  `window` as the `stateui:key` event (`detail.key`). Every `emit` of the app is raised as `stateui:emit`
+  (`detail.name`, `detail.payload`), so a page built from a StateUI app can act on its buttons. Magnetic uses both.
+- **The showcase header saves the theme once** (fix): its theme and mode pickers both linked
+  `$.data.preferences.current` and set it on change, which `SUI-ON-LINKED` now refuses. The set is gone; the link
+  saves the choice.
 - **A page can place the app frame.** The host script appends the frame to the element marked `data-app-frame`
   when the page has one, and to the body otherwise. Magnetic puts it in a frame on a canvas.
 - **A json argument can carry a schema.** `JsonField.schema` gives the JSON Schema of the value when it has one shape.
