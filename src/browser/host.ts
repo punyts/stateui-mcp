@@ -507,7 +507,8 @@ class LiveView {
             if (this.app !== undefined) this.sendLoad();
         });
         frame.src = `${this.runtimeUrl}#${this.nonce}`;
-        this.body.append(frame);
+        // A page that lays the frame out itself, such as a canvas, marks where it goes with `data-app-frame`
+        (this.body.querySelector<HTMLElement>('[data-app-frame]') ?? this.body).append(frame);
         this.frame = frame;
     }
 

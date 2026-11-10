@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- **A page can place the app frame.** The host script appends the frame to the element marked `data-app-frame`
+  when the page has one, and to the body otherwise. Magnetic puts it in a frame on a canvas.
 - **A json argument can carry a schema.** `JsonField.schema` gives the JSON Schema of the value when it has one shape.
   `ui_app_create` uses it for `themes` (`{ type: "array", items: { type: "string" } }`). Before, `themes` had no
   type, and Haiku 5.5 sent the list as a JSON string, which was refused.
