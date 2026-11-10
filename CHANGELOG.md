@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- **`logicRunOrder` is exported** (from `@punyts/stateui-app/core`): the units of an app's logic in run order with the
+  paths each reads and writes. Magnetic's State tab shows them beside each path.
 - **An editor can work over the page (`window.stateuiHost`).** `inspect({ at: { x, y } } | { paths })` asks the app
   frame about its nodes (the runtime's `inspect` message) and resolves with the `inspected` answer, or undefined after
   2 s. Every change of the synced state is raised on `window` as `stateui:change` (`detail.path`, `detail.value`,

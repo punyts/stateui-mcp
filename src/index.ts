@@ -22,3 +22,6 @@ export type { CopiedPart, CopyAppOptions, CopyAppResult } from './application/co
 export { DEFAULT_PERSONA, isPersonaName } from './domain/InstanceKey.js';
 export { appNamespace } from './infrastructure/sync/FileNamespaceStorage.js';
 export type { RevokedApp } from './infrastructure/http/HttpServer.js';
+/** The units of an app's logic in run order, each with the paths it reads and writes; for an editor that shows who uses a path */
+export { logicRunOrder } from '@punyts/stateui-app/core';
+export type { LogicDocument, LogicUnitPlace } from '@punyts/stateui-app/core';
