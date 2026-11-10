@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **A json argument can carry a schema.** `JsonField.schema` gives the JSON Schema of the value when it has one shape.
+  `ui_app_create` uses it for `themes` (`{ type: "array", items: { type: "string" } }`). Before, `themes` had no
+  type, and Haiku 5.5 sent the list as a JSON string, which was refused.
 - **Sharing an app with other people** (for M6 of `@punyts/magnetic`):
   - **Persona instances.** An instance is keyed by its persona too. `FileUiInstanceRepository` takes a persona
     (default `DEFAULT_PERSONA`), keeps its files under `personas/<persona>/` and locks per persona.

@@ -42,6 +42,12 @@ describe('defineInput json and list fields', () => {
         expect(properties['items']).toMatchObject({ type: 'array', maxItems: 2, items: { type: 'object', additionalProperties: false, required: ['name'] } });
         expect(required).toEqual(['value']);
     });
+
+    it('should describe a json field with a schema by that schema, so a model sends a list and not a string', () => {
+        const names = defineInput({ names: { type: 'json', schema: { type: 'array', items: { type: 'string' } }, description: 'Names' } });
+
+        expect(names.schema.properties['names']).toEqual({ type: 'array', items: { type: 'string' }, description: 'Names' });
+    });
 });
 
 describe('documentPath and statePath', () => {

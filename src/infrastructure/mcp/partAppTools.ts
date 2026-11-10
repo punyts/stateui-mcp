@@ -32,7 +32,7 @@ export const HOME_ARGUMENT = {
 /** The `ui_app_create` arguments of an app of parts, beside `name` */
 export const PART_APP_FIELDS = {
     title: { type: 'string', description: 'The title' },
-    themes: { type: 'json', description: 'uses.themes, a list of owner theme names; the first is the default' },
+    themes: { type: 'json', schema: { type: 'array', items: { type: 'string' } }, description: 'uses.themes, a list of owner theme names; the first is the default' },
     data: {
         type: 'object',
         description: 'uses.data, each $.data name bound to { dataset: "dataset-name" } or { model: "model-name", scope: "persona" }'

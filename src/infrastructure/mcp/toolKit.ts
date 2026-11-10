@@ -40,6 +40,8 @@ export interface ObjectField extends FieldBase {
 /** Any JSON value: a string, number, boolean, null, list or object. Checked deeply; nothing else is accepted */
 export interface JsonField extends FieldBase {
     readonly type: 'json';
+    /** The JSON Schema of the value when it has one shape, such as a list of names; without it any JSON value */
+    readonly schema?: Readonly<Record<string, unknown>>;
 }
 
 /** A list of objects with the same fields, between `minItems` and `maxItems` long */
@@ -110,7 +112,7 @@ function fieldSchema(field: Field): Readonly<Record<string, unknown>> {
         case 'object':
             return { type: 'object', description: field.description };
         case 'json':
-            return { description: field.description };
+            return { ...field.schema, description: field.description };
         case 'list':
             return {
                 type: 'array',
