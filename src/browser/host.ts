@@ -59,7 +59,7 @@
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
  */
 
-import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace } from '@punyts/state-sync';
+import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace, randomId } from '@punyts/state-sync';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { createReleaseGate } from './fileRelease.js';
@@ -293,7 +293,7 @@ function localStore(): LocalStore {
 /** The live view of one app in the page: the runtime frame, its sync client and the channel to the server */
 export class LiveView {
     readonly appId: string;
-    readonly viewId = crypto.randomUUID();
+    readonly viewId = randomId();
     readonly viewKind: 'browser' | 'headless';
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
@@ -721,7 +721,7 @@ export class LiveView {
         if (synced === undefined) return;
         applyTo(this.shown, synced.path, synced.op, synced.value);
         if (this.synced !== undefined) applyTo(this.synced, synced.path, synced.op, synced.value);
-        const local: LocalChange = { id: crypto.randomUUID(), ...synced };
+        const local: LocalChange = { id: randomId(), ...synced };
         for (const listener of [...this.listeners]) listener([local]);
         changed(synced.path, synced.value, 'user');
     }
