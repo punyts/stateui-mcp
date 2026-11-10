@@ -17,3 +17,8 @@ export { createStateUiMcpServer, createStateUiTools, STATEUI_MCP_SERVER_NAME } f
 export type { StateUiToolDependencies } from './infrastructure/mcp/StateUiMcpServer.js';
 export { buildServerInstructions } from './infrastructure/mcp/instructions.js';
 export type { ToolOutcome, UiToolDefinition } from './infrastructure/mcp/toolKit.js';
+export { copyAppParts } from './application/copyAppParts.js';
+export type { CopiedPart, CopyAppOptions, CopyAppResult } from './application/copyAppParts.js';
+export { DEFAULT_PERSONA, isPersonaName } from './domain/InstanceKey.js';
+export { appNamespace } from './infrastructure/sync/FileNamespaceStorage.js';
+export type { RevokedApp } from './infrastructure/http/HttpServer.js';

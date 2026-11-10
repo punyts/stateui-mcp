@@ -44,9 +44,9 @@ export class InstanceViews {
         return this.parts.findById('apps', appId);
     }
 
-    /** The sync namespace of the app's instance, which the page's sync client names */
-    namespace(app: UiPart<'apps'>): string {
-        return appNamespace({ persona: DEFAULT_PERSONA, ownerId: this.ownerId, appId: app.id });
+    /** The sync namespace of a persona's instance of the app (the default persona's unless named), which the page's sync client names */
+    namespace(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): string {
+        return appNamespace({ persona, ownerId: this.ownerId, appId: app.id });
     }
 
     /** The assembled app as a view message, with the path data of the icons it uses beyond the core set */
@@ -75,9 +75,12 @@ export class InstanceViews {
         return this.revisions.get(appId)?.revision;
     }
 
-    /** The authority of the app's instance; a changed definition restarts it, which closes the views' sockets */
-    authority(app: UiPart<'apps'>): Promise<Authority> {
-        return this.states.authority(app);
+    /**
+     * The authority of a persona's instance of the app (the default persona's unless named); a changed definition
+     * restarts it, which closes the views' sockets
+     */
+    authority(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Authority> {
+        return this.states.authority(app, persona);
     }
 
     /** The app parts that show a change of this part: the app itself, and every app that reaches the part */

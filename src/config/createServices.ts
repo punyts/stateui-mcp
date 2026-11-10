@@ -5,6 +5,7 @@ import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.
 import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
 import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
+import type { UiPartRepository } from '../application/ports/UiPartRepository.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
@@ -63,6 +64,8 @@ export const LOCAL_OWNER_ID = '00000000-0000-4000-8000-000000000001';
 /** Everything the transports need: the use cases, the live views and the browser */
 export interface Services {
     readonly useCases: UiBuilderUseCases;
+    /** The owner's parts, for a server that copies an app between owners (`copyAppParts`) */
+    readonly parts: UiPartRepository;
     readonly hub: PreviewHub;
     /** The sync authority of each running instance: the views connect to it, the tools write through it */
     readonly authorities: AppAuthorities;
@@ -116,7 +119,7 @@ export function createServices(options: ServicesOptions): Services {
     );
     const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
     const instances = new FileUiInstanceRepository(folders, lock, ownerId);
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets);
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, (persona) => new FileUiInstanceRepository(folders, lock, ownerId, persona));
     const fileRepository = new FileUiFileRepository(folders, lock, now);
     const fileStore = new FsUiFileStore(folders);
     const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
@@ -135,6 +138,7 @@ export function createServices(options: ServicesOptions): Services {
     });
     return {
         useCases,
+        parts,
         hub,
         authorities,
         calls: authorities.calls,

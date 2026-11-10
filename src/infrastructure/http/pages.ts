@@ -56,6 +56,11 @@ export interface AppPageOptions {
     readonly viewKind: 'browser' | 'headless';
     /** The sync namespace of the view's state: the app's instance */
     readonly namespace: string;
+    /**
+     * Why the app was taken back from the person (`data-revoked`): the host script deletes what the browser keeps
+     * under the namespace and shows this instead of the app
+     */
+    readonly revoked?: string;
 }
 
 /** `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame */
@@ -69,7 +74,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}"${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}" data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}"${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`} data-status="loading">`,
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',

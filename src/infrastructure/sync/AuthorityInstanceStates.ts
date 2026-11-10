@@ -2,7 +2,7 @@ import type { Authority } from '@punyts/state-sync/authority';
 import type { InstanceShape, InstanceStates, InstanceWriteOptions } from '../../application/ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
-import { DEFAULT_PERSONA, instanceKeyText } from '../../domain/InstanceKey.js';
+import { DEFAULT_PERSONA, instanceKeyText, isPersonaName } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiPart } from '../../domain/UiPart.js';
@@ -22,10 +22,13 @@ interface Running {
     readonly document: string;
     /** The authority, attached to the dataset hub; made on first use */
     ready?: Promise<Authority>;
+    readonly key: InstanceKey;
 }
 
 /**
- * The default persona's running instances of the owner's apps, on `AppAuthorities`. Each call assembles the app again;
+ * The running instances of the owner's apps, on `AppAuthorities`: the default persona's, which the tools read and
+ * write, and those of other personas (the people an app is shared with), which only views' sockets reach (`authority`
+ * with a persona). Each call assembles the app again;
  * when the assembled document differs from the one the instance runs (the app or a part it reaches was written), the
  * instance's authority is closed, its state saved as its instance, and started again over the new definition, so the
  * views reconnect to it. A change of only the records of a shared dataset is not a definition change: the dataset hub
@@ -41,7 +44,9 @@ export class AuthorityInstanceStates implements InstanceStates {
         private readonly authorities: AppAuthorities,
         private readonly ownerId: string,
         private readonly report: InstanceProblemReport,
-        private readonly hub?: DatasetHub
+        private readonly hub?: DatasetHub,
+        /** The instances of a persona other than the default one; absent: only the default persona exists */
+        private readonly personaInstances?: (persona: string) => UiInstanceRepository
     ) {}
 
     async shape(app: UiPart<'apps'>): Promise<InstanceShape> {
@@ -63,22 +68,47 @@ export class AuthorityInstanceStates implements InstanceStates {
         return this.authorities.instanceState(start, storage);
     }
 
+    /** Stops the app's instances, the other personas' too, and runs `whileStopped` before the default one may start again */
     async stop(app: UiPart<'apps'>, whileStopped: () => Promise<void>): Promise<void> {
         const key = this.key(app);
+        await this.stopOthers(app.id, () => true);
         const text = instanceKeyText(key);
         await this.lock.run(text, async () => {
-            if (this.running.has(text)) {
-                this.hub?.detach(appNamespace(key));
-                await this.authorities.forgetInstance(key);
-                this.running.delete(text);
-            }
+            await this.forget(text);
             await whileStopped();
         });
     }
 
-    /** The authority of the app's running instance, for a view's socket; started (or restarted over a changed definition) first */
-    async authority(app: UiPart<'apps'>): Promise<Authority> {
-        return this.open(await this.started(app));
+    /**
+     * The authority of the app's running instance for a view's socket: the default persona's, or another persona's
+     * (`isPersonaName`). Started, or restarted over a changed definition, first
+     */
+    async authority(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Authority> {
+        if (persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(persona))) throw new Error(`No persona "${persona}"`);
+        return this.open(await this.started(app, persona));
+    }
+
+    /** Closes a running instance (its views reconnect) and forgets it. Under the instance's lock */
+    private async forget(text: string): Promise<void> {
+        const running = this.running.get(text);
+        if (running === undefined) return;
+        this.hub?.detach(appNamespace(running.key));
+        await this.authorities.forgetInstance(running.key);
+        this.running.delete(text);
+    }
+
+    /**
+     * Stops the app's running instances of other personas that `stale` picks, each under its own lock. Their views
+     * reconnect, which starts them again over the app's definition as it is then
+     */
+    private async stopOthers(appId: string, stale: (running: Running) => boolean): Promise<void> {
+        const others = [...this.running].filter(([, running]) => running.key.appId === appId && running.key.persona !== DEFAULT_PERSONA && stale(running));
+        for (const [text] of others) {
+            await this.lock.run(text, async () => {
+                const running = this.running.get(text);
+                if (running !== undefined && stale(running)) await this.forget(text);
+            });
+        }
     }
 
     /** The running instance's authority, attached to the dataset hub once */
@@ -97,14 +127,14 @@ export class AuthorityInstanceStates implements InstanceStates {
         return ready;
     }
 
-    private key(app: UiPart<'apps'>): InstanceKey {
-        return { persona: DEFAULT_PERSONA, ownerId: this.ownerId, appId: app.id };
+    private key(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): InstanceKey {
+        return { persona, ownerId: this.ownerId, appId: app.id };
     }
 
-    private started(app: UiPart<'apps'>): Promise<Running> {
-        const key = this.key(app);
+    private async started(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Running> {
+        const key = this.key(app, persona);
         const text = instanceKeyText(key);
-        return this.lock.run(text, async () => {
+        const running = await this.lock.run(text, async () => {
             const start = await assembleInstance(this.parts, app, key);
             const document = definitionText(start);
             const current = this.running.get(text);
@@ -112,13 +142,14 @@ export class AuthorityInstanceStates implements InstanceStates {
                 current.start = start;
                 return current;
             }
-            if (current !== undefined) {
-                this.hub?.detach(appNamespace(key));
-                await this.authorities.forgetInstance(key);
-            }
-            const running: Running = { start, storage: new InstanceNamespaceStorage(start, this.instances, this.report), document };
-            this.running.set(text, running);
-            return running;
+            if (current !== undefined) await this.forget(text);
+            const instances = persona === DEFAULT_PERSONA ? this.instances : (this.personaInstances as (persona: string) => UiInstanceRepository)(persona);
+            const started: Running = { start, storage: new InstanceNamespaceStorage(start, instances, this.report), document, key };
+            this.running.set(text, started);
+            return started;
         });
+        // The definition the default persona runs is the one the views are sent: other personas' instances over an older one restart
+        if (persona === DEFAULT_PERSONA) await this.stopOthers(app.id, (other) => other.document !== running.document);
+        return running;
     }
 }

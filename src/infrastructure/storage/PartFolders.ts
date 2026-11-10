@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import { isKeyName } from '@punyts/stateui-app/core';
-import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
+import { DEFAULT_PERSONA, isPersonaName } from '../../domain/InstanceKey.js';
 import type { PartKind } from '../../domain/partName.js';
 import { isPartKind } from '../../domain/UiPart.js';
 
@@ -62,17 +62,22 @@ export class PartFolders {
         return join(this.root, 'rename.pending.json');
     }
 
-    /** The default persona's diff of one app of one owner */
-    instanceFile(ownerId: string, appId: string): string {
+    /** A persona's diff of one app of one owner; the default persona's when none is named */
+    instanceFile(ownerId: string, appId: string, persona: string = DEFAULT_PERSONA): string {
         if (!UUID.test(ownerId)) throw new Error('An owner id is a UUID');
         if (!UUID.test(appId)) throw new Error('An app id is a UUID');
-        return join(this.root, 'personas', DEFAULT_PERSONA, 'apps', ownerId.toLowerCase(), `${appId.toLowerCase()}.json`);
+        return join(this.personaDir(persona), 'apps', ownerId.toLowerCase(), `${appId.toLowerCase()}.json`);
     }
 
-    /** The folder of the default persona's datasets of one app */
-    personaDataDir(appId: string): string {
+    /** The folder of a persona's datasets of one app; the default persona's when none is named */
+    personaDataDir(appId: string, persona: string = DEFAULT_PERSONA): string {
         if (!UUID.test(appId)) throw new Error('An app id is a UUID');
-        return join(this.root, 'personas', DEFAULT_PERSONA, 'data', appId.toLowerCase());
+        return join(this.personaDir(persona), 'data', appId.toLowerCase());
+    }
+
+    private personaDir(persona: string): string {
+        if (!isPersonaName(persona)) throw new Error('A persona name is lower-case letters, digits and dashes');
+        return join(this.root, 'personas', persona);
     }
 
     /**
@@ -80,10 +85,10 @@ export class PartFolders {
      * `^` and its small letter (`notesByDay` is `notes^by^day.json`), so two names that differ in case get two files on a
      * file system that ignores case
      */
-    personaDataFile(appId: string, binding: string): string {
+    personaDataFile(appId: string, binding: string, persona: string = DEFAULT_PERSONA): string {
         if (!isKeyName(binding)) throw new Error('A binding name is a key name');
         const file = binding.replace(/[A-Z]/g, (capital) => `^${capital.toLowerCase()}`);
-        return join(this.personaDataDir(appId), `${file}.json`);
+        return join(this.personaDataDir(appId, persona), `${file}.json`);
     }
 
     dir(appId: string): string {

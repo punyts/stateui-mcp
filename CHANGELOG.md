@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+- **Sharing an app with other people** (for M6 of `@punyts/magnetic`):
+  - **Persona instances.** An instance is keyed by its persona too. `FileUiInstanceRepository` takes a persona
+    (default `DEFAULT_PERSONA`), keeps its files under `personas/<persona>/` and locks per persona.
+    `AuthorityInstanceStates.authority(app, persona)` runs one authority per persona. When the default instance
+    restarts over a changed definition, the other personas' instances of that app restart too. Stopping an app stops
+    them all. `InstanceViews.namespace` and `authority` take the persona. `isPersonaName` checks a name.
+  - **Tenants of other people.** `HttpTenant` takes `persona` (whose instance the views sync with) and `access`
+    (`owner`, `use` or `view`). `use` and `view` may not upload or release the app's files. A `view` socket has
+    each change rejected (`ack` `rejected`) and its events dropped.
+  - **Revoked apps.** The tenant function may answer `{ revoked: { message, namespace, name } }`. The app's page then
+    carries `data-revoked`, and the host script deletes what the browser keeps under the namespace. The socket opens,
+    sends the sync error `revoked` and closes with 1008. `retain`'s close function takes `revoked`, so a view that
+    is open is sent the same error before it closes. The host script answers it as it does a deleted app.
+  - **`copyAppParts(from, to, appId, { name? })`** copies an app and every part it reaches into another owner's parts,
+    as a remix does. A part the target already has with the same body is reused. One whose name the target uses
+    otherwise is renamed (`-2`), and the bodies that name it are rewritten. No state and no uploaded files are
+    copied.
+  - `createServices` returns `parts`. The package exports `appNamespace`, `DEFAULT_PERSONA`, `isPersonaName`,
+    `copyAppParts` and `RevokedApp`.
+  - Tests: `copyAppParts.test.ts` and `instanceStates.test.ts` (instances of other personas).
 - **The agent's instructions and tool types for an embedding server** (for `@punyts/magnetic`, which runs its own agent over `createStateUiTools`): the package exports `buildServerInstructions` (the text MCP clients get as the server's `instructions`) and the types `UiToolDefinition` and `ToolOutcome`; and `hostPageCsp` and `requestHostName`, so its editor page can hold an app frame as `/apps/<id>` does.
 - **One browser endpoint for many owners** (for `@punyts/magnetic`): `startHttpServer` takes `tenant` in place of `useCases`, `hub`, `liveViews` and `instances`: either one `HttpTenant` (a local server, as `startServer` passes) or a function that finds the tenant of each request, or refuses it (`{ refuse: 401 | 403 | 404, location? }`; a page request with a `location` is redirected there, such as to a sign-in page). Every route and the view socket go through it, so an app id of another owner is not found. A tenant's `retain(close)` is told when a view socket opens, with a function that closes it (1008 and a reason), and returns the function called when it closes. `mcp` is optional (`/mcp` is not found without it), `routes` adds the embedding server's routes before the endpoint's own, and `socketMessagesPerSecond` closes a view socket that sends more text frames than that (with a burst of twice as many; 1008 `Too many messages`). The package exports `startHttpServer`, `HttpError`, `installShowcase`, `loadHostScript`, `loadRuntimeBundle`, `loadChunk3d`, `loadCatalogFile`, `BrowserPreview`, `escapeHtml`, `PAGE_CSS`, `COMMON_HEADERS`, `isSameOrigin` and `LOCAL_OWNER_ID` for it.
 - **Logic other people wrote**: `createServices` takes `agentAnswers` (default true): false makes a `call` with no procedure and an effect with no function fail at once, as on a server where no agent answers them, instead of waiting for `ui_call_answer` or `ui_effect_answer`. `logicLimits.timerRunsPerSecond` bounds the `after` and `debounce` timers that may fire in any one second per instance: one more stops the instance's logic until its document changes, with a `logic.failed` of kind `chain` named `timers`. Test in `AppLogic.test.ts` (a machine that flips every 10 ms stops after the limit and reports once).

@@ -382,3 +382,68 @@ describe('InstanceNamespaceStorage', () => {
         await expect(storage.load('apps.00000000-0000-4000-8000-000000000001')).rejects.toThrow('is not the namespace of this instance');
     });
 });
+
+describe('instances of other personas', () => {
+    const PERSONA = '00000000-0000-4000-8000-0000000000b1';
+
+    /** A server whose apps other personas use, each with instances of their own */
+    function sharing(): Running {
+        const report = vi.fn();
+        const authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET });
+        const lock = new KeyedLock();
+        const states = new AuthorityInstanceStates(parts, instances, authorities, OWNER, report, undefined, (persona) => new FileUiInstanceRepository(folders, lock, OWNER, persona));
+        return { authorities, states, setState: new SetPartState(parts, states, validator, QUIET), report };
+    }
+
+    it("should keep a persona's state in its own files and namespace, apart from the owner's", async () => {
+        // Arrange
+        const { states, authorities } = sharing();
+
+        // Act
+        const theirs = await states.authority(await app(), PERSONA);
+        theirs.write({ path: '$.data.bag', op: 'set', value: LINES });
+        const owners = await states.state(await app());
+        await authorities.close();
+
+        // Assert
+        expect(theirs.namespace).toBe(appNamespace({ persona: PERSONA, ownerId: OWNER, appId }));
+        expect(owners['data']).toMatchObject({ bag: {} });
+        expect((await new FileUiInstanceRepository(folders, new KeyedLock(), OWNER, PERSONA).getData(appId, 'bag')).value).toEqual({ model: 'bag-line', records: LINES });
+        expect((await instances.getData(appId, 'bag')).value).toBeUndefined();
+        expect(folders.personaDataFile(appId, 'bag', PERSONA)).toContain(join('personas', PERSONA, 'data'));
+    });
+
+    it("should restart a persona's instance when the owner's definition changes, and stop it with the app", async () => {
+        // Arrange
+        const { states, authorities } = sharing();
+        const first = await states.authority(await app(), PERSONA);
+        const closed = vi.fn();
+        first.connect({ send: () => undefined, close: closed });
+
+        // Act
+        await writePart.execute({ kind: 'apps', name: 'store', body: store(0.05), expectedRevision: 1 });
+        await states.shape(await app());
+        const second = await states.authority(await app(), PERSONA);
+        const again = vi.fn();
+        second.connect({ send: () => undefined, close: again });
+        await states.stop(await app(), async () => undefined);
+        await authorities.close();
+
+        // Assert
+        expect(closed).toHaveBeenCalled();
+        expect(second).not.toBe(first);
+        expect(again).toHaveBeenCalled();
+    });
+
+    it('should refuse a persona when only the default one exists, or a name that is not a persona name', async () => {
+        // Arrange
+        const plain = server();
+        const { states, authorities } = sharing();
+
+        // Act / Assert
+        await expect(plain.states.authority(await app(), PERSONA)).rejects.toThrow('No persona');
+        await expect(states.authority(await app(), '../x')).rejects.toThrow('No persona');
+        await plain.authorities.close();
+        await authorities.close();
+    });
+});

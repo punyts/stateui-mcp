@@ -15,6 +15,7 @@ import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { Authority } from '@punyts/state-sync/authority';
+import { REVOKED_CODE } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
@@ -36,16 +37,40 @@ export interface HttpTenant {
     readonly instances: InstanceViews;
     /**
      * Told when a view's socket opens, with a function that closes it (with 1008 and the reason given, such as on
-     * sign-out); the function it returns is called when the socket closes
+     * sign-out; with `revoked`, the view is first sent the sync error `revoked`, so it deletes what it keeps of the
+     * app); the function it returns is called when the socket closes
      */
-    readonly retain?: (close: (reason: string) => void) => () => void;
+    readonly retain?: (close: (reason: string, revoked?: boolean) => void) => () => void;
+    /**
+     * The persona whose instance of the app the views sync with; default the owner's own (`DEFAULT_PERSONA`). Another
+     * person given an app keeps their own state in it under a persona of their own (`isPersonaName`)
+     */
+    readonly persona?: string;
+    /**
+     * What the request may do: `owner` (default) anything; `use` run the app with its own state, but not upload or
+     * release the app's files; `view` that and no change to the state either: each change a view sends is rejected
+     * (`ack` `rejected`) and its events are dropped
+     */
+    readonly access?: 'owner' | 'use' | 'view';
+}
+
+/**
+ * An app taken back from the person asking: its page deletes what the browser keeps of it (`data-revoked`) and shows
+ * the message, and its socket answers the sync error `revoked`, so an open page deletes it too
+ */
+export interface RevokedApp {
+    readonly message: string;
+    /** The sync namespace the person kept the app's state under */
+    readonly namespace: string;
+    /** The app's name, for the page title */
+    readonly name: string;
 }
 
 /**
  * Whose apps a request reaches: the tenant, or a refusal with its status. A page request (`GET` of `/` or of an app)
  * with a `location` is redirected there instead, such as to a sign-in page
  */
-export type TenantAnswer = { readonly tenant: HttpTenant } | { readonly refuse: 401 | 403 | 404; readonly location?: string };
+export type TenantAnswer = { readonly tenant: HttpTenant } | { readonly refuse: 401 | 403 | 404; readonly location?: string } | { readonly revoked: RevokedApp };
 
 export interface HttpServerOptions {
     readonly host: string;
@@ -188,6 +213,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     async function tenantOf(request: IncomingMessage, response: ServerResponse, page: boolean): Promise<HttpTenant | undefined> {
         const answer = await findTenant(request);
         if ('tenant' in answer) return answer.tenant;
+        if ('revoked' in answer) throw new HttpError(403, answer.revoked.message, 'revoked');
         if (page && answer.location !== undefined) {
             response.writeHead(303, { ...COMMON_HEADERS, Location: answer.location, 'Cache-Control': 'no-store' });
             response.end();
@@ -268,18 +294,37 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const fileId = rest.length === 2 && rest[0] === 'files' ? rest[1] : undefined;
             const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
             if (known) {
+                if (page) {
+                    const answer = await findTenant(request);
+                    if ('revoked' in answer) return revokedRoute(answer.revoked, request, response, appId);
+                }
                 const tenant = await tenantOf(request, response, page);
                 if (tenant === undefined) return;
                 if (page) return appRoute(tenant, request, response, appId);
-                if (method === 'POST') return rest[0] === 'report' ? reportRoute(tenant, request, response, appId) : uploadRoute(tenant, request, response, appId);
+                const owner = (tenant.access ?? 'owner') === 'owner';
+                if (method === 'POST' && rest[0] === 'report') return reportRoute(tenant, request, response, appId);
                 if (method === 'GET') return downloadRoute(tenant, response, appId, fileId as string);
+                if (!owner) throw new HttpError(403, "Only the app's owner adds or removes its files", 'forbidden');
+                if (method === 'POST') return uploadRoute(tenant, request, response, appId);
                 return releaseRoute(tenant, response, appId, fileId as string);
             }
         }
         throw new HttpError(404, 'Not found', 'not_found');
     }
 
-    async function appRoute({ instances }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    /** The page of an app taken back: it deletes what the browser keeps of the app and says why */
+    function revokedRoute(revoked: RevokedApp, request: IncomingMessage, response: ServerResponse, appId: string): void {
+        const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
+        send(
+            response,
+            200,
+            'text/html; charset=utf-8',
+            appPage({ appId, name: revoked.name, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: 'browser', namespace: revoked.namespace, revoked: revoked.message }),
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
+        );
+    }
+
+    async function appRoute({ instances, persona }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
@@ -294,7 +339,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
                 ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
                 viewKind: headless ? 'headless' : 'browser',
-                namespace: instances.namespace(part)
+                namespace: instances.namespace(part, persona)
             }),
             { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
         );
@@ -427,6 +472,26 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_SYNC_FRAME_BYTES });
 
+    /**
+     * For a view that may only look: a change is rejected at once (its path shows the authority's value again) and an
+     * event is dropped. True when the frame was one of them, so it never reaches the authority
+     */
+    function refuseWrite(text: string, ws: WebSocket): boolean {
+        let frame: unknown;
+        try {
+            frame = JSON.parse(text);
+        } catch {
+            return false;
+        }
+        if (!isJsonObject(frame)) return false;
+        if (frame['type'] === 'emit') return true;
+        if (frame['type'] !== 'change') return false;
+        const change = frame['change'];
+        const id = isJsonObject(change) && typeof change['id'] === 'string' ? change['id'] : undefined;
+        if (id !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ack', id, result: 'rejected', reason: 'This app is shared with you to look at only' }));
+        return true;
+    }
+
     /** Refuses an upgrade with a plain HTTP answer and closes the socket */
     function refuseUpgrade(socket: Duplex, status: number, reason: string): void {
         socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -448,21 +513,34 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
         if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
         const answer = await findTenant(request);
+        if ('revoked' in answer) {
+            // Opened, so the view hears why: it deletes what it keeps of the app, and never reconnects
+            const { message } = answer.revoked;
+            sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
+                ws.send(JSON.stringify({ type: 'error', code: REVOKED_CODE, message }));
+                ws.close(1008, 'Revoked');
+            });
+            return;
+        }
         if (!('tenant' in answer)) return refuseUpgrade(socket, answer.refuse, answer.refuse === 404 ? 'Not Found' : answer.refuse === 401 ? 'Unauthorized' : 'Forbidden');
-        const { instances, liveViews, hub, retain } = answer.tenant;
+        const { instances, liveViews, hub, retain, persona } = answer.tenant;
+        const readOnly = answer.tenant.access === 'view';
         const part = await instances.find(appId);
         if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
         const first = await liveViews.attachMessage(appId);
         if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        // The view syncs with the default persona's instance of the app
-        const authority: Authority = await instances.authority(part);
+        // The view syncs with its persona's instance of the app: the owner's own unless the tenant names another
+        const authority: Authority = await instances.authority(part, persona);
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
                 if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
             };
             const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
             const detach = hub.attach(appId, connection);
-            const release = retain?.((reason) => ws.close(1008, reason.slice(0, 120)));
+            const release = retain?.((reason, revoked) => {
+                if (revoked === true && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'error', code: REVOKED_CODE, message: reason }));
+                ws.close(1008, reason.slice(0, 120));
+            });
             sendView(first);
             const session = authority.connect({
                 send: (text) => {
@@ -491,7 +569,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     tokens -= 1;
                 }
                 hub.touch(appId, viewId);
-                session.receive(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
+                const text = Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8');
+                if (readOnly && refuseWrite(text, ws)) return;
+                session.receive(text);
             });
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {

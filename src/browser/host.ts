@@ -36,7 +36,7 @@
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
  */
 
-import { createMemoryLocalStore, createSyncClient, createWebLocalStore } from '@punyts/state-sync';
+import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace } from '@punyts/state-sync';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { readStoredFile } from './fileRead.js';
@@ -343,6 +343,12 @@ class LiveView {
     }
 
     start(): void {
+        const revoked = this.body.dataset['revoked'];
+        if (revoked !== undefined) {
+            // Taken back while this browser was away: nothing of the app may stay here
+            this.forget(revoked);
+            return;
+        }
         this.setStatus('loading');
         this.body.dataset['sync'] = 'connecting';
         window.addEventListener('message', (event) => this.onRuntimeMessage(event));
@@ -360,7 +366,9 @@ class LiveView {
             },
             onRejected: (rejection) => {
                 if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason } });
-            }
+            },
+            // The client has deleted its parts already; the frame still shows the app
+            onRevoked: (message) => this.forget(message)
         });
         this.client.start();
     }
@@ -468,13 +476,18 @@ class LiveView {
                 if (this.ready) this.postViewTheme(message.kind, message.name);
                 break;
             case 'deleted':
-                this.client?.stop();
-                for (const part of ['confirmed', 'outbox', 'document'] as const) this.store.remove(this.namespace, part);
-                this.setStatus('failed', 'This app was deleted');
-                this.frame?.remove();
-                this.frame = undefined;
+                this.forget('This app was deleted');
                 break;
         }
+    }
+
+    /** Stops syncing, deletes what this browser keeps of the app, removes the frame and says why */
+    private forget(note: string): void {
+        this.client?.stop();
+        forgetNamespace(this.store, this.namespace);
+        this.setStatus('failed', note);
+        this.frame?.remove();
+        this.frame = undefined;
     }
 
     private onSyncStatus(report: SyncStatusReport): void {
