@@ -106,6 +106,8 @@ export class AppLogic {
                 this.previous.delete(change.path);
                 const applied: LogicChange = change.op === 'delete' ? { path: change.path } : { path: change.path, value: change.value as AppValue };
                 if (previous !== undefined) applied.previous = previous;
+                // A person's change: it fires the units on its path even when it set the value the path held
+                applied.explicit = true;
                 this.engine?.changes([applied]);
             })
         );
@@ -224,6 +226,8 @@ export class AppLogic {
         if (reason !== undefined) return reason;
         const previous = this.read(path);
         if (previous !== undefined) change.previous = previous;
+        // A tool's write stands for a person's: it fires even when the value was already there
+        change.explicit = true;
         this.authority.write(write);
         this.gate?.applied([write]);
         this.engine?.changes([change]);

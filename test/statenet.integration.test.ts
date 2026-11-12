@@ -137,6 +137,54 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         expect(shot.images[0]?.mimeType).toBe('image/png');
     });
 
+    it('should run a server rule on every press of a button that sets a value its path already holds', async () => {
+        // Arrange: Save sets its own busy to false, which it already is; a rule on the server emits on that path
+        const save = '$.screens.home.children.press';
+        const created = await call(client, 'ui_app_create', {
+            name: 'presses',
+            home: { component: 'panel', children: { press: { component: 'button', _title: 'Save', on: { press: { command: 'set', target: '.busy', value: false } } } } }
+        });
+        const rule = await call(client, 'ui_logic_write', {
+            app: 'presses',
+            expectedRevision: 1,
+            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path: `${save}.busy` }, do: [{ command: 'emit', target: 'save.pressed' }] } }]
+        });
+        const id = created.body['id'] as string;
+        const page = await browser.newPage();
+        await page.goto(server.viewOf(id));
+        await page.waitForFunction(() => document.body.dataset['status'] === 'ready', undefined, { timeout: 15_000 });
+        await page.waitForFunction(() => document.body.dataset['sync'] === 'online');
+
+        // Act: a person presses three times
+        for (let press = 0; press < 3; press++) {
+            await frameOf(page).locator('button').first().click();
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+        const pressed = await eventually(
+            async () => ((await call(client, 'ui_events_read', { app: 'presses' })).body['events'] as { name: string }[]).filter((event) => event.name === 'save.pressed'),
+            (events) => Array.isArray(events) && events.length >= 3
+        );
+        await page.close();
+
+        // Assert
+        expect([created.isError, rule.isError]).toEqual([false, false]);
+        expect(pressed).toHaveLength(3);
+    });
+
+    it('should run a server rule on every tool write of the value a path already holds', async () => {
+        const path = '$.screens.home.children.press.busy';
+        await call(client, 'ui_logic_write', {
+            app: 'presses',
+            expectedRevision: 2,
+            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path }, do: [{ command: 'emit', target: 'tool.wrote' }] } }]
+        });
+
+        for (let write = 0; write < 2; write++) await call(client, 'ui_state_set', { app: 'presses', path, value: true });
+        const events = (await call(client, 'ui_events_read', { app: 'presses' })).body['events'] as { name: string }[];
+
+        expect(events.filter((event) => event.name === 'tool.wrote')).toHaveLength(2);
+    });
+
     it('should list the apps on the view page without an app', async () => {
         const page = await browser.newPage();
         await page.goto(`${viewUrl}?statenet=${encodeURIComponent(statenet.url)}`);
