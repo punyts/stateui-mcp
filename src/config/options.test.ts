@@ -3,16 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { parseConvertOptions, parseOptions, UsageError } from './options.js';
 
 describe('parseOptions', () => {
-    it('should default to ./data, port 4100 and the loopback address', () => {
+    it('should default to ./data, the local statenet and the local view server', () => {
         const options = parseOptions([], {});
 
         expect(options).toEqual({
             dataDir: resolve('./data'),
-            host: '127.0.0.1',
-            port: 4100,
-            runtimePort: undefined,
-            stdio: false,
-            runtimeDir: undefined,
+            statenet: 'ws://127.0.0.1:4200/sync',
+            viewUrl: 'http://127.0.0.1:5180/',
             secretKeyFile: undefined,
             secretKey: undefined,
             toolLog: undefined,
@@ -34,17 +31,26 @@ describe('parseOptions', () => {
     });
 
     it('should read the environment and let a flag win over it', () => {
-        const options = parseOptions(['--port', '5000', '--data-dir=other'], { STATEUI_MCP_PORT: '4200', STATEUI_MCP_DATA_DIR: 'env-dir', STATEUI_MCP_HOST: '0.0.0.0' });
+        const options = parseOptions(['--statenet', 'ws://127.0.0.1:4300/sync', '--data-dir=other'], {
+            STATEUI_MCP_STATENET: 'ws://127.0.0.1:4400/sync',
+            STATEUI_MCP_DATA_DIR: 'env-dir',
+            STATEUI_MCP_VIEW_URL: 'https://cdn.example.com/stateui/'
+        });
 
-        expect(options.port).toBe(5000);
+        expect(options.statenet).toBe('ws://127.0.0.1:4300/sync');
         expect(options.dataDir).toBe(resolve('other'));
-        expect(options.host).toBe('0.0.0.0');
+        expect(options.viewUrl).toBe('https://cdn.example.com/stateui/');
+        expect(parseOptions(['--view-url=http://localhost:6000'], {}).viewUrl).toBe('http://localhost:6000/');
     });
 
-    it('should read the runtime port from the flag or the environment', () => {
-        expect(parseOptions(['--runtime-port', '5001'], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(5001);
-        expect(parseOptions([], { STATEUI_MCP_RUNTIME_PORT: '4300' }).runtimePort).toBe(4300);
-        expect(() => parseOptions(['--runtime-port', 'x'], {})).toThrow('Invalid port');
+    it('should refuse a statenet that is not a WebSocket and a view that is not http', () => {
+        expect(() => parseOptions(['--statenet', 'http://127.0.0.1:4200/sync'], {})).toThrow('Invalid statenet URL');
+        expect(() => parseOptions(['--view-url', 'ws://127.0.0.1:5180'], {})).toThrow('Invalid view URL');
+        expect(() => parseOptions([], { STATEUI_MCP_STATENET: 'nonsense' })).toThrow('Invalid statenet URL');
+    });
+
+    it('should say what replaced the options of the web server it no longer has', () => {
+        for (const flag of ['--port', '--runtime-port', '--host', '--runtime-dir']) expect(() => parseOptions([flag, '1'], {})).toThrow('is gone');
     });
 
     it('should turn the component showcase off with the flag or the environment', () => {
@@ -55,17 +61,15 @@ describe('parseOptions', () => {
         expect(parseOptions([], { STATEUI_MCP_SHOWCASE: '' }).showcase).toBe(true);
     });
 
-    it('should turn on stdio and help', () => {
-        expect(parseOptions(['--stdio'], {}).stdio).toBe(true);
+    it('should take --stdio, the only transport, and turn on help', () => {
+        expect(parseOptions(['--stdio'], {}).help).toBe(false);
         expect(parseOptions(['-h'], {}).help).toBe(true);
         expect(parseOptions(['--help'], {}).help).toBe(true);
     });
 
-    it('should refuse an unknown option, a missing value and a bad port', () => {
+    it('should refuse an unknown option and a missing value', () => {
         expect(() => parseOptions(['--nope'], {})).toThrow(UsageError);
-        expect(() => parseOptions(['--port'], {})).toThrow('needs a value');
-        expect(() => parseOptions(['--port', 'abc'], {})).toThrow('Invalid port');
-        expect(() => parseOptions([], { STATEUI_MCP_PORT: '99999' })).toThrow('Invalid port');
+        expect(() => parseOptions(['--statenet'], {})).toThrow('needs a value');
     });
 });
 

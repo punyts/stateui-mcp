@@ -7,7 +7,6 @@ import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
 import { loadChunk3d } from '../src/infrastructure/http/runtimeBundle.js';
 import { runtimeCsp } from '../src/infrastructure/http/security.js';
-import { EXPECTED_TOOLS } from './expectedTools.js';
 import { FORM_ROOT, call, createApp, httpHarness, noBrowser, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
@@ -584,60 +583,8 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     });
 });
 
-describe('/mcp session flow', () => {
-    const HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
-    const INITIALIZE = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'raw', version: '1' } }
-    };
-
-    /** The JSON-RPC message of a response that is either JSON or one server-sent event */
-    async function rpc(response: Response): Promise<{ result?: Record<string, unknown>; error?: { code: number } }> {
-        const text = await response.text();
-        const line = text.split('\n').find((candidate) => candidate.startsWith('data: '));
-        return JSON.parse(line === undefined ? text : line.slice(6)) as { result?: Record<string, unknown>; error?: { code: number } };
-    }
-
-    it('should open a session on initialize, serve tools/list with its id and close it on DELETE', async () => {
-        const init = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-        const sessionId = init.headers.get('mcp-session-id') ?? '';
-        const initialized = await rpc(init);
-        await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
-        const list = await rpc(
-            await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) })
-        );
-        const closed = await fetch(`${origin}/mcp`, { method: 'DELETE', headers: { 'mcp-session-id': sessionId } });
-        const afterClose = await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' }) });
-
-        expect(sessionId).not.toBe('');
-        expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Build steps, in this order'));
-        expect((list.result?.['tools'] as unknown[]).length).toBe(EXPECTED_TOOLS.length);
-        expect(closed.status).toBe(200);
-        expect(afterClose.status).toBe(404);
-    });
-
-    it('should refuse a request with no session that is not initialize', async () => {
-        const response = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
-
-        expect(response.status).toBe(400);
-    });
-
-    it('should answer a GET for an unknown session with 404 and a body that is not JSON with 400', async () => {
-        const unknown = await fetch(`${origin}/mcp`, { headers: { accept: 'text/event-stream', 'mcp-session-id': 'nope' } });
-        const garbage = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: '{not json' });
-
-        expect(unknown.status).toBe(404);
-        expect(garbage.status).toBe(400);
-    });
-
-    it('should keep two sessions apart', async () => {
-        const first = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-        const second = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-
-        expect(first.headers.get('mcp-session-id')).not.toBe(second.headers.get('mcp-session-id'));
-        await first.text();
-        await second.text();
+describe('the embedded endpoint', () => {
+    it('should not serve MCP, which the server speaks on stdio only', async () => {
+        expect((await fetch(origin + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(404);
     });
 });

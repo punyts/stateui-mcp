@@ -153,7 +153,7 @@ type ShapeTarget = { readonly kind: string; readonly via: 'svg' | 'proxy' };
 
 /**
  * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
- * for. A page loads the same `/apps/:appId` URL a human opens, so what it renders and reports is what a person
+ * for. A page loads the same view page a human opens, so what it renders and reports is what a person
  * sees. Tool calls on one app run one at a time
  */
 export class BrowserPreview {
@@ -164,8 +164,12 @@ export class BrowserPreview {
 
     constructor(
         private readonly hub: PreviewHub,
-        /** The origin the server listens on, such as `http://127.0.0.1:4100`. Read on each call, because the port may be chosen at listen time */
-        private readonly baseUrl: () => string,
+        /**
+         * The page of an app's live view, such as `http://127.0.0.1:4100/apps/<id>` (a page its server serves) or
+         * `http://127.0.0.1:5180/?app=<id>&statenet=…` (the statenet view page). Called on each open, because the
+         * port may be chosen at listen time
+         */
+        private readonly pageUrl: (appId: string) => string,
         /**
          * Extra Chromium arguments, for tests (such as `--disable-3d-apis` for a browser without WebGL). The server
          * passes none: G3.1 found that headless Chromium draws WebGL2 on SwiftShader without any (G3.10)
@@ -359,7 +363,9 @@ export class BrowserPreview {
     }
 
     private viewUrl(appId: string, at?: PreviewScreen): string {
-        return `${this.baseUrl()}/apps/${appId}${screenQuery(at)}`;
+        const page = this.pageUrl(appId);
+        const query = screenQuery(at);
+        return query === '' ? page : `${page}${page.includes('?') ? '&' : '?'}${query.slice(1)}`;
     }
 
     private async pageFor(appId: string, at?: PreviewScreen): Promise<Page> {

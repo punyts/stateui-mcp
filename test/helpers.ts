@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createServices } from '../src/config/createServices.js';
 import type { Services } from '../src/config/createServices.js';
-import { startServer } from '../src/config/startServer.js';
-import type { RunningServer, ServerOptions } from '../src/config/startServer.js';
+import { installShowcase } from '../src/config/showcase.js';
+import { loadHostScript } from '../src/config/startServer.js';
+import { startHttpServer } from '../src/infrastructure/http/HttpServer.js';
+import { loadChunk3d, loadRuntimeBundle } from '../src/infrastructure/http/runtimeBundle.js';
+import { loadCatalogFile } from '../src/infrastructure/stateUiLibrary.js';
 import { createStateUiMcpServer } from '../src/infrastructure/mcp/StateUiMcpServer.js';
 import type { PreviewBrowser } from '../src/infrastructure/preview/BrowserPreview.js';
 
@@ -88,34 +90,80 @@ export async function inMemoryHarness(dataDir: string, browser: PreviewBrowser =
     };
 }
 
+/** The embedded browser endpoint the harness runs, shaped as the server the tests read */
+export interface EmbeddedServer {
+    readonly origin: string;
+    readonly port: number;
+    readonly runtimePort: number;
+    readonly services: Services;
+    stop(): Promise<void>;
+}
+
 export interface HttpHarness {
-    readonly server: RunningServer;
+    readonly server: EmbeddedServer;
     readonly client: Client;
     close(): Promise<void>;
 }
-/** The whole server on a free port (or `extra.port`) with a real MCP client over streamable HTTP; `extra` sets a port, a key, the 3D chunk folder, Chromium arguments or the showcase */
-export async function httpHarness(
-    dataDir: string,
-    browser?: PreviewBrowser,
-    extra: Partial<Pick<ServerOptions, 'port' | 'runtimePort' | 'serverKey' | 'chunk3dDir' | 'browserArgs' | 'showcase'>> = {}
-): Promise<HttpHarness> {
-    const server = await startServer({
+
+export interface HttpHarnessOptions {
+    readonly port?: number;
+    readonly runtimePort?: number;
+    readonly serverKey?: Uint8Array;
+    /** The folder of the 3D chunk the endpoint serves; default the installed one */
+    readonly chunk3dDir?: string;
+    readonly browserArgs?: readonly string[];
+    readonly showcase?: boolean;
+}
+
+/**
+ * The tools with the browser endpoint that serves its own view pages (`startHttpServer`, what an embedding server such
+ * as Magnetic runs) on a free port (or `extra.port`), and an MCP client in memory. The stateui-mcp server itself serves
+ * no HTTP (its views live in a statenet: `statenet.integration.test.ts`); the tests of what a view renders and does
+ * run here, since the view behaves the same over either channel
+ */
+export async function httpHarness(dataDir: string, browser?: PreviewBrowser, extra: HttpHarnessOptions = {}): Promise<HttpHarness> {
+    if (extra.showcase === true) await installShowcase({ dataDir, report: silentReport });
+    let origin = '';
+    const services = createServices({
         dataDir,
-        host: '127.0.0.1',
-        port: 0,
-        stdio: false,
         report: silentReport,
+        origin: () => origin,
         ...(browser !== undefined && { browser }),
-        ...extra
+        ...(extra.browserArgs !== undefined && { browserArgs: extra.browserArgs }),
+        ...(extra.serverKey !== undefined && { serverKey: extra.serverKey })
     });
+    await services.recoverParts();
+    const chunk3d = loadChunk3d(extra.chunk3dDir);
+    const http = await startHttpServer({
+        host: '127.0.0.1',
+        port: extra.port ?? 0,
+        runtimePort: extra.runtimePort ?? 0,
+        tenant: { useCases: services.useCases, hub: services.hub, liveViews: services.liveViews, instances: services.instanceViews },
+        runtime: loadRuntimeBundle(undefined, loadCatalogFile().components.map((component) => component.name)),
+        ...(chunk3d !== undefined && { chunk3d }),
+        hostScript: loadHostScript(),
+        report: silentReport
+    });
+    origin = http.origin;
+    const mcp = createStateUiMcpServer(services);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: 'test', version: '1.0.0' });
-    await client.connect(new StreamableHTTPClientTransport(new URL(`${server.origin}/mcp`)));
+    await Promise.all([mcp.connect(serverTransport), client.connect(clientTransport)]);
+    let stopped = false;
+    const stop = async (): Promise<void> => {
+        if (stopped) return;
+        stopped = true;
+        await mcp.close().catch(() => undefined);
+        await services.browser.close();
+        await http.close();
+        await services.authorities.close();
+    };
     return {
-        server,
+        server: { origin, port: http.port, runtimePort: http.runtimePort, services, stop },
         client,
         close: async () => {
             await client.close();
-            await server.stop();
+            await stop();
         }
     };
 }

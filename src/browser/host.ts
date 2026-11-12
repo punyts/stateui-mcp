@@ -1,19 +1,18 @@
 /**
- * The host script of the live view page (`GET /apps/:appId`). It runs in the page, not in Node. The server serves it
- * bundled (esbuild, with `@punyts/state-sync`) as `/assets/host.js` under a policy that allows scripts from the page's
- * own origin only.
+ * The live view of an app in a page. It runs in the page, not in Node: in the statenet view page (`statenetView.ts`,
+ * served by Vite or a CDN) and in the page of a server that serves its own (`hostPage.ts`, `/assets/host.js` of
+ * `startHttpServer`). How it reaches its server is its channel (`viewChannel.ts`): the sync protocol, the server's
+ * view messages (the document, commands, locale, theme, deletion), its reports and app events, and the files.
  *
  * It does what the minion UI's preview host does for the runtime: it puts the content-hashed runtime page into a
- * sandboxed iframe served from the runtime origin (the server's second port, `allow-scripts allow-same-origin`: the
- * frame keeps that origin, which is not the page's, so it cannot reach the page; a browser that refuses frames with an
- * opaque origin still shows it), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a
- * per-load nonce, and checks every message by source, origin and nonce.
+ * sandboxed iframe served from the runtime origin (a second port, `allow-scripts allow-same-origin`: the frame keeps
+ * that origin, which is not the page's, so it cannot reach the page; a browser that refuses frames with an opaque
+ * origin still shows it), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load
+ * nonce, and checks every message by source, origin and nonce.
  *
- * The app runs in Full mode: one WebSocket (`/apps/:appId/sync`) carries the state-sync protocol between the page's
- * sync client and the app's authority on the server, and `{ type: 'view', message }` frames from the server (the
- * document, commands, locale, theme, deletion). The sync client keeps the confirmed state and the changes not yet
- * acknowledged in `localStorage`, with the document beside them, so the app opens and takes changes offline and sends
- * them when the socket is back.
+ * The app runs in Full mode: the page's sync client syncs the app's state, and the server's view messages bring the
+ * document. The sync client keeps the confirmed state and the changes not yet acknowledged in `localStorage`, with
+ * the document beside them, so the app opens and takes changes offline and sends them when the connection is back.
  *
  * An owner app (`data-namespace` on the body, `instances.<persona>.<ownerId>.<appId>`) syncs with the default
  * persona's instance: besides `$.data` and `$.app`, its state holds the articulation of each screen (`$.screens`) and
@@ -21,16 +20,12 @@
  * view moved arrives as a `navigate` command, since the runtime protects `$.route`. `?screen=<name>&params=<json>` in
  * the page URL navigates there once the app is ready.
  *
- * Files: a `file` from the runtime is uploaded to `POST /apps/:appId/files` (answered with `fileProgress` and
- * `fileResult`), and a `fileRead` is fetched from `GET /apps/:appId/files/:fileId` (`fileRead.ts`) and answered with
- * `fileData`, its bytes in the transfer list. A `fileRelease` is sent as `DELETE /apps/:appId/files/:fileId`
- * (`fileRelease.ts`) and answered with `fileReleased`: `ok: true` when the file is gone or was never there, and also when
- * the server keeps it because the app or its live state still references it (`409`; the sweep removes it later). The
- * DELETE waits until the sync client has no change waiting for its ack (at most `RELEASE_SETTLE_MS`), so the write that
- * let go of the file reaches the server first.
- *
- * `POST /apps/:appId/report` tells the server when the view is ready, what it rendered
- * and its errors.
+ * Files: a `file` from the runtime is uploaded through the channel (answered with `fileProgress` and `fileResult`),
+ * a `fileRead` is read through it (`fileRead.ts`) and answered with `fileData`, its bytes in the transfer list, and a
+ * `fileRelease` (`fileRelease.ts`) is answered with `fileReleased`: `ok: true` when the file is gone or was never
+ * there, and also when the server keeps it because the app or its live state still references it (the sweep removes
+ * it later). A release waits until the sync client has no change waiting for its ack (at most `RELEASE_SETTLE_MS`), so
+ * the write that let go of the file reaches the server first. Ready, rendered and errors go to the server as reports.
  *
  * The page it runs in can take part: `data-host-keys` on the body names key chords (`mod+shift+e`, space-separated)
  * the runtime gives the page instead of the app, each raised on `window` as a `stateui:key` event (`detail.key`),
@@ -53,10 +48,10 @@
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace } from '@punyts/state-sync';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
-import { readStoredFile } from './fileRead.js';
-import { createReleaseGate, releaseStoredFile } from './fileRelease.js';
+import { createReleaseGate } from './fileRelease.js';
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
-import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport, SyncTransport } from '@punyts/state-sync';
+import type { ServerMessage, ViewChannel } from './viewChannel.js';
+import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport } from '@punyts/state-sync';
 
 /** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
 const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?[a-z0-9]$/;
@@ -85,24 +80,10 @@ const CHUNK_HASH = /^[0-9a-f]{16}$/;
 /** Keys of a node that belong to the document, never to the synced state */
 const NODE_KEYS: readonly string[] = ['component', 'on', 'layout', 'placement', 'theme'];
 const CONTENT_PREFIX = '_';
-const VIEW_FRAME = '{"type":"view"';
 /** How long `stateuiHost.inspect` waits for the frame to answer */
 const INSPECT_TIMEOUT_MS = 2000;
 
-interface AppMessage {
-    type: 'app';
-    reason: 'attach' | 'document';
-    revision: number;
-    document: JsonRecord;
-    icons: Record<string, string>;
-}
-
-type ServerMessage =
-    | AppMessage
-    | { type: 'command'; id: string; target: string; command: string; value?: Json; expiresAt: string }
-    | { type: 'locale'; locale: string }
-    | { type: 'theme'; kind: string; name: string }
-    | { type: 'deleted' };
+type AppMessage = Extract<ServerMessage, { type: 'app' }>;
 
 interface RuntimeMessage {
     v?: unknown;
@@ -289,10 +270,11 @@ function localStore(): LocalStore {
     }
 }
 
-class LiveView {
-    private readonly appId: string;
-    private readonly viewId = crypto.randomUUID();
-    private readonly viewKind: string;
+/** The live view of one app in the page: the runtime frame, its sync client and the channel to the server */
+export class LiveView {
+    readonly appId: string;
+    readonly viewId = crypto.randomUUID();
+    readonly viewKind: 'browser' | 'headless';
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
     /** The hash of the 3D renderer chunk the runtime origin serves (`data-chunk-3d`), sent in `load` as `chunks`; undefined when there is none */
@@ -333,7 +315,7 @@ class LiveView {
     private readonly viewThemes = new Map<string, string>();
     private locale: string | undefined;
     private readonly queuedCommands: Extract<ServerMessage, { type: 'command' }>[] = [];
-    private readonly uploads = new Map<number, XMLHttpRequest>();
+    private channel!: ViewChannel;
     /** Holds a file release back until the frame's changes have reached the server (`fileRelease.ts`) */
     private readonly releaseGate = createReleaseGate();
     /** The `inspect` messages waiting for their answer, by id */
@@ -367,7 +349,9 @@ class LiveView {
         }
     }
 
-    start(): void {
+    /** Starts the view with the channel to its server, made for this view's id and kind */
+    start(channelFor: (view: LiveView) => ViewChannel): void {
+        this.channel = channelFor(this);
         const revoked = this.body.dataset['revoked'];
         if (revoked !== undefined) {
             // Taken back while this browser was away: nothing of the app may stay here
@@ -382,11 +366,12 @@ class LiveView {
         this.client = createSyncClient({
             namespace: this.namespace,
             bridge: this.bridge(),
-            transport: this.transport(),
+            transport: this.channel.transport((message) => this.onServerMessage(message)),
             localStore: this.store,
             clientId: this.viewId,
             onStatus: (report) => this.onSyncStatus(report),
             onEmit: (name, value) => {
+                if (this.channel.receive?.(name, value) === true) return;
                 if (this.loaded && isLogicEvent(name)) this.post({ type: 'event', name, ...(value === undefined ? {} : { payload: value }) });
             },
             onRejected: (rejection) => {
@@ -395,6 +380,7 @@ class LiveView {
             // The client has deleted its parts already; the frame still shows the app
             onRevoked: (message) => this.forget(message)
         });
+        this.channel.started?.(this.client);
         this.client.start();
     }
 
@@ -419,41 +405,6 @@ class LiveView {
         };
     }
 
-    private viewSocketUrl(): string {
-        return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${this.appId}/sync?view=${this.viewId}&kind=${this.viewKind}`;
-    }
-
-    /**
-     * The sync client's WebSocket: the page's socket to the server, where view frames go to the host and everything else
-     * to the sync client
-     */
-    private transport(): SyncTransport {
-        const url = this.viewSocketUrl();
-        return {
-            connect: (handlers) => {
-                const socket = new WebSocket(url);
-                let closed = false;
-                socket.addEventListener('open', () => handlers.onOpen());
-                socket.addEventListener('message', (event: MessageEvent<unknown>) => {
-                    if (typeof event.data !== 'string') return;
-                    if (event.data.startsWith(VIEW_FRAME)) this.onViewFrame(event.data);
-                    else handlers.onMessage(event.data);
-                });
-                socket.addEventListener('close', () => {
-                    if (closed) return;
-                    closed = true;
-                    handlers.onClose();
-                });
-                return {
-                    send: (text) => {
-                        if (socket.readyState === WebSocket.OPEN) socket.send(text);
-                    },
-                    close: () => socket.close()
-                };
-            }
-        };
-    }
-
     private setStatus(status: 'loading' | 'ready' | 'failed', note?: string): void {
         this.body.dataset['status'] = status;
         if (note !== undefined) this.body.dataset['note'] = note;
@@ -461,13 +412,8 @@ class LiveView {
     }
 
     /** `keepalive` bodies are limited to 64 KiB, so the state, which can be larger, goes without it */
-    private report(body: Record<string, unknown>, keepalive = true): void {
-        void fetch(`/apps/${this.appId}/report`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ viewId: this.viewId, ...body }),
-            keepalive
-        }).catch(() => undefined);
+    private report(body: Record<string, unknown>): void {
+        this.channel.report({ viewId: this.viewId, ...body });
     }
 
     /** Posts to the runtime; the buffers in `transfer` move to the frame (`fileData`) */
@@ -475,16 +421,10 @@ class LiveView {
         this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, { targetOrigin: this.runtimeOrigin, transfer });
     }
 
-    private onViewFrame(text: string): void {
-        let frame: { message?: ServerMessage };
-        try {
-            frame = JSON.parse(text) as { message?: ServerMessage };
-        } catch {
-            return;
-        }
-        const message = frame.message;
+    /** A message of the server: the document, a command, a locale or theme, the app's deletion, a refused change */
+    private onServerMessage(message: ServerMessage): void {
         if (!isRecord(message as unknown)) return;
-        switch (message?.type) {
+        switch (message.type) {
             case 'app':
                 if (!isAppMessage(message)) return;
                 try {
@@ -508,6 +448,9 @@ class LiveView {
             case 'deleted':
                 this.forget('This app was deleted');
                 break;
+            case 'rejected':
+                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: message.path, reason: message.reason } });
+                break;
         }
     }
 
@@ -522,6 +465,7 @@ class LiveView {
 
     private onSyncStatus(report: SyncStatusReport): void {
         this.syncStatus = { mode: 'full', status: report.status, waiting: report.waiting };
+        this.channel.status?.(report.status);
         this.releaseGate.update(report.status, report.waiting);
         this.body.dataset['sync'] = report.status;
         if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
@@ -675,7 +619,7 @@ class LiveView {
                 break;
             case 'emit':
                 if (typeof message['name'] === 'string') {
-                    this.client?.emit(message['name'], message['payload'] as Json | undefined);
+                    this.channel.event(message['name'], message['payload'] as Json | undefined);
                     window.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
                 }
                 break;
@@ -692,7 +636,7 @@ class LiveView {
                 this.onFile(message);
                 break;
             case 'fileCancel':
-                if (typeof message['requestId'] === 'number') this.uploads.get(message['requestId'])?.abort();
+                if (typeof message['requestId'] === 'number') this.channel.cancelUpload(message['requestId']);
                 break;
             case 'fileRead':
                 this.onFileRead(message);
@@ -789,47 +733,20 @@ class LiveView {
             this.fileFailed(requestId, 'unsupported_type', 'This file type is not allowed');
             return;
         }
-        const form = new FormData();
-        form.append('file', new Blob([data], { type: bare }), name);
-        const request = new XMLHttpRequest();
-        this.uploads.set(requestId, request);
-        request.open('POST', `/apps/${this.appId}/files`);
-        request.upload.addEventListener('progress', (event) => {
-            if (event.lengthComputable) this.post({ type: 'fileProgress', requestId, loaded: event.loaded, total: event.total });
-        });
-        request.addEventListener('load', () => {
-            this.uploads.delete(requestId);
-            if (request.status === 201) {
-                try {
-                    const file = JSON.parse(request.responseText) as unknown;
-                    if (isRecord(file)) {
-                        this.post({ type: 'fileResult', requestId, ok: true, file: { id: file['id'], name: file['name'], size: file['size'], type: file['type'] } });
-                        return;
-                    }
-                } catch {
-                    // falls through to the internal error
-                }
-                this.fileFailed(requestId, 'internal', 'The server answered something unreadable');
-                return;
-            }
-            const codes: Record<number, string> = { 404: 'not_found', 409: 'quota', 413: 'too_large', 415: 'unsupported_type' };
-            this.fileFailed(requestId, codes[request.status] ?? 'internal', `The upload was refused (${request.status})`);
-        });
-        request.addEventListener('error', () => {
-            this.uploads.delete(requestId);
-            this.fileFailed(requestId, 'offline', 'The server could not be reached');
-        });
-        request.addEventListener('abort', () => {
-            this.uploads.delete(requestId);
-        });
-        request.send(form);
+        void this.channel
+            .upload(requestId, { name, type: bare, data }, (loaded, total) => this.post({ type: 'fileProgress', requestId, loaded, total }))
+            .then((outcome) => {
+                if (outcome === undefined) return;
+                if (outcome.ok) this.post({ type: 'fileResult', requestId, ok: true, file: outcome.file });
+                else this.fileFailed(requestId, outcome.code, outcome.message);
+            });
     }
 
     /** A component reads a stored file: fetched from the page's own origin and posted back as `fileData` with the bytes moved */
     private onFileRead(message: RuntimeMessage): void {
         const requestId = message['requestId'];
         if (typeof requestId !== 'number') return;
-        void readStoredFile(this.appId, message['id'], (url, init) => fetch(url, init)).then((outcome) => {
+        void this.channel.readFile(message['id']).then((outcome) => {
             if (outcome.ok) this.post({ type: 'fileData', requestId, ok: true, file: outcome.file, data: outcome.data }, [outcome.data]);
             else this.post({ type: 'fileData', requestId, ok: false, code: outcome.code, message: outcome.message });
         });
@@ -843,7 +760,7 @@ class LiveView {
     private onFileRelease(message: RuntimeMessage): void {
         const requestId = message['requestId'];
         if (typeof requestId !== 'number') return;
-        void this.releaseGate.settled().then(() => releaseStoredFile(this.appId, message['id'], (url, init) => fetch(url, init))).then((outcome) => {
+        void this.releaseGate.settled().then(() => this.channel.releaseFile(message['id'])).then((outcome) => {
             this.post({ type: 'fileReleased', requestId, ...outcome });
         });
     }
@@ -929,13 +846,14 @@ class PageView {
     }
 }
 
-const live = new LiveView(document.body);
-(window as unknown as { stateuiHost: unknown }).stateuiHost = {
-    inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => live.inspect(query),
-    mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string> }, title = 'Panel') => {
-        const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
-        const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
-        return { write: (writes: PathWrite[]) => view.write(writes), command: (target: string, command: string, value?: Json) => view.command(target, command, value), dispose: () => view.dispose() };
-    }
-};
-live.start();
+/** `window.stateuiHost`: what an editor laid over the page uses */
+export function installHostApi(live: LiveView): void {
+    (window as unknown as { stateuiHost: unknown }).stateuiHost = {
+        inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => live.inspect(query),
+        mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string> }, title = 'Panel') => {
+            const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
+            const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
+            return { write: (writes: PathWrite[]) => view.write(writes), command: (target: string, command: string, value?: Json) => view.command(target, command, value), dispose: () => view.dispose() };
+        }
+    };
+}

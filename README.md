@@ -2,6 +2,8 @@
 
 A standalone MCP server for building StateUI apps. An agent creates and edits an app with tools, a person watches the same app live in a browser, and a headless Chromium (Playwright) renders it so the agent can take screenshots, click and type in it, and read the events it raises.
 
+The server serves no HTTP. It speaks MCP on stdio, and its tools write each app's live state to a [statenet](../statenet) (`@punyts/statenet`). The view page that shows the apps is static: the Vite dev server of `view/` serves it locally, a CDN in production, and it reads the state from that statenet (see [Live views](#live-views)).
+
 It is the single-user, local version of the `ui-builder` bounded context of AI Minion: same tools, arguments, results and error codes, with no workspaces, users, approval policy or Postgres. Apps are JSON files on disk.
 
 ## Install
@@ -16,41 +18,45 @@ npx playwright install chromium   # once, for ui_preview, ui_screenshot and ui_i
 
 Without Chromium everything else works. `ui_preview` still returns the address a person can open (with `rendered: false` and a note), and `ui_screenshot` and `ui_interact` answer `browser-unavailable`.
 
-The runtime bundle comes from `@punyts/stateui-app` (`dist/runtime-bundle/`, built by `npm run build:runtime-bundle` in that package). Use `--runtime-dir` to point at another build. The server will not start with a bundle built before a component was added to the library; it names the missing components and asks for a rebuild.
+The runtime bundle comes from `@punyts/stateui-app` (`dist/runtime-bundle/`, built by `npm run build:runtime-bundle` in that package); the view page's Vite plugin serves it (`stateuiView({ runtimeDir })` points at another build). The plugin will not start with a bundle built before a component was added to the library; it names the missing components and asks for a rebuild.
 
-The 3D renderer chunk comes from `@punyts/stateui-3d` (`dist/runtime-chunk/`, an optional dependency). When it is installed and built the server serves it beside the runtime and names it to the view, so an app with a `scene3d` loads it on first mount; without it the server starts normally, names no chunk, and a scene shows its `_fallback` text.
+The 3D renderer chunk comes from `@punyts/stateui-3d` (`dist/runtime-chunk/`, an optional dependency). When it is installed and built the view page's plugin serves it beside the runtime and names it to the view, so an app with a `scene3d` loads it on first mount; without it the page names no chunk, and a scene shows its `_fallback` text.
 
 ## Run
 
-```sh
-# Streamable HTTP: MCP at http://127.0.0.1:4100/mcp, apps at http://127.0.0.1:4100/
-node dist/cli.js --port 4100 --data-dir ./data
+Three processes: the statenet, the view page's dev server and the MCP server.
 
-# stdio: MCP on stdin and stdout, and the HTTP server still listens for the browser view
-node dist/cli.js --stdio --port 4100 --data-dir ./data
+```sh
+# The statenet (ws://127.0.0.1:4200/sync) and the view page (http://127.0.0.1:5180/, the runtime frame on 5181)
+npm run dev
+
+# The MCP server, on stdin and stdout; an MCP client starts it (below)
+node dist/cli.js --data-dir ./data
 ```
+
+`npm run dev` (`scripts/dev.mjs`) runs the statenet (its data in `./statenet-data`, letting in the pages of `http://127.0.0.1:5180` and `http://localhost:5180`) and Vite (`view/vite.config.ts`) in one process, so stopping it stops both. `npm run statenet` and `npm run view` run each alone. `STATENET_PORT` moves the statenet, `STATEUI_VIEW_PORT` the page (and the origin the statenet lets in), `STATEUI_VIEW_RUNTIME_PORT` the runtime frame.
 
 | Option | Environment | Default |
 |---|---|---|
 | `--data-dir <dir>` | `STATEUI_MCP_DATA_DIR` | `./data` |
-| `--port <n>` | `STATEUI_MCP_PORT` | `4100` (`0` picks a free port) |
-| `--runtime-port <n>` | `STATEUI_MCP_RUNTIME_PORT` | the next port, `4101` (a free one when `--port` is `0`) |
-| `--host <address>` | `STATEUI_MCP_HOST` | `127.0.0.1` |
-| `--stdio` | | off |
-| `--runtime-dir <dir>` | `STATEUI_MCP_RUNTIME_DIR` | the bundle in `@punyts/stateui-app` |
+| `--statenet <url>` | `STATEUI_MCP_STATENET` | `ws://127.0.0.1:4200/sync` |
+| `--view-url <url>` | `STATEUI_MCP_VIEW_URL` | `http://127.0.0.1:5180/`: the view page `ui_preview` names and the headless browser opens |
+| `--stdio` | | accepted for older client configurations; stdio is the only transport |
 | `--secret-key-file <file>` | `STATEUI_MCP_SECRET_KEY_FILE`, or the key itself in `STATEUI_MCP_SECRET_KEY` | none: an app that keeps `$.server` is refused |
 | `--tool-log <file>` | `STATEUI_MCP_TOOL_LOG` | none: no tool calls are logged |
 | `--no-showcase` | `STATEUI_MCP_SHOWCASE=off` (or `false`, `no`, `0`) | on: the component showcase is installed on an empty data directory |
 
+`--port`, `--runtime-port`, `--host` and `--runtime-dir` are gone with the web server; passing one says what replaced it.
+
 **Tool-call log.** With `--tool-log <file>` the server appends one JSON line per tool call: `{ at, tool, ok, errorCode?, requestChars, responseChars, target?, errorCount?, warningCount? }`. `requestChars` is the length of the JSON arguments, `responseChars` the length of the result's text (images are not counted), `errorCode` the `error` of a failed result, `errorCount` and `warningCount` the lengths of its `errors` and `warnings`, and `target` the call's `app` (with `/` and `screen` when it names one), cut to 80 characters. Once per session, when the client has initialized, it also writes `{ at, instructionsChars }`, the length of the served instructions (not their text), so a measurement counts the instructions once per build with the tokens read. Nothing else is written: no arguments, no response bodies. A failed write is reported once on stderr and never fails the call. It is for measuring how agents use the tools: `node scripts/summarizeToolLog.mjs <calls.jsonl>...` prints per build the tokens read (instructions plus catalog plus guide), the instructions tokens, the catalog tokens (the catalog tools and `ui_guide`; characters divided by four), the guide tokens apart, the failed writes and the first-write validation errors, and their median and range over several builds (`test/measurement/requests.md` has the requests and the scripts that run them).
 
-`npm start` runs `node dist/cli.js`; `stateui-mcp --help` lists the options. `stateui-mcp convert` converts the old apps of a data directory into owner parts once (see [Converting the old apps](#converting-the-old-apps)). In stdio mode every log line goes to stderr, because stdout is the protocol. `Ctrl+C`, `SIGTERM`, or the client closing stdin stops the server, closes the MCP sessions and closes the headless browser.
+`npm start` runs `node dist/cli.js`; `stateui-mcp --help` lists the options. `stateui-mcp convert` converts the old apps of a data directory into owner parts once (see [Converting the old apps](#converting-the-old-apps)). Every log line goes to stderr, because stdout is the protocol. `Ctrl+C`, `SIGTERM`, or the client closing stdin stops the server, closes its statenet connections and closes the headless browser. The server starts without the statenet and keeps trying to reach it: the tools work meanwhile, and the views catch up once it is there.
 
 ## Component showcase
 
 The server ships an app that shows every component of the library, `component-showcase`. Every screen places the same two composed components, `showcaseHeader` (the title and the theme switches) and `showcaseMenu` (a side menu that folds behind a button on a phone); the menu has a home screen, with the number of components per category and a chart of them, and one screen per catalog category (layout, navigation, forms, data, feedback, overlays, content, conversation, graphics). Each component is a card with its name, its catalog summary and a live example with realistic data: tables, lists, boards, calendars and charts read small sample datasets, the overlays open from buttons, the drawings use every 2D shape and the 3D scenes every 3D node, with a model from a GLB file. The header switches between the four theme presets and between light and dark.
 
-**See it.** When the server starts on a data directory that holds no parts (a new or empty one), it installs the showcase there and logs one line, `Installed the component showcase on the new data directory`. Open `http://127.0.0.1:4100/` and pick `component-showcase`, or ask the agent to `ui_preview` it. The showcase is an ordinary app of parts (an app, four themes, models and datasets, and an uploaded file), so `ui_get` shows how each example is built and its nodes can be copied into another app. A data directory that already holds parts is never touched, so the showcase is installed once, and an app you change or delete stays that way.
+**See it.** When the server starts on a data directory that holds no parts (a new or empty one), it installs the showcase there and logs one line, `Installed the component showcase on the new data directory`. Open `http://127.0.0.1:5180/` and pick `component-showcase`, or ask the agent to `ui_preview` it. The showcase is an ordinary app of parts (an app, four themes, models and datasets, and an uploaded file), so `ui_get` shows how each example is built and its nodes can be copied into another app. A data directory that already holds parts is never touched, so the showcase is installed once, and an app you change or delete stays that way.
 
 **Turn it off.** Start the server with `--no-showcase`, or set `STATEUI_MCP_SHOWCASE=off`. `startServer` installs it only when its `showcase` option is true, which the CLI sets unless it is turned off.
 
@@ -58,27 +64,22 @@ The server ships an app that shows every component of the library, `component-sh
 
 ## Register it in an MCP client
 
-Claude Code, HTTP (start the server first):
+The client starts the server on stdio; start `npm run dev` first so the views have a statenet and a page.
+
+Claude Code:
 
 ```sh
-claude mcp add --transport http stateui http://127.0.0.1:4100/mcp
+claude mcp add stateui -- node /path/to/stateui-mcp/dist/cli.js --data-dir /path/to/data
 ```
 
-Claude Code, stdio (the client starts the server):
-
-```sh
-claude mcp add stateui -- node /path/to/libraries/stateui-mcp/dist/cli.js --stdio --port 4100 --data-dir /path/to/data
-```
-
-A `.mcp.json`:
+A `.mcp.json` (the workspace's own uses relative paths, since Claude Code starts it in the workspace folder):
 
 ```json
 {
     "mcpServers": {
-        "stateui-http": { "type": "http", "url": "http://127.0.0.1:4100/mcp" },
-        "stateui-stdio": {
+        "stateui": {
             "command": "node",
-            "args": ["/path/to/libraries/stateui-mcp/dist/cli.js", "--stdio", "--port", "4100", "--data-dir", "/path/to/data"]
+            "args": ["/path/to/stateui-mcp/dist/cli.js", "--data-dir", "/path/to/data"]
         }
     }
 }
@@ -147,7 +148,25 @@ Drawings (graphics epic 1) use the same tools: shape nodes go in a `drawing` nod
 
 3D scenes (graphics epic 3, releases 3A and 3B) use the same tools: a `scene3d` node holds `camera`, `light`, `mesh`, `model`, `label3d` (a text that faces the camera), `group3d` and `repeat3d` (one `mesh` row drawn once per record as an instanced mesh) nodes in its `children` (`ui_nodes_write`; `ui_components_search` with `category: "graphics"` finds them), `ui_validate` checks them and warns past 16 scenes a page (`SUI-DOC-LIMIT-SCENES`), and `ui_screenshot` of the scene's path waits until its first complete frame, models, textures and transitions included (`scenes: pending` in the result when it times out; a playing `animate` or model clip does not hold it back). A `model`'s `src` is the reference of a GLB uploaded to the app (`POST /apps/<id>/files`, the Security notes say which GLB files are taken), and a `mesh`'s `material.map` the reference of an uploaded png, jpeg, gif or webp picture; the frame reads both through the host as a `drawImage` picture is read. With `controls` a person turns or pans the camera in the live view and the camera node's `position` and `target` are written once on release, so `ui_state_get` shows the view. A 3D node with `interactive: true` has a proxy button, so `ui_tree` with `rendered: true` lists it with its path and `ui_interact` clicks, hovers, focuses and presses keys on it as on a 2D shape (G3.8); a `drag` on it turns the camera of a scene with `controls` and is not a press. The scene and its nodes are documented in the `@punyts/stateui-components` README (`scene3d`), the renderer, the chunk and the headless WebGL note in the `@punyts/stateui-3d` README. The guide topics `scene3d`, `scene3d-models` and `scene3d-behavior` (`scene3dSection`; pointer lines in the server instructions) say the same to the model.
 
-## Browser endpoint
+## Live views
+
+The live views of the apps live in a statenet. The server is one of its clients; the view pages are the others. Nothing of the server listens on a port.
+
+**The statenet.** `StatenetViews` (`src/infrastructure/statenet/`) connects to the statenet (`--statenet`) with `StatenetLink`, `@punyts/state-sync`'s sync client over a WebSocket, which reconnects with its backoff:
+
+- **The directory**, the namespace `stateui.apps`: the server keeps `$.apps.<appId>` there (`{ name, namespace, revision, updatedAt }`, one entry per app part, written again on every app change), so the view page lists the apps and finds the namespace of the one it shows. A page asks there for an app with the emit `stateui.open { appId }`; the server answers `ready` when it (re)joins, so a page asks again after a restart.
+- **One bridge per open app** (`AppBridge`), in the namespace of its instance, `instances.<persona>.<ownerId>.<appId>`. The instance's authority stays in the server (logic, guards, shared datasets, storage on disk) and is the truth: every change it pushes (logic, `ui_state_set`, a shared dataset's write) is written to the statenet, and on every (re)connect the statenet's state is made equal to the authority's (`diffState`, the smallest writes that do it; `$.server` never leaves the server). A change a page made comes from the statenet and goes to the authority as a client change, so guards, model checks and logic run on it. When the authority adjusts or refuses it, the statenet gets the authority's value back and the pages a `rejected` message, which the view raises as `sync.rejected`; unlike a page that talks to its own server, the change shows for a moment first. A definition change restarts the authority; the bridge connects to the new one and writes what changed. A deleted app gets `deleted`, and its bridge stops.
+- **The view relay.** Everything that is not state rides the protocol's `emit`, which the statenet relays (an emit from the server goes to every page of the namespace, an emit from a page to the server only, `@punyts/statenet`): the server sends `stateui.server`, a page sends `stateui.view`. Each message is JSON in one or more envelopes `{ v: 1, id, part, parts, text, from?, to? }` (`src/domain/viewRelay.ts`), so a 1 MiB document or a 10 MiB file stays under the protocol's 1,000,000-character message limit. A page sends `hello { kind }` (`browser` or `headless`; the server attaches it to the hub and answers with the app), `report { report }` (ready, rendered, errors, as `takeViewReport` takes them), `event { name, value }` (an `emit` of the app, for `ui_events_read`), `request { id, method, path, … }` (a file upload, read or release, answered with `response { id, status, json?, bytes?, headers? }` as the file routes answer) and `bye`. The server sends `view { message }` (the document, commands, locale, theme, deletion, a refused change), `response` and `ready`. The statenet's `statenet.left { clientId }` detaches a page that closed.
+
+**The view page** (`view/`, `src/browser/statenetView.ts`): `/` lists the apps of the directory, `/?app=<id>` shows the live view of one (`host.ts` with `statenetChannel.ts`), and `?statenet=ws://…` names the statenet (else `VITE_STATENET_URL` from the build, else `ws://<page host>:4200/sync`). `ui_preview` answers `<view url>?app=<id>&statenet=<url>`, the page the headless browser opens too (`?kind=headless` or its user agent marks it). The Vite plugin (`@punyts/stateui-mcp/vite`, `stateuiView()`) serves the runtime frame on a second port, so the sandboxed frame (`allow-scripts allow-same-origin`) has an origin of its own and cannot reach the page; it serves the runtime page with the runtime policy (no network, framed by the page's origin only), the bundle and the 3D chunk, and writes `data-runtime-url` and `data-chunk-3d` on the page's body.
+
+**Production (a CDN).** `npm run view:build` writes the page, `page.css` and `runtime/` (the runtime page, bundle and chunk) to `dist/view/`; no deployment is made. Set at build time: `STATEUI_VIEW_BASE`, the base URL or path the files are served from (Vite's `base`, such as `https://cdn.example.com/stateui/`); `STATEUI_VIEW_RUNTIME_URL`, where the pages load the runtime frame from (`{host}` is the page's host name), on an origin other than the pages', so serve `runtime/` from a second origin with the runtime policy as its `Content-Security-Policy` (`runtimeCsp` in `src/infrastructure/http/security.ts`); without it the frame loads `./runtime/runtime.html` from the pages' own origin; and `VITE_STATENET_URL`, the statenet the pages connect to. Run the server with `--view-url` set to the page's URL, and the statenet with `--allow-origin` set to the page's origin. The statenet listens on loopback only and has no authentication, so a statenet reached from other machines needs a proxy that adds both in front of it.
+
+**How the view works.** The page is a shell with one module. It puts the runtime page into a sandboxed iframe served from the runtime origin, speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source, origin and nonce. The app runs in Full mode of `@punyts/state-sync`: the page's sync client syncs with the app's namespace, and the view messages bring the document (on hello and after every part write, written into the running app as path writes where it can, or as a new load), commands and theme or locale switches. Every change a user makes to `$.data` or to the articulation of `$.app` (no `_` content, no `component`, `on`, `layout`, `placement` or `theme`) is synced, and every change the authority applies (another view's, a `ui_state_set`) reaches every view. The sync client keeps the confirmed state, the changes not yet acknowledged and the document in `localStorage`, so the view opens and takes changes while the statenet is away and sends them in order when it is back. `body[data-sync]` and `$.runtime.sync` show the status. Query parameters `?mode=dark` and `?locale=fr` apply a theme overlay or a language to a view. **Files.** The frame has no network, so files pass through the page: a `file` message (a `fileField` upload) goes to the server as a request, a `fileRead` (a component reading a stored file, such as a `paintField` background image) is read through the server (`src/browser/fileRead.ts`) and answered with `fileData`, the bytes moved in the transfer list, and a `fileRelease` (a component giving a stored file back) is answered with `fileReleased` (`src/browser/fileRelease.ts`). An id that is not a UUID is `not_found` (a release `ok: true`) without a request; a 404 is `not_found`, 401 or 403 `unauthorized`, any other failure `internal`, a request that gets no answer `offline`, and a body over 10 MiB is `too_large`. A release is `ok: true` for `204`, `404` and `409` (a file the app or its live state still references stays, and the 24-hour sweep removes it once nothing does), and it waits until the sync client has no change waiting for its ack (at most 5 s), so the write that let go of the file reaches the server first.
+
+### The embedded endpoint
+
+A server that serves its own view pages, with sign-in and many owners, embeds `startHttpServer` (`src/infrastructure/http/HttpServer.ts`) instead: `@punyts/magnetic` does, since a statenet has no authentication to hand to signed-in browsers. Its pages run the same view with the direct channel (`src/browser/viewChannel.ts`, `/assets/host.js`):
 
 | Route | What |
 |---|---|
@@ -156,27 +175,19 @@ Drawings (graphics epic 1) use the same tools: shape nodes go in a `drawing` nod
 | `GET /apps/:appId/sync?view=<uuid>` | the WebSocket of a view: the state-sync protocol and `{ type: 'view', message }` frames (document, commands, locale, theme, deletion); same origin only |
 | `POST /apps/:appId/report` | what a view tells the server: ready, rendered revision and runtime errors |
 | `POST /apps/:appId/files` | an upload from a `fileField`: `multipart/form-data` with one field `file`; `201 { id, name, size, type }`, `409 quota`, `413 too_large`, `415 unsupported_type` |
-| `GET /apps/:appId/files/:fileId` | the bytes, as an attachment, `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`; the live view's host fetches it for a runtime `fileRead` |
-| `DELETE /apps/:appId/files/:fileId` | releases an upload (the live view's host sends it for a runtime `fileRelease`): `204` removed (row and bytes), `409 referenced` kept because the app part's definition or its instance's live state still holds the id (`isFileReferenced`, the sweep's definition), `404` no such file in this app (so releasing twice is `404`), `400` an id that is not a UUID; same origin only. The host sends it only once its sync client has no change waiting for the ack (at most 5 s), so the write that let go of the file reaches the server first (G2.8) |
+| `GET /apps/:appId/files/:fileId` | the bytes, as an attachment, `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` |
+| `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409 referenced` kept because the app part's definition or its instance's live state still holds the id, `404` no such file, `400` an id that is not a UUID; same origin only |
 | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
-| `POST`, `GET`, `DELETE /mcp` | MCP over streamable HTTP, with sessions |
 
-The runtime port is a second origin that serves only the app frame; every other path there answers 404:
-
-| Route | What |
-|---|---|
-| `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
-| `GET /runtime/<chunk hash>.js` | the content-hashed 3D renderer chunk of `@punyts/stateui-3d` (when installed), with the same immutable `Cache-Control` as the runtime script; the app page names its hash in `data-chunk-3d` and the host page sends it in `load` as `chunks: { "3d": hash }`, and the runtime requests it only when a `scene3d` mounts |
-
-**How the view works.** The page is a shell with one external script. The script puts the runtime page into a sandboxed iframe served from the runtime port (`sandbox="allow-scripts allow-same-origin"`), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load nonce, and checks every message by source, origin and nonce. The frame keeps its own origin, which is not the page's, so it cannot reach the page; the page allows frames only from the runtime origin and the runtime page allows only the page to frame it, both by the host name the page was opened with. An opaque origin (`allow-scripts` alone) would isolate the frame the same way, but some embedded browsers refuse to load such a frame and show nothing. The message protocol is the same as in the preview of the minion UI, so the runtime bundle is used as built, with no Vite or bundling step. The app runs in Full mode of `@punyts/state-sync`: the page opens one WebSocket to the server, which carries the sync protocol between the page's sync client and the app's authority, and view frames with the document (on connect and after every part write, written into the running app as path writes where it can, or as a new load), commands and theme or locale switches. Every change a user makes to `$.data` or to the articulation of `$.app` (no `_` content, no `component`, `on`, `layout`, `placement` or `theme`) goes to the authority, and every change the authority applies (another view's, a `ui_state_set`) reaches every view. The sync client keeps the confirmed state, the changes not yet acknowledged and the document in `localStorage`, so the view opens and takes changes while the server is away and sends them in order when it is back; a change the server rejects is put back to the confirmed value and the app gets a `sync.rejected` event. `body[data-sync]` and `$.runtime.sync` show the status. `emit` events go over the socket too; ready, rendered and errors go to `POST /report`, each with the count of the view's loads, so the errors a view no longer reports are dropped. Query parameters `?mode=dark` and `?locale=fr` apply a theme overlay or a language to a view. **Files.** The frame has no network, so files pass through the page: a `file` message (a `fileField` upload) is posted to `POST /apps/:appId/files`, and a `fileRead` (a component reading a stored file, such as a `paintField` background image) is fetched by the page from `GET /apps/:appId/files/:fileId` on its own origin (`src/browser/fileRead.ts`) and answered with `fileData`, the bytes moved in the transfer list. An id that is not a UUID is `not_found` without a request; a status of 404 is `not_found`, 401 or 403 `unauthorized`, any other failure `internal`, a request that does not reach the server `offline`, and a body over 10 MiB is cut off and `too_large`. A `fileRelease` (a component giving a stored file back, such as a painting it replaced) is sent by the page as `DELETE /apps/:appId/files/:fileId` (`src/browser/fileRelease.ts`) and answered with `fileReleased`: `204`, `404` and `409` are `ok: true` (a `409` file stays and the 24-hour sweep removes it once nothing references it), an id that is not a UUID is `ok: true` without a request, a request that does not reach the server is `offline`, any other status `internal`.
+Its runtime port is a second origin that serves only the app frame (`/runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` and the 3D chunk `/runtime/<chunk hash>.js`); every other path there answers 404. The host page allows scripts, styles, connections and frames from its own origin only. The test harness (`test/helpers.ts`, `httpHarness`) runs the tools with this endpoint, since a view behaves the same over either channel.
 
 **Logic.** A Full app's authority runs the document's `logic` (see `@punyts/stateui-app`). A change a view sends runs the logic after it is applied and acknowledged; a guard rule (a rule whose only command is `reject`) answers before, so a refused change is rejected and the view gets `sync.rejected`. `ui_state_set` asks the guards too (a refused value is `logic-guard`) and then runs the logic. A transition's writes reach the views as one `changes` message. The authority keeps `$.app` sparse, so logic reads `$.app` as the document's value with the shape defaults under what the authority holds. `notify.<name>` and `logic.failed` reach the views as app events (the root node's `on`); `emit` and failures are also queued for `ui_events_read`. `ui_tree` with `logic: true` lists the machines with their current state, the rules, the guards and the decision tables with their rows. Timers (`after`, `debounce`) run in the server process and are lost on a restart, where they are armed again. A `call` command runs the procedure of that name given to `startServer` (`procedures`: `(payload, { appId }) => LogicAnswer`); any other call is queued as a `logic.call` event for `ui_events_read`, and the agent answers it with `ui_call_answer`. At most 100 calls wait per app, and waiting calls are dropped on a restart or when the app is removed. Compute units and effects run the functions given to `startServer` as `logicFunctions` (`compute`, `expressions`, `effects`), so an API key an effect needs stays on the server, and an effect whose `records.into` is a `$.server` map keeps its records there while the views get only the window and the status. An effect with no function is queued as a `logic.effect` event (`AppEffects`, at most 100 per app) and the agent answers it with `ui_effect_answer`; a newer request of the effect aborts the waiting one. `ui_logic_trace` lists each effect's token, whether a call runs and how many answers its cache holds.
 
 
 
-**Playwright.** The server keeps one headless Chromium, started on the first call that needs it and closed on shutdown, with one page per app. The page loads the same `/apps/:appId` URL a person opens, so it is a view like any other: it receives the same messages, `ui_command` reaches it and its changes sync like any view's. `ui_screenshot` and `ui_interact` look up the element in the runtime frame and use Playwright's own click, fill, press, hover and select on the native control inside it, so the events are the ones a user raises.
+**Playwright.** The server keeps one headless Chromium, started on the first call that needs it and closed on shutdown, with one page per app. The page loads the same view page a person opens (`<view url>?app=<id>&statenet=<url>`), so it is a view like any other: it receives the same messages, `ui_command` reaches it and its changes sync like any view's. `ui_screenshot` and `ui_interact` look up the element in the runtime frame and use Playwright's own click, fill, press, hover and select on the native control inside it, so the events are the ones a user raises.
 
-**Policy.** The host page allows scripts, styles, connections and frames from its own origin only, no inline script, no inline style, no framing by other pages. The runtime page has `default-src 'none'`, scripts only from its own origin plus `'unsafe-eval'` (the expression library builds functions for binding expressions), no network, images and fonts as `data:` only, and may be framed by this server's pages only. Uploaded files are never served inline.
+**Policy.** The embedded endpoint's host page allows scripts, styles, connections and frames from its own origin only, no inline script, no inline style, no framing by other pages; the statenet view page is the CDN's (or Vite's) to set. The runtime page has `default-src 'none'`, scripts only from its own origin plus `'unsafe-eval'` (the expression library builds functions for binding expressions), no network, images and fonts as `data:` only, and may be framed by this server's pages only. Uploaded files are never served inline.
 
 ## Data directory
 
@@ -259,9 +270,11 @@ An app that is not converted keeps its folder; fix what the report names in that
 
 ## Security notes
 
-- **Local only by default.** The server binds `127.0.0.1`. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused.
-- **No authentication.** Anyone who can reach the port can read, change and delete every app and use the headless browser. `--host 0.0.0.0` exposes all of that to the network and turns the Host check off. Do it only on a network you trust, or put your own authentication in front. `@punyts/magnetic` does that: it embeds `startHttpServer` with a `tenant` function that finds the signed-in user's workspace, so each user reaches only their own apps.
-- **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network (`connect-src 'none'`) and no forms. Its origin has its own storage, and it can read cookies that other local servers set for the same host name, but it has no way to send them anywhere except as app events to this server. The headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
+- **No port.** The server listens on nothing: MCP is on stdio, and it reaches the statenet as a client.
+- **The statenet has no authentication.** It listens on loopback only, refuses a `Host` that is not loopback and lets in web pages of the origins it is told (`--allow-origin`) only. Anyone who can reach it can read and change every app's live state; a page of an allowed origin can do what the app's views do. Do not put it on a network without your own authentication in front.
+- **The view relay.** The statenet relays a page's emits to the server only, and the server's to the pages, so one page cannot send another the document or a command. The server takes a page's file requests for the app of its namespace only.
+- **The embedded endpoint** (`startHttpServer`) binds `127.0.0.1` unless told otherwise. While it is bound to a loopback address, a request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` is refused (DNS rebinding), and a `POST` with an `Origin` header from another host is refused. It has no authentication of its own: `@punyts/magnetic` embeds it with a `tenant` function that finds the signed-in user's workspace, so each user reaches only their own apps.
+- **Apps run code.** An app document can contain binding expressions that run in the sandboxed frame. The frame has no network (`connect-src 'none'`) and no forms. Its origin has its own storage, and it can read cookies that other local servers set for the same host name, but it has no way to send them anywhere except as app events to the server. The headless Chromium is a real browser on your machine: do not point it at documents you do not trust.
 - **Paths.** Only UUIDs reach a file path. A file name is metadata and never part of a path.
 - **Uploads.** The type is sniffed from the bytes; the type the client claims is ignored. HTML, SVG, XML and executables are refused.
 - **3D models (GLB only).** A file is `model/gltf-binary` when it starts with the `glTF` magic number, version 2, and a header length equal to its size (`detectMagicType(head, size)` in `src/domain/UiFile.ts`). A `.gltf` (JSON with external buffers and images, which the frame could not fetch), a GLB cut short, of another version or with a wrong length, and any file named `.glb` or `.gltf` that is not such a GLB are refused with `415 unsupported_type`. `ui_file_read` answers a GLB's reference with `text: null`. The live view's host takes the allowed list from `src/domain/UiFile.ts` itself; `@punyts/stateui-components` keeps a copy, and a test in each library pins both to one literal. The 10 MiB file limit is the model limit: a product model with a few hundred thousand triangles and 1K to 2K textures usually fits, one with several 4K textures or a scanned mesh often does not, and the Draco, Meshopt and KTX2 compression that would shrink it is not supported (G3.7b refuses it). Reduce the texture sizes or the mesh before uploading.
@@ -270,11 +283,14 @@ An app that is not converted keeps its folder; fix what the report names in that
 
 ```sh
 npm run typecheck   # server and browser host script
-npm run build       # dist/ (server) and dist/browser/host.js (host script)
-npm test            # Vitest; the Playwright test skips itself when Chromium is missing
+npm run build       # dist/ (server, Vite plugin) and dist/browser/host.js (the embedded endpoint's host script)
+npm test            # Vitest; the Playwright tests skip themselves when Chromium is missing
+npm run dev         # the statenet and the view page, for a client that runs the server on stdio
 ```
 
-Layout: `src/domain` (pure rules), `src/application` (ports and use cases), `src/infrastructure/storage` (the JSON file adapters), `src/infrastructure/mcp` (tools and server), `src/infrastructure/http` (routes, pages, policy), `src/infrastructure/preview` (the hub of live views and the Playwright adapter), `src/browser/host.ts` (the script that runs in the page), `src/config` (options and composition), `src/testing` (fixtures and in-memory fakes for tests; not built).
+`test/statenetBridge.test.ts` drives the server through a real statenet with a page that speaks the protocol by hand; `test/statenet.integration.test.ts` runs the view page on Vite, a statenet, the server and Chromium together, and the command on stdio.
+
+Layout: `src/domain` (pure rules, and the view relay's envelopes), `src/application` (ports and use cases), `src/infrastructure/storage` (the JSON file adapters), `src/infrastructure/mcp` (tools and server), `src/infrastructure/statenet` (the server's side of the views in a statenet), `src/infrastructure/view` (the view page's Vite plugin), `src/infrastructure/http` (the embedded endpoint: routes, pages, policy), `src/infrastructure/preview` (the hub of live views and the Playwright adapter), `src/browser` (the view that runs in the page: `host.ts`, its channels, `statenetView.ts` for the view page and `hostPage.ts` for the embedded endpoint), `view/` (the Vite project of the view page), `src/config` (options and composition), `src/testing` (fixtures and in-memory fakes for tests; not built).
 
 ## License
 

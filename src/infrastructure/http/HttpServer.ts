@@ -10,23 +10,17 @@ import type { UploadFileResult } from '../../application/use-cases/UploadFile.js
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
-import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { Authority } from '@punyts/state-sync/authority';
 import { REVOKED_CODE } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
+import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
 import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
-
-/** The MCP side of `/mcp`: sessions of the streamable HTTP transport */
-export interface McpEndpoint {
-    handle(request: IncomingMessage, response: ServerResponse, body: unknown): Promise<void>;
-    close(): Promise<void>;
-}
 
 /** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
 export interface HttpTenant {
@@ -79,8 +73,6 @@ export interface HttpServerOptions {
     readonly runtimePort: number;
     /** The one owner of a local server, or how a request finds its owner on a server with many */
     readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
-    /** MCP at `/mcp`; absent: `/mcp` is not found */
-    readonly mcp?: McpEndpoint;
     /**
      * Routes of the embedding server, tried before the endpoint's own and after the host and origin checks: true when
      * they answered the request. A thrown `HttpError` is answered with its status and code
@@ -105,12 +97,10 @@ export interface RunningHttpServer {
     close(): Promise<void>;
 }
 
-const MAX_JSON_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_REPORT_BODY_BYTES = 2 * 1024 * 1024;
 const KEEP_ALIVE_MS = 15_000;
 /** A sync message is at most 1,000,000 characters (`parseMessage`); a frame may hold that many bytes of UTF-8 twice over */
 const MAX_SYNC_FRAME_BYTES = 4 * 1024 * 1024;
-const MAX_REPORTED_ERRORS = 50;
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 /** An error a route answers with: its status, and `{ error: code, message }` as the body */
@@ -163,25 +153,10 @@ function isUuid(value: string | null): value is string {
     return value !== null && isAppId(value);
 }
 
-function toBuildErrors(value: unknown): UiBuildError[] {
-    if (!Array.isArray(value)) return [];
-    const errors: UiBuildError[] = [];
-    for (const item of value.slice(-MAX_REPORTED_ERRORS)) {
-        if (!isJsonObject(item) || typeof item['code'] !== 'string' || typeof item['message'] !== 'string') continue;
-        const severity = item['severity'];
-        errors.push({
-            code: item['code'].slice(0, 64),
-            message: item['message'].slice(0, 2000),
-            ...((severity === 'error' || severity === 'warning') && { severity }),
-            ...(typeof item['statePath'] === 'string' && { statePath: item['statePath'].slice(0, 500) }),
-            ...(typeof item['component'] === 'string' && { component: item['component'].slice(0, 100) })
-        });
-    }
-    return errors;
-}
-
 /**
- * The one HTTP server: `POST/GET/DELETE /mcp` for MCP clients and the browser endpoint for people and for Playwright.
+ * The browser endpoint of a server that serves its own view pages, for people and for Playwright: what an embedding
+ * server with sign-in and many owners uses (Magnetic). The stateui-mcp server itself serves no HTTP: its views live
+ * in a statenet (`StatenetViews`) and their pages come from Vite or a CDN.
  *
  * | Route | What |
  * |---|---|
@@ -263,11 +238,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const method = request.method ?? 'GET';
 
         if (options.routes !== undefined && (await options.routes(request, response))) return;
-        if (path === '/mcp' && options.mcp !== undefined) {
-            const body = method === 'POST' ? await readJsonBody(request, MAX_JSON_BODY_BYTES) : undefined;
-            await options.mcp.handle(request, response, body);
-            return;
-        }
         if (method === 'GET' && path === '/') {
             const tenant = await tenantOf(request, response, true);
             if (tenant === undefined) return;
@@ -345,35 +315,11 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         );
     }
 
-    async function reportRoute({ hub, useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
-        const body = await readJsonBody(request, MAX_REPORT_BODY_BYTES);
-        if (!isJsonObject(body) || !isUuid(typeof body['viewId'] === 'string' ? body['viewId'] : null)) {
-            throw new HttpError(400, 'A report is a JSON object with a viewId', 'invalid_report');
-        }
-        const viewId = body['viewId'] as string;
-        const revision = typeof body['revision'] === 'number' ? body['revision'] : undefined;
-        // The load the view counts: a ready or rendered report drops the errors earlier loads left
-        const source = Number.isSafeInteger(body['load']) ? { viewId, load: body['load'] as number } : undefined;
-        switch (body['type']) {
-            case 'ready':
-            case 'rendered':
-                hub.touch(appId, viewId, { ...(body['type'] === 'ready' && { ready: true }), ...(revision !== undefined && { revision }) });
-                if (source !== undefined) await useCases.recordPreviewLoad.execute(appId, source);
-                sendJson(response, 200, { ok: true });
-                return;
-            case 'errors': {
-                const errors = toBuildErrors(body['errors']);
-                if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
-                hub.recordErrors(appId, errors);
-                const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision, source);
-                if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
-                hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            default:
-                throw new HttpError(400, 'Unknown report type', 'invalid_report');
-        }
+    async function reportRoute(tenant: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+        const outcome = await takeViewReport(tenant, appId, await readJsonBody(request, MAX_REPORT_BODY_BYTES));
+        if (outcome.kind === 'invalid') throw new HttpError(400, outcome.message, 'invalid_report');
+        if (outcome.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
+        sendJson(response, 200, { ok: true });
     }
 
     async function uploadRoute({ useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {

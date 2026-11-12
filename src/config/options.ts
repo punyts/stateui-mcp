@@ -1,13 +1,12 @@
 import { resolve } from 'node:path';
+import { DEFAULT_STATENET_URL, DEFAULT_VIEW_URL } from './startServer.js';
 
 export interface CliOptions {
     readonly dataDir: string;
-    readonly host: string;
-    readonly port: number;
-    /** `undefined`: the next port after `port` */
-    readonly runtimePort: number | undefined;
-    readonly stdio: boolean;
-    readonly runtimeDir: string | undefined;
+    /** The statenet's WebSocket URL */
+    readonly statenet: string;
+    /** The view page's URL (the Vite dev server, or a CDN) */
+    readonly viewUrl: string;
     /** A file holding the key that encrypts `$.server` */
     readonly secretKeyFile: string | undefined;
     /** The key itself, from the environment only (hex or base64) */
@@ -24,19 +23,17 @@ export const HELP_TEXT = `stateui-mcp: an MCP server for building StateUI apps, 
 Usage: stateui-mcp [options]
        stateui-mcp convert [--data-dir <dir>] [--dry-run] [--purge]   (stateui-mcp convert --help)
 
+It speaks MCP on stdin and stdout and listens on no port. The apps' live state goes to a statenet
+(npx statenet), and the view pages that show it are static files (the Vite dev server of view/
+locally, a CDN in production) that read the state from that statenet.
+
 Options:
   --data-dir <dir>     Where the parts, instances and app files are stored
                        (env STATEUI_MCP_DATA_DIR, default ./data)
-  --port <number>      Port of the HTTP server: /mcp and the browser view
-                       (env STATEUI_MCP_PORT, default 4100)
-  --runtime-port <n>   Port that serves the app frame, a second origin
-                       (env STATEUI_MCP_RUNTIME_PORT, default: the next port, 4101)
-  --host <address>     Address to bind (env STATEUI_MCP_HOST, default 127.0.0.1).
-                       There is no authentication: bind a non-loopback address only on a network you trust
-  --stdio              Speak MCP over stdin and stdout. The HTTP server still listens,
-                       so the browser view works. Logs go to stderr only
-  --runtime-dir <dir>  Folder of the built StateUI runtime bundle
-                       (env STATEUI_MCP_RUNTIME_DIR, default: the one in @punyts/stateui-app)
+  --statenet <url>     The statenet's WebSocket (env STATEUI_MCP_STATENET, default ${DEFAULT_STATENET_URL})
+  --view-url <url>     The view page, which ui_preview names and the headless browser opens
+                       (env STATEUI_MCP_VIEW_URL, default ${DEFAULT_VIEW_URL})
+  --stdio              Accepted for older client configurations: stdio is the only transport
   --secret-key-file <file>
                        The key that encrypts $.server at rest: 32 raw bytes, 64 hex
                        characters or base64 (env STATEUI_MCP_SECRET_KEY_FILE, or the key
@@ -48,9 +45,6 @@ Options:
                        (env STATEUI_MCP_SHOWCASE=off). It is installed only when the data
                        directory holds no parts at all, and never again after that
   -h, --help           Show this help
-
-Without --stdio the server speaks streamable HTTP at http://<host>:<port>/mcp.
-Open http://<host>:<port>/ for the list of apps.
 `;
 
 export const CONVERT_HELP_TEXT = `stateui-mcp convert: turns the apps of the old single-document store into owner parts, once
@@ -115,11 +109,24 @@ export function parseConvertOptions(argv: readonly string[], env: Readonly<Recor
     return { dataDir: resolve(dataDir), dryRun, purge, help };
 }
 
-function parsePort(text: string): number {
-    const port = Number(text);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) throw new UsageError(`Invalid port: ${text}`);
-    return port;
+function parseUrl(text: string, protocols: readonly string[], what: string): string {
+    let url: URL;
+    try {
+        url = new URL(text);
+    } catch {
+        throw new UsageError(`Invalid ${what}: ${text}`);
+    }
+    if (!protocols.includes(url.protocol)) throw new UsageError(`Invalid ${what}: ${text} (${protocols.map((protocol) => protocol.replace(':', '')).join(' or ')})`);
+    return url.href;
 }
+
+/** The options of the web server this server no longer has, with what replaced them */
+const REMOVED_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
+    '--port': 'the server listens on no port: MCP is on stdio and the state goes to the statenet (--statenet)',
+    '--runtime-port': 'the view server (view/, its Vite plugin) serves the runtime frame now',
+    '--host': 'the server listens on no address: MCP is on stdio',
+    '--runtime-dir': 'the view server (view/, its Vite plugin) serves the runtime bundle now'
+});
 
 /** The values of STATEUI_MCP_SHOWCASE that turn the showcase off */
 const SHOWCASE_OFF: readonly string[] = Object.freeze(['off', 'false', 'no', '0']);
@@ -127,14 +134,11 @@ const SHOWCASE_OFF: readonly string[] = Object.freeze(['off', 'false', 'no', '0'
 /** Reads the command line and the environment. A flag wins over its environment variable */
 export function parseOptions(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): CliOptions {
     let dataDir = env['STATEUI_MCP_DATA_DIR'] ?? './data';
-    let host = env['STATEUI_MCP_HOST'] ?? '127.0.0.1';
-    let port = env['STATEUI_MCP_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_PORT']) : 4100;
-    let runtimePort = env['STATEUI_MCP_RUNTIME_PORT'] !== undefined ? parsePort(env['STATEUI_MCP_RUNTIME_PORT']) : undefined;
-    let runtimeDir = env['STATEUI_MCP_RUNTIME_DIR'];
+    let statenet = parseUrl(env['STATEUI_MCP_STATENET'] ?? DEFAULT_STATENET_URL, ['ws:', 'wss:'], 'statenet URL');
+    let viewUrl = parseUrl(env['STATEUI_MCP_VIEW_URL'] ?? DEFAULT_VIEW_URL, ['http:', 'https:'], 'view URL');
     let secretKeyFile = env['STATEUI_MCP_SECRET_KEY_FILE'];
     let toolLog = env['STATEUI_MCP_TOOL_LOG'];
     let showcase = !SHOWCASE_OFF.includes((env['STATEUI_MCP_SHOWCASE'] ?? '').trim().toLowerCase());
-    let stdio = false;
     let help = false;
 
     for (let index = 0; index < argv.length; index++) {
@@ -150,17 +154,11 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
             case '--data-dir':
                 dataDir = value();
                 break;
-            case '--port':
-                port = parsePort(value());
+            case '--statenet':
+                statenet = parseUrl(value(), ['ws:', 'wss:'], 'statenet URL');
                 break;
-            case '--runtime-port':
-                runtimePort = parsePort(value());
-                break;
-            case '--host':
-                host = value();
-                break;
-            case '--runtime-dir':
-                runtimeDir = value();
+            case '--view-url':
+                viewUrl = parseUrl(value(), ['http:', 'https:'], 'view URL');
                 break;
             case '--secret-key-file':
                 secretKeyFile = value();
@@ -169,7 +167,6 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
                 toolLog = value();
                 break;
             case '--stdio':
-                stdio = true;
                 break;
             case '--no-showcase':
                 showcase = false;
@@ -179,16 +176,14 @@ export function parseOptions(argv: readonly string[], env: Readonly<Record<strin
                 help = true;
                 break;
             default:
+                if (REMOVED_OPTIONS[flag] !== undefined) throw new UsageError(`${flag} is gone: ${REMOVED_OPTIONS[flag]}`);
                 throw new UsageError(`Unknown option: ${argument}`);
         }
     }
     return {
         dataDir: resolve(dataDir),
-        host,
-        port,
-        runtimePort,
-        stdio,
-        runtimeDir: runtimeDir === undefined ? undefined : resolve(runtimeDir),
+        statenet,
+        viewUrl,
         secretKeyFile: secretKeyFile === undefined || secretKeyFile === '' ? undefined : resolve(secretKeyFile),
         secretKey: env['STATEUI_MCP_SECRET_KEY'],
         toolLog: toolLog === undefined || toolLog === '' ? undefined : resolve(toolLog),

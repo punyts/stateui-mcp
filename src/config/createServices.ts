@@ -36,8 +36,13 @@ export interface ServicesOptions {
     /** Where the parts, instances and app files live */
     readonly dataDir: string;
     readonly report: UseCaseReport;
-    /** The origin the HTTP server listens on. A function, because the port may be chosen when the server starts */
+    /**
+     * The origin of the server that serves the view pages at `/apps/<id>` (`startHttpServer`). A function, because
+     * the port may be chosen when the server starts. Unused with `viewPage`
+     */
     readonly origin: () => string;
+    /** The page of an app's live view, when it is not `<origin>/apps/<id>`: the statenet view page that Vite or a CDN serves */
+    readonly viewPage?: (appId: string) => string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
     /** Extra arguments for the headless Chromium, for tests (none by default; ignored with `browser`) */
@@ -85,6 +90,8 @@ export interface Services {
     readonly browser: PreviewBrowser;
     readonly report: UseCaseReport;
     readonly viewUrl: (appId: string) => string;
+    /** Tells of every part change that succeeded (create, write, rename, delete); returns the function that stops it */
+    readonly onPartChange: IndexedUiPartRepository['onChange'];
     /** Records every tool call, when `toolLog` is set */
     readonly toolCallLog?: ToolCallLog;
 }
@@ -127,7 +134,8 @@ export function createServices(options: ServicesOptions): Services {
         { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: new FsAppFolderStore(folders, lock) },
         { now, newId: randomUUID, report: options.report }
     );
-    const browser = options.browser ?? new BrowserPreview(hub, options.origin, options.browserArgs);
+    const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);
+    const browser = options.browser ?? new BrowserPreview(hub, viewPage, options.browserArgs);
     const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId);
     const liveViews = new LiveViews(hub, browser, instanceViews);
     // Every part change reaches the open views of the apps that show it
@@ -150,7 +158,8 @@ export function createServices(options: ServicesOptions): Services {
         recoverParts: () => partFiles.recover(),
         browser,
         report: options.report,
-        viewUrl: (appId) => `${options.origin()}/apps/${appId}`,
+        viewUrl: viewPage,
+        onPartChange: (listener) => parts.onChange(listener),
         ...(toolCallLog !== undefined && { toolCallLog })
     };
 }

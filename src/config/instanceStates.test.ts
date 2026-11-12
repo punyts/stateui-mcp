@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import type { StoredNamespace } from '@punyts/state-sync/authority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
@@ -401,7 +402,7 @@ describe('instances of other personas', () => {
 
         // Act
         const theirs = await states.authority(await app(), PERSONA);
-        theirs.write({ path: '$.data.bag', op: 'set', value: LINES });
+        theirs.write({ path: '$.data.bag', op: 'set', value: LINES as unknown as SyncValue });
         const owners = await states.state(await app());
         await authorities.close();
 
