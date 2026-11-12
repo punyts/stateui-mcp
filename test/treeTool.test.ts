@@ -141,7 +141,9 @@ describe('ui_tree with app', () => {
             // Arrange
             await harness.close();
             const open = vi.fn(async () => ({ rendered: true }));
+            // The page's own root has no box: listed as it is, it would fold the app and its screens away
             const rendered = vi.fn(async () => [
+                { path: '$', component: 'appRoot', visible: false },
                 { path: '$.app', component: 'app', visible: true },
                 { path: '$.screens.detail', component: 'panel', visible: true }
             ]);
@@ -155,7 +157,9 @@ describe('ui_tree with app', () => {
             // Assert
             expect(result.body).toMatchObject({ app: 'shop', revision: 1, nodeCount: 2 });
             expect(open).toHaveBeenCalledWith(id, expect.any(Number), { screen: 'detail' });
-            expect(rendered).toHaveBeenCalledWith(id, expect.any(Number), '$.app');
+            // Without a path the whole page is asked for, and the app node and the screens are kept: the screen's nodes are listed too
+            expect(rendered).toHaveBeenCalledWith(id, expect.any(Number), '$');
+            expect(String(result.body['text'])).not.toContain('appRoot');
             expect(mixed.body).toMatchObject({ error: 'invalid-argument', argument: 'rendered' });
         });
 

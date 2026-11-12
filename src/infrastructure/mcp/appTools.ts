@@ -98,10 +98,13 @@ export function createAppTools(
                 if (rendered === true) {
                     if (content === true || logic === true) return fail('invalid-argument', 'rendered lists what the page draws; leave content and logic out', { argument: 'rendered' });
                     if (browser === undefined) return fail('browser-unavailable', 'This server has no headless browser, so it cannot list what the page draws');
-                    const under = path === undefined ? '$.app' : statePath(path);
+                    // Without a path: everything the page draws, the app node and the screen it shows (the one asked for is opened first)
+                    const under = path === undefined ? '$' : statePath(path);
                     try {
                         if (screen !== undefined) await browser.open(target.appId, target.viewRevision, { screen });
-                        const nodes = await browser.rendered(target.appId, target.viewRevision, under);
+                        const drawn = await browser.rendered(target.appId, target.viewRevision, under);
+                        // The page's own root (`$`) has no box and would fold everything below it: the nodes are the app's and the screens'
+                        const nodes = path === undefined ? drawn.filter((node) => node.path === '$.app' || node.path.startsWith('$.app.') || node.path.startsWith('$.screens.')) : drawn;
                         if (nodes.length === 0) {
                             return fail('not-rendered', `The page draws nothing at ${under}; check the path with ui_tree, and open what holds it (a tab, a drawer, a screen)`, { ...runName(target), path: under });
                         }
