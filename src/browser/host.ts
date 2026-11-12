@@ -153,7 +153,8 @@ function articulation(value: Json): Json | undefined {
 function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined, instance: boolean): { path: string; op: ChangeOp; value?: Json } | undefined {
     const segments = path.split('.');
     const branch = segments[1];
-    const branches = instance ? ['data', 'app', 'screens', 'route', 'theme'] : ['data', 'app'];
+    // `raised`: the events the nodes raised (`@punyts/stateui-app`'s dom/on/raised.ts), which server logic triggers on
+    const branches = instance ? ['data', 'app', 'screens', 'route', 'theme', 'raised'] : ['data', 'app', 'raised'];
     if (segments[0] !== '$' || branch === undefined || !branches.includes(branch) || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
     if (branch === 'theme') {
         // Only the active names, one string per kind (and theme), as the instance keeps them
@@ -176,9 +177,14 @@ function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined, ins
     return kept === undefined ? undefined : { path, op, value: kept };
 }
 
+/** The branches of the synced state that the frame shows */
+const VIEW_BRANCHES: readonly string[] = ['data', 'app', 'screens', 'route', 'theme'];
+
 /** Applies one change to a view state in place, as the sync client does: missing parents are created, a delete below one does nothing */
 function applyTo(state: ViewState, path: string, op: ChangeOp, value: Json | undefined): void {
     const [, branch, ...rest] = path.split('.') as [string, keyof ViewState, ...string[]];
+    // The view holds what the frame shows; a synced branch it does not show (`$.raised`, the events) stays out of it
+    if (!VIEW_BRANCHES.includes(branch)) return;
     if (branch === 'route' && rest.length === 0) {
         if (op === 'delete' || value === undefined) delete state.route;
         else state.route = copy(value);

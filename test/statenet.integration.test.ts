@@ -202,6 +202,64 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         expect(state.body['value']).toBe(true);
     });
 
+    it("should run a server rule on every press of a card through $.raised, and on a shape's hover only when a rule uses it", async () => {
+        // Arrange: a card and a drawing with one interactive circle; rules on the card's press and, later, the circle's hover
+        const card = '$.screens.home.children.card';
+        const dot = '$.screens.home.children.map.children.dot';
+        const created = await call(client, 'ui_app_create', {
+            name: 'raised',
+            home: {
+                component: 'panel',
+                children: {
+                    card: { component: 'card', _title: 'Open me', interactive: true },
+                    map: {
+                        component: 'drawing',
+                        _title: 'Map',
+                        viewBox: { x: 0, y: 0, width: 200, height: 100 },
+                        children: { dot: { component: 'circle', cx: 100, cy: 50, r: 30, fill: '#ff0000', interactive: true, _label: 'Dot' } }
+                    }
+                }
+            }
+        });
+        const pressRule = await call(client, 'ui_logic_write', {
+            app: 'raised',
+            expectedRevision: 1,
+            operations: [{ op: 'set', unit: 'rules.opened', value: { when: { path: `$.raised.${card.slice(2)}.press` }, do: [{ command: 'emit', target: 'card.pressed' }] } }]
+        });
+        const events = async (name: string): Promise<unknown[]> =>
+            ((await call(client, 'ui_events_read', { app: 'raised' })).body['events'] as { name: string }[]).filter((event) => event.name === name);
+
+        // Act: press the card twice, and hover the dot while no rule uses hover
+        await call(client, 'ui_preview', { app: 'raised' });
+        for (let press = 0; press < 2; press++) await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'click', path: card }] });
+        const pressed = await eventually(() => events('card.pressed'), (value) => Array.isArray(value) && value.length >= 2);
+        await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'hover', path: dot }] });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const unused = (await call(client, 'ui_state_get', { app: 'raised', path: `$.raised.${dot.slice(2)}` })).body;
+
+        // ...then with a rule on the dot's hover (the page loads again with the new logic)
+        const hoverRule = await call(client, 'ui_logic_write', {
+            app: 'raised',
+            expectedRevision: 2,
+            operations: [{ op: 'set', unit: 'rules.looked', value: { when: { path: `$.raised.${dot.slice(2)}.hover` }, do: [{ command: 'emit', target: 'dot.hovered' }] } }]
+        });
+        await call(client, 'ui_preview', { app: 'raised' });
+        await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'hover', path: card }, { action: 'hover', path: dot }] });
+        const hovered = await eventually(() => events('dot.hovered'), (value) => Array.isArray(value) && value.length >= 1);
+        // Writing raised into the shape redraws it: that must not make it raise hover again and again
+        const settled = await eventually(() => events('dot.hovered'), () => false, 2000);
+
+        // Assert
+        expect([created.isError, pressRule.isError, hoverRule.isError]).toEqual([false, false, false]);
+        // The raised paths are ordinary trigger paths: nothing warns about them
+        expect(JSON.stringify([pressRule.body['warnings'], hoverRule.body['warnings']])).not.toContain('.raised.');
+        expect(pressed).toHaveLength(2);
+        expect(unused['error']).toBe('unknown-path');
+        // One hover at once and, the pointer still moving over the dot, at most the last one when the 250 ms window ends
+        expect(hovered.length).toBeGreaterThanOrEqual(1);
+        expect(settled.length).toBeLessThanOrEqual(2);
+    });
+
     it('should run a server rule on every tool write of the value a path already holds', async () => {
         const path = '$.screens.home.children.press.busy';
         await call(client, 'ui_logic_write', {
