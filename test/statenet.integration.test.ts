@@ -171,6 +171,37 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         expect(pressed).toHaveLength(3);
     });
 
+    it("should run a server rule on every press of a plain button, through its clicked, with no on command", async () => {
+        // Arrange: a button with nothing wired; the rule watches its clicked
+        const button = '$.screens.home.children.go';
+        const created = await call(client, 'ui_app_create', { name: 'clicks', home: { component: 'panel', children: { go: { component: 'button', _title: 'Go' } } } });
+        const rule = await call(client, 'ui_logic_write', {
+            app: 'clicks',
+            expectedRevision: 1,
+            operations: [{ op: 'set', unit: 'rules.go', value: { when: { path: `${button}.clicked`, is: true }, do: [{ command: 'emit', target: 'go.clicked' }] } }]
+        });
+        const page = await browser.newPage();
+        await page.goto(server.viewOf(created.body['id'] as string));
+        await page.waitForFunction(() => document.body.dataset['status'] === 'ready' && document.body.dataset['sync'] === 'online', undefined, { timeout: 15_000 });
+
+        // Act
+        for (let press = 0; press < 3; press++) {
+            await frameOf(page).locator('button').first().click();
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+        const clicked = await eventually(
+            async () => ((await call(client, 'ui_events_read', { app: 'clicks' })).body['events'] as { name: string }[]).filter((event) => event.name === 'go.clicked'),
+            (events) => Array.isArray(events) && events.length >= 3
+        );
+        const state = await call(client, 'ui_state_get', { app: 'clicks', path: `${button}.clicked` });
+        await page.close();
+
+        // Assert
+        expect([created.isError, rule.isError]).toEqual([false, false]);
+        expect(clicked).toHaveLength(3);
+        expect(state.body['value']).toBe(true);
+    });
+
     it('should run a server rule on every tool write of the value a path already holds', async () => {
         const path = '$.screens.home.children.press.busy';
         await call(client, 'ui_logic_write', {

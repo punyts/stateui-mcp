@@ -104,7 +104,11 @@ export class StatenetLink {
                         send: (text) => {
                             if (socket.readyState === WebSocket.OPEN) socket.send(text);
                         },
-                        close: () => socket.terminate()
+                        // A close, not a terminate: what was sent just before (a last emit) still goes out first
+                        close: () => {
+                            if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
+                            else socket.close();
+                        }
                     };
                 }
             },

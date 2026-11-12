@@ -119,7 +119,9 @@ export class StatenetViews {
             this.directory.write(diffWrites(this.directory.state['apps'], entries, '$.apps'));
             for (const [id, bridge] of this.bridges) {
                 if (entries[id] !== undefined) continue;
-                bridge.stop();
+                // The deletion tells the hub's views too, but it may still be removing the app's files: the pages
+                // hear it from here as well, before the bridge stops, so none keeps showing an app that is gone
+                bridge.gone();
                 this.bridges.delete(id);
             }
         })().catch((error: unknown) => {
@@ -170,6 +172,13 @@ class AppBridge {
     start(): void {
         this.link.start();
         void this.attach();
+    }
+
+    /** The app part is gone: its pages are told (`deleted`), then the bridge stops */
+    gone(): void {
+        if (this.stopped) return;
+        this.broadcast({ type: 'view', message: { type: 'deleted' } });
+        this.stop();
     }
 
     stop(): void {

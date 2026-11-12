@@ -246,6 +246,27 @@ describe('the server and its views through a statenet', () => {
         expect([released['status'], again['status'], otherApp['status']]).toEqual([204, 404, 404]);
     });
 
+    it('should tell the pages an app is gone when its part goes without the deletion telling them first', async () => {
+        // Arrange: a second app, open in a page, removed from storage directly: no ui_delete, so no hub message
+        const other = (await createApp(client, 'other')).id;
+        const part = await server.services.instanceViews.find(other);
+        const page = new FakePage(statenet.url, server.services.instanceViews.namespace(part!));
+        pages.push(page);
+        await server.views.open(other);
+        await page.open();
+        page.relay({ type: 'hello', kind: 'browser' });
+        await page.fromServerNext((message) => message['type'] === 'view');
+
+        // Act
+        const removed = await server.services.parts.delete('apps', 'other', 1);
+        const gone = await page.fromServerNext((message) => message['type'] === 'view' && (message['message'] as Message)['type'] === 'deleted');
+        await eventually(() => !server.views.openApps().includes(other));
+
+        // Assert
+        expect(removed.kind).toBe('deleted');
+        expect(gone).toBeDefined();
+    });
+
     it('should tell the pages an app was deleted and stop bridging it', async () => {
         const page = await openPage();
 
