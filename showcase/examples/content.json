@@ -78,6 +78,21 @@
                 "max": 4,
                 "people": [{ "name": "Ada Lovelace" }, { "name": "Grace Hopper" }, { "name": "Alan Turing" }, { "name": "Katherine Johnson" }, { "name": "Margaret Hamilton" }]
             }
+        },
+        "carousel": {
+            "example": {
+                "component": "carousel",
+                "_label": "Highlights",
+                "loop": true,
+                "children": {
+                    "sale": { "component": "card", "_title": "Spring sale", "placement": { "_slide": "Sale" }, "children": { "text": { "component": "text", "_text": "Up to 40% off garden tools" } } },
+                    "new": { "component": "card", "_title": "New arrivals", "placement": { "_slide": "New" }, "children": { "text": { "component": "text", "_text": "Fresh oak furniture, made to order" } } },
+                    "delivery": { "component": "card", "_title": "Free delivery", "placement": { "_slide": "Delivery" }, "children": { "text": { "component": "text", "_text": "On every order over 50" } } }
+                }
+            }
+        },
+        "codeBlock": {
+            "example": { "component": "codeBlock", "language": "ts", "lineNumbers": true, "code": "const total = items\n    .map((item) => item.price * item.qty)\n    .reduce((sum, line) => sum + line, 0);" }
         }
     }
 }

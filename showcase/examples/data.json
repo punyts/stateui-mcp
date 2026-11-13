@@ -197,6 +197,18 @@
                     }
                 }
             }
+        },
+        "timeline": {
+            "example": {
+                "component": "timeline",
+                "_label": "Order history",
+                "entries": [
+                    { "title": "Delivered", "time": "Today 14:02", "text": "Left at the front door", "icon": "check", "tone": "success" },
+                    { "title": "Out for delivery", "time": "Today 08:15", "icon": "truck" },
+                    { "title": "Payment retried", "time": "Mon 18:40", "text": "The first card was declined", "tone": "warning" },
+                    { "title": "Ordered", "time": "Mon 18:31", "icon": "shopping-cart" }
+                ]
+            }
         }
     }
 }

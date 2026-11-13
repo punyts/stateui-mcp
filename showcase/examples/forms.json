@@ -183,6 +183,19 @@
         "wizard": {
             "wide": true,
             "example": { "component": "wizard" }
+        },
+        "toggleButton": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "bold": { "component": "toggleButton", "icon": "bold", "_text": "Bold", "pressed": true },
+                    "italic": { "component": "toggleButton", "icon": "italic", "_text": "Italic" },
+                    "underline": { "component": "toggleButton", "icon": "underline", "_text": "Underline" }
+                }
+            }
+        },
+        "pinField": {
+            "example": { "component": "pinField", "_label": "Verification code", "length": 6, "_help": "We sent a six-digit code to your phone" }
         }
     }
 }

@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **102** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **108** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -119,7 +119,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 28
+                          "value": 30
                         },
                         "open": {
                           "component": "link",
@@ -136,7 +136,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 13
+                          "value": 14
                         },
                         "open": {
                           "component": "link",
@@ -170,7 +170,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 5
+                          "value": 6
                         },
                         "open": {
                           "component": "link",
@@ -187,7 +187,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 9
+                          "value": 11
                         },
                         "open": {
                           "component": "link",
@@ -927,7 +927,7 @@
             "content": {
               "component": "panel",
               "_title": "Forms",
-              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 28 components.",
+              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 30 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -1613,6 +1613,47 @@
                       "component": "wizard"
                     }
                   }
+                },
+                "toggleButton": {
+                  "component": "card",
+                  "_title": "toggleButton",
+                  "_subtitle": "A button that stays pressed or not (aria-pressed), with an icon and label like button; a press flips pressed",
+                  "children": {
+                    "example": {
+                      "component": "toolbar",
+                      "children": {
+                        "bold": {
+                          "component": "toggleButton",
+                          "icon": "bold",
+                          "_text": "Bold",
+                          "pressed": true
+                        },
+                        "italic": {
+                          "component": "toggleButton",
+                          "icon": "italic",
+                          "_text": "Italic"
+                        },
+                        "underline": {
+                          "component": "toggleButton",
+                          "icon": "underline",
+                          "_text": "Underline"
+                        }
+                      }
+                    }
+                  }
+                },
+                "pinField": {
+                  "component": "card",
+                  "_title": "pinField",
+                  "_subtitle": "A labelled one-time code or PIN entered in 4 to 8 boxes, digits only or letters too, optionally masked",
+                  "children": {
+                    "example": {
+                      "component": "pinField",
+                      "_label": "Verification code",
+                      "length": 6,
+                      "_help": "We sent a six-digit code to your phone"
+                    }
+                  }
                 }
               },
               "placement": {
@@ -1647,7 +1688,7 @@
             "content": {
               "component": "panel",
               "_title": "Data",
-              "_description": "Tables, lists, charts, boards and calendars over the records of a dataset. 13 components.",
+              "_description": "Tables, lists, charts, boards and calendars over the records of a dataset. 14 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -2083,6 +2124,42 @@
                       }
                     }
                   }
+                },
+                "timeline": {
+                  "component": "card",
+                  "_title": "timeline",
+                  "_subtitle": "A vertical list of events in the order given, each a dot or icon on a line with a title, its time as given and text",
+                  "children": {
+                    "example": {
+                      "component": "timeline",
+                      "_label": "Order history",
+                      "entries": [
+                        {
+                          "title": "Delivered",
+                          "time": "Today 14:02",
+                          "text": "Left at the front door",
+                          "icon": "check",
+                          "tone": "success"
+                        },
+                        {
+                          "title": "Out for delivery",
+                          "time": "Today 08:15",
+                          "icon": "truck"
+                        },
+                        {
+                          "title": "Payment retried",
+                          "time": "Mon 18:40",
+                          "text": "The first card was declined",
+                          "tone": "warning"
+                        },
+                        {
+                          "title": "Ordered",
+                          "time": "Mon 18:31",
+                          "icon": "shopping-cart"
+                        }
+                      ]
+                    }
+                  }
                 }
               },
               "placement": {
@@ -2415,7 +2492,7 @@
             "content": {
               "component": "panel",
               "_title": "Overlays",
-              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 5 components.",
+              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 6 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -2688,6 +2765,58 @@
                       }
                     }
                   }
+                },
+                "commandPalette": {
+                  "component": "card",
+                  "_title": "commandPalette",
+                  "_subtitle": "A modal search box over a grouped list of commands, filtered as you type; Enter runs the active command",
+                  "children": {
+                    "open": {
+                      "component": "button",
+                      "icon": "command",
+                      "_title": "Open the command palette",
+                      "on": {
+                        "press": {
+                          "command": "open",
+                          "target": "$.screens.overlays.children.content.children.commandPalette.children.palette"
+                        }
+                      }
+                    },
+                    "palette": {
+                      "component": "commandPalette",
+                      "commands": {
+                        "newApp": {
+                          "_label": "New app",
+                          "icon": "plus",
+                          "group": "Apps",
+                          "shortcut": "Ctrl+N"
+                        },
+                        "openApp": {
+                          "_label": "Open app",
+                          "icon": "folder-open",
+                          "group": "Apps",
+                          "keywords": [
+                            "find",
+                            "recent"
+                          ]
+                        },
+                        "theme": {
+                          "_label": "Switch theme",
+                          "icon": "moon",
+                          "group": "Settings",
+                          "keywords": [
+                            "dark",
+                            "light"
+                          ]
+                        },
+                        "language": {
+                          "_label": "Change language",
+                          "icon": "language",
+                          "group": "Settings"
+                        }
+                      }
+                    }
+                  }
                 }
               },
               "placement": {
@@ -2722,7 +2851,7 @@
             "content": {
               "component": "panel",
               "_title": "Content",
-              "_description": "Text, pictures, icons and surfaces that show content. 9 components.",
+              "_description": "Text, pictures, icons and surfaces that show content. 11 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -2961,6 +3090,72 @@
                           "name": "Margaret Hamilton"
                         }
                       ]
+                    }
+                  }
+                },
+                "carousel": {
+                  "component": "card",
+                  "_title": "carousel",
+                  "_subtitle": "Its children shown one slide at a time, with previous and next buttons, dot indicators and optional autoplay",
+                  "children": {
+                    "example": {
+                      "component": "carousel",
+                      "_label": "Highlights",
+                      "loop": true,
+                      "children": {
+                        "sale": {
+                          "component": "card",
+                          "_title": "Spring sale",
+                          "placement": {
+                            "_slide": "Sale"
+                          },
+                          "children": {
+                            "text": {
+                              "component": "text",
+                              "_text": "Up to 40% off garden tools"
+                            }
+                          }
+                        },
+                        "new": {
+                          "component": "card",
+                          "_title": "New arrivals",
+                          "placement": {
+                            "_slide": "New"
+                          },
+                          "children": {
+                            "text": {
+                              "component": "text",
+                              "_text": "Fresh oak furniture, made to order"
+                            }
+                          }
+                        },
+                        "delivery": {
+                          "component": "card",
+                          "_title": "Free delivery",
+                          "placement": {
+                            "_slide": "Delivery"
+                          },
+                          "children": {
+                            "text": {
+                              "component": "text",
+                              "_text": "On every order over 50"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "codeBlock": {
+                  "component": "card",
+                  "_title": "codeBlock",
+                  "_subtitle": "Code text in a monospace block with an optional language label, line numbers, wrapping and a copy button",
+                  "children": {
+                    "example": {
+                      "component": "codeBlock",
+                      "language": "ts",
+                      "lineNumbers": true,
+                      "code": "const total = items\n    .map((item) => item.price * item.qty)\n    .reduce((sum, line) => sum + line, 0);"
                     }
                   }
                 }

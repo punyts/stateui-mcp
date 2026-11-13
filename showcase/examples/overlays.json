@@ -86,6 +86,20 @@
                     "footer": { "children": { "confirm": { "_title": "Delete project", "on": { "press": [{ "command": "close", "target": "^confirmDialog" }, { "command": "show", "target": "$.app.toasts", "value": "deleted" }] } } } }
                 }
             }
+        },
+        "commandPalette": {
+            "children": {
+                "open": { "component": "button", "icon": "command", "_title": "Open the command palette", "on": { "press": { "command": "open", "target": "$card.children.palette" } } },
+                "palette": {
+                    "component": "commandPalette",
+                    "commands": {
+                        "newApp": { "_label": "New app", "icon": "plus", "group": "Apps", "shortcut": "Ctrl+N" },
+                        "openApp": { "_label": "Open app", "icon": "folder-open", "group": "Apps", "keywords": ["find", "recent"] },
+                        "theme": { "_label": "Switch theme", "icon": "moon", "group": "Settings", "keywords": ["dark", "light"] },
+                        "language": { "_label": "Change language", "icon": "language", "group": "Settings" }
+                    }
+                }
+            }
         }
     }
 }
