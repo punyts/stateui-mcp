@@ -37,9 +37,15 @@
  * `window.stateuiHost` serves an editor laid over the page:
  * - `inspect({ at: { x, y } } | { paths })` asks the app frame about its nodes (the `inspect` message of the runtime)
  *   and resolves with its `inspected` answer, or undefined when the frame does not answer within `INSPECT_TIMEOUT_MS`.
- * - `mount(element, { document, icons? })` puts a second runtime frame in `element`, driven by the page alone: it is
- *   loaded in `standalone` mode with the document given, takes the page's writes and commands, and raises its emits on
- *   `element` (not on `window`) as `stateui:emit`. It never syncs. Magnetic draws its inspector with it.
+ * - `mount(element, { document, icons?, keys? })` puts a second runtime frame in `element`, driven by the page alone: it
+ *   is loaded in `standalone` mode with the document given, gets the page's language and mode (`data-locale`,
+ *   `data-mode` on the body) when it is ready, takes the page's writes and commands, and raises its emits on `element`
+ *   (not on `window`) as `stateui:emit`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
+ *   The panel it returns also has `inspect` (as above, of its own frame), `watch(paths, listener)` (where those nodes
+ *   are, now and whenever they move), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
+ *   its sign-in and link pages, with it.
+ *
+ * A page with no `data-app-id` has no app of its own: it only mounts panels.
  *
  * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
@@ -792,12 +798,15 @@ class PageView {
     private ready = false;
     private readonly queued: Record<string, unknown>[] = [];
     private readonly listener = (event: MessageEvent<unknown>): void => this.onMessage(event);
+    private readonly inspections = new Map<number, (answer: JsonRecord | undefined) => void>();
+    private inspection = 0;
+    private watcher: ((nodes: { path: string; rect: JsonRecord }[]) => void) | undefined;
 
     constructor(
         private readonly element: HTMLElement,
         private readonly runtimeUrl: string,
         private readonly runtimeOrigin: string,
-        app: { document: JsonRecord; icons?: Record<string, string> },
+        app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] },
         title: string
     ) {
         const frame = document.createElement('iframe');
@@ -805,7 +814,8 @@ class PageView {
         frame.title = title;
         frame.addEventListener('load', () => {
             const icons = iconsMessage(app.icons ?? {}, new Set());
-            this.send({ type: 'load', document: app.document, mode: 'standalone', ...(icons !== undefined && { icons }) });
+            const keys = (app.keys ?? []).filter((key) => HOST_KEY.test(key)).slice(0, 16);
+            this.send({ type: 'load', document: app.document, mode: 'standalone', ...(icons !== undefined && { icons }), ...(keys.length > 0 && { keys }) });
         });
         frame.src = `${this.runtimeUrl}#${this.nonce}`;
         window.addEventListener('message', this.listener);
@@ -821,6 +831,43 @@ class PageView {
     /** Runs a command of a node, or `navigate` to a screen */
     command(target: string, command: string, value?: Json): void {
         this.later({ type: 'command', target, command, ...(value !== undefined && { value }) });
+    }
+
+    /** Asks the frame about its nodes, as the app view's `inspect`; undefined when it does not answer in time */
+    inspect(query: { at: { x: number; y: number } } | { paths: string[] }): Promise<JsonRecord | undefined> {
+        const id = ++this.inspection;
+        return new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                this.inspections.delete(id);
+                resolve(undefined);
+            }, INSPECT_TIMEOUT_MS);
+            this.inspections.set(id, (answer) => {
+                clearTimeout(timer);
+                this.inspections.delete(id);
+                resolve(answer);
+            });
+            this.later({ type: 'inspect', id, ...query });
+        });
+    }
+
+    /**
+     * Follows where some nodes of the frame are: the listener gets their boxes now and each time they move or change
+     * size. A new watch replaces the last; an empty list stops
+     */
+    watch(paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[]) => void): void {
+        this.watcher = listener;
+        this.later({ type: 'watch', paths });
+    }
+
+    /** Switches the frame's language, or its mode (`system` follows the device) */
+    view(change: { locale?: string; mode?: string }): void {
+        if (change.mode !== undefined) this.later({ type: 'theme', kind: 'mode', name: change.mode });
+        if (change.locale !== undefined) this.later({ type: 'locale', locale: change.locale });
+    }
+
+    /** The frame itself, for a page that sizes or focuses it */
+    frameElement(): HTMLIFrameElement {
+        return this.frame;
     }
 
     dispose(): void {
@@ -853,18 +900,32 @@ class PageView {
             this.element.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
         } else if (message['type'] === 'error') {
             this.element.dispatchEvent(new CustomEvent('stateui:error', { detail: { errors: message['errors'] } }));
+        } else if (message['type'] === 'inspected' && typeof message['id'] === 'number') {
+            this.inspections.get(message['id'])?.({ ...message } as JsonRecord);
+        } else if (message['type'] === 'watched' && Array.isArray(message['nodes'])) {
+            this.watcher?.(message['nodes'] as { path: string; rect: JsonRecord }[]);
+        } else if (message['type'] === 'key' && typeof message['key'] === 'string') {
+            window.dispatchEvent(new CustomEvent('stateui:key', { detail: { key: message['key'] } }));
         }
     }
 }
 
 /** `window.stateuiHost`: what an editor laid over the page uses */
-export function installHostApi(live: LiveView): void {
+export function installHostApi(live: LiveView | undefined): void {
     (window as unknown as { stateuiHost: unknown }).stateuiHost = {
-        inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => live.inspect(query),
-        mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string> }, title = 'Panel') => {
+        inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
+        mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] }, title = 'Panel') => {
             const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
             const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
-            return { write: (writes: PathWrite[]) => view.write(writes), command: (target: string, command: string, value?: Json) => view.command(target, command, value), dispose: () => view.dispose() };
+            return {
+                write: (writes: PathWrite[]) => view.write(writes),
+                command: (target: string, command: string, value?: Json) => view.command(target, command, value),
+                inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => view.inspect(query),
+                watch: (paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[]) => void) => view.watch(paths, listener),
+                view: (change: { locale?: string; mode?: string }) => view.view(change),
+                frame: () => view.frameElement(),
+                dispose: () => view.dispose()
+            };
         }
     };
 }

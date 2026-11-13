@@ -6,6 +6,11 @@
 import { installHostApi, LiveView } from './host.js';
 import { directChannel } from './viewChannel.js';
 
-const live = new LiveView(document.body);
-installHostApi(live);
-live.start((view) => directChannel(view.appId, view.viewId, view.viewKind));
+// A page with no app of its own (no `data-app-id`) only mounts panels the page drives (`stateuiHost.mount`)
+if (document.body.dataset['appId']) {
+    const live = new LiveView(document.body);
+    installHostApi(live);
+    live.start((view) => directChannel(view.appId, view.viewId, view.viewKind));
+} else {
+    installHostApi(undefined);
+}
