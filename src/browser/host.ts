@@ -340,8 +340,9 @@ export class LiveView {
         this.hostKeys = (body.dataset['hostKeys'] ?? '').split(/\s+/).filter((key) => HOST_KEY.test(key)).slice(0, 16);
         this.syncStatus = { mode: 'full', status: 'connecting', waiting: 0 };
         const query = new URLSearchParams(window.location.search);
-        this.mode = query.get('mode') ?? undefined;
-        this.locale = query.get('locale') ?? undefined;
+        // The address wins over what the page says (`data-mode`, `data-locale`): a page sets the person's choice
+        this.mode = query.get('mode') ?? body.dataset['mode'] ?? undefined;
+        this.locale = query.get('locale') ?? body.dataset['locale'] ?? undefined;
         const screen = query.get('screen');
         if (screen !== null && screen !== '') {
             let params: Json | undefined;
@@ -842,6 +843,10 @@ class PageView {
         if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
         if (message['type'] === 'ready') {
             this.ready = true;
+            // The page's language and mode (`data-locale`, `data-mode`), as the app frame of the page gets them
+            const { locale, mode } = document.body.dataset;
+            if (mode) this.send({ type: 'theme', kind: 'mode', name: mode });
+            if (locale) this.send({ type: 'locale', locale });
             for (const queued of this.queued.splice(0)) this.send(queued);
             this.element.dispatchEvent(new CustomEvent('stateui:ready'));
         } else if (message['type'] === 'emit' && typeof message['name'] === 'string') {
