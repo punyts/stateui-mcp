@@ -71,6 +71,13 @@
                 }
             }
         },
+        "chipList": {
+            "example": {
+                "component": "chipList",
+                "_label": "Filters",
+                "items": { "f1": { "text": "Open" }, "f2": { "text": "Design", "icon": "palette" }, "f3": { "text": "This week" } }
+            }
+        },
         "avatarGroup": {
             "example": {
                 "component": "avatarGroup",

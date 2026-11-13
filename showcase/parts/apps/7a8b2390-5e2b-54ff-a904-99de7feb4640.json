@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **108** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **109** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -187,7 +187,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 11
+                          "value": 12
                         },
                         "open": {
                           "component": "link",
@@ -2851,7 +2851,7 @@
             "content": {
               "component": "panel",
               "_title": "Content",
-              "_description": "Text, pictures, icons and surfaces that show content. 11 components.",
+              "_description": "Text, pictures, icons and surfaces that show content. 12 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -3059,6 +3059,29 @@
                           "_text": "Draft",
                           "removable": true,
                           "tone": "warning"
+                        }
+                      }
+                    }
+                  }
+                },
+                "chipList": {
+                  "component": "card",
+                  "_title": "chipList",
+                  "_subtitle": "A wrapping row of chips from a keyed map, each with a × that raises remove with its key",
+                  "children": {
+                    "example": {
+                      "component": "chipList",
+                      "_label": "Filters",
+                      "items": {
+                        "f1": {
+                          "text": "Open"
+                        },
+                        "f2": {
+                          "text": "Design",
+                          "icon": "palette"
+                        },
+                        "f3": {
+                          "text": "This week"
                         }
                       }
                     }
