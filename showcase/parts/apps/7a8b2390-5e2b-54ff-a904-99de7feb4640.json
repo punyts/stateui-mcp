@@ -2753,7 +2753,7 @@
                 "image": {
                   "component": "card",
                   "_title": "image",
-                  "_subtitle": "A picture from an https URL or inline data, with a fit, an aspect ratio and a corner radius, on the image.fill backdrop",
+                  "_subtitle": "A picture from an https URL or inline data, with a fit, a ratio and a corner radius; interactive raises press",
                   "children": {
                     "example": {
                       "component": "image",

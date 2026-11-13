@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **The host takes bare keys and Escape** in `data-host-keys` and a panel's `keys`, as the runtime now does (`KEY_CHORD`). The showcase parts are built again for the image's new properties.
 - **A page can be made of panels.** A page with no `data-app-id` has no app of its own and only mounts panels (`stateuiHost.mount`). A mounted panel now also has `inspect`, `watch(paths, listener)`, `view({ locale?, mode? })` and `frame()`, takes key chords (`keys`, raised as `stateui:key`) and gets the page's language and mode when it is ready. Magnetic draws its editor, its sign-in page and its share-link pages this way.
 - **A page can set its views' language and mode.** The host script reads `data-locale` and `data-mode` on the page's `body` (the address's `?locale=` and `?mode=` still win), and a panel mounted with `stateuiHost.mount` gets the same language and mode when it is ready. Magnetic sets them from each person's choice.
 - **Fix: `ui_tree` with `rendered: true` lists the screen.** Without a `path` it listed only what is below `$.app` (the app node and its toasts), so an agent could not find the rows and cards of a screen to click. It now lists the app node and the screens the page draws (the screen asked for is opened first); the page root, which has no box, is left out. Test: `treeTool.test.ts`.

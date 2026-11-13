@@ -60,7 +60,7 @@ import type { ServerMessage, ViewChannel } from './viewChannel.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport } from '@punyts/state-sync';
 
 /** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
-const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?[a-z0-9]$/;
+const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?([a-z0-9=-]|escape)$/;
 
 /** The app events an app server's logic sends to the views: failures and `notify.<name>` */
 function isLogicEvent(name: string): boolean {
