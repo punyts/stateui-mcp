@@ -188,7 +188,7 @@ export class StateUiAppValidator implements UiAppValidator {
         return Object.keys(overlay).length === 0 ? undefined : overlay;
     }
 
-    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string): PropertyCheck {
+    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string, ownIcons: ReadonlySet<string> = new Set()): PropertyCheck {
         const entry = Object.hasOwn(this.library, component) ? this.library[component] : undefined;
         // A root or a shape component (graphics) holds its own properties; a composed one has none until expanded
         const shape = entryShape(entry);
@@ -200,7 +200,7 @@ export class StateUiAppValidator implements UiAppValidator {
 
         const node = { component, [property]: value } as unknown as Node;
         const prefix = `${nodeStatePath}.${property}`;
-        const errors = validateNode(shape, node, nodeStatePath, { isIconName: this.isIconName }).filter(
+        const errors = validateNode(shape, node, nodeStatePath, { isIconName: (name) => ownIcons.has(name) || this.isIconName(name) }).filter(
             (error) => error.statePath === prefix || error.statePath?.startsWith(`${prefix}.`) === true
         );
         if (errors.length > 0) return { kind: 'invalid', errors };

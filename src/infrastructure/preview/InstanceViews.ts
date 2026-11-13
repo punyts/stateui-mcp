@@ -1,4 +1,5 @@
 import type { Authority } from '@punyts/state-sync/authority';
+import { appIconNames } from '@punyts/stateui-app/core';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
 import type { UiPartRepository, UiPartSummary } from '../../application/ports/UiPartRepository.js';
 import type { UsageSource } from '../../application/UsageIndex.js';
@@ -49,11 +50,15 @@ export class InstanceViews {
         return appNamespace({ persona, ownerId: this.ownerId, appId: app.id });
     }
 
-    /** The assembled app as a view message, with the path data of the icons it uses beyond the core set */
+    /**
+     * The assembled app as a view message, with the path data of the icons it uses beyond the core set. A name is the
+     * app's own icon first: those ride in the document's `icons`, so only the other names are looked up in the icon set
+     */
     async message(app: UiPart<'apps'>, reason: AppViewMessage['reason']): Promise<AppViewMessage> {
         const { document } = await this.states.shape(app);
         const core = new Set(this.coreIconNames);
-        const wanted = [...collectIconNames(document, this.catalog)].filter((name) => !core.has(name)).sort();
+        const own = appIconNames(document['icons']);
+        const wanted = [...collectIconNames(document, this.catalog)].filter((name) => !own.has(name) && !core.has(name)).sort();
         return { type: 'app', reason, revision: this.revisionOf(app.id, JSON.stringify(document)), document, icons: { ...this.catalog.iconPaths(wanted) } };
     }
 

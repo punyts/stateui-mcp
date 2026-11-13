@@ -41,9 +41,10 @@ export interface UiAppValidator {
     localeOverlay(document: UiDocument, code: string): JsonObject | undefined;
     /**
      * Checks `value` against the shape of `property` on `component` (a root component name). Errors carry state
-     * paths below `nodeStatePath`, the state path of the node
+     * paths below `nodeStatePath`, the state path of the node. An icon name is checked against the icon set, after the
+     * app's own icon names in `ownIcons`
      */
-    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string): PropertyCheck;
+    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string, ownIcons?: ReadonlySet<string>): PropertyCheck;
     /**
      * Assembles an app from its blueprint and the parts it uses (`parts`: what the app reaches, loaded by the caller) and
      * checks the result; each error names the part that holds it. `name` is the app's part name

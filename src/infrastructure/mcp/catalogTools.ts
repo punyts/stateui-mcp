@@ -25,7 +25,8 @@ const ICONS_LIST = defineInput({
     query: { type: 'string', description: 'Words that must each match an icon name, alias or tag' },
     category: { type: 'string', description: 'Only icons of this category' },
     filled: { type: 'boolean', description: 'true: only icons that have a filled variant' },
-    limit: { type: 'integer', minimum: 1, maximum: MAX_ICON_LIST_LIMIT, description: `How many icons to return (default ${DEFAULT_ICON_LIST_LIMIT})` }
+    limit: { type: 'integer', minimum: 1, maximum: MAX_ICON_LIST_LIMIT, description: `How many icons to return (default ${DEFAULT_ICON_LIST_LIMIT})` },
+    app: { type: 'string', description: 'An app name from ui_list (kind "apps"): its own icons (ui_icons_write) are listed first, with source "app" and category "app"' }
 });
 
 const TOKENS_LIST = defineInput({
@@ -96,19 +97,24 @@ export function createCatalogTools(
         {
             name: 'ui_icons_list',
             description:
-                'Search the icon set by words, tag or category. Returns icon names with category, tags and whether a filled variant exists, best matches first, and how many more matched. Icon names in an application must come from this list.',
+                "Search the icon set by words, tag or category. Returns icon names with category, tags, whether a filled variant exists and source (set, or app for an app's own icon), best matches first, and how many more matched. Given app, the app's own icons (ui_icons_write) come first and win over a set icon of the same name. Icon names in an application must come from this list.",
             inputSchema: ICONS_LIST.schema,
             annotations: READ_ONLY,
-            run: (args) => {
+            run: async (args) => {
                 const parsed = ICONS_LIST.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
-                const result = useCases.listIcons.execute({
+                const outcome = await useCases.listIcons.execute({
                     ...(parsed.value.query !== undefined && { query: parsed.value.query }),
                     ...(parsed.value.category !== undefined && { category: parsed.value.category }),
                     ...(parsed.value.filled !== undefined && { filled: parsed.value.filled }),
-                    ...(parsed.value.limit !== undefined && { limit: parsed.value.limit })
+                    ...(parsed.value.limit !== undefined && { limit: parsed.value.limit }),
+                    ...(parsed.value.app !== undefined && { app: parsed.value.app })
                 });
-                return succeed(result);
+                if (outcome.kind === 'app-not-found') {
+                    const near = outcome.nearest.length > 0 ? `; nearest: ${outcome.nearest.join(', ')}` : '; ui_list lists the apps';
+                    return fail('not-found', `No app named "${parsed.value.app ?? ''}"${near}`, { argument: 'app', nearest: outcome.nearest });
+                }
+                return succeed(outcome.result);
             }
         },
         {

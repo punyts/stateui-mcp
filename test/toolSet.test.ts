@@ -71,7 +71,7 @@ describe('the registered tools', () => {
         const { tools } = await harness.client.listTools();
 
         // Assert
-        expect(EXPECTED_TOOLS).toHaveLength(37);
+        expect(EXPECTED_TOOLS).toHaveLength(38);
         expect(tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
         expect(EXPECTED_TOOLS).toContain('ui_patterns_search');
         expect(EXPECTED_TOOLS).toContain('ui_pattern_write');

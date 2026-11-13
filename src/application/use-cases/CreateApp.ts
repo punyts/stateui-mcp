@@ -30,6 +30,8 @@ export interface CreatePartAppInput {
     readonly app?: JsonObject;
     /** The root of the first screen `home`: a node tree or a screen pattern; a bare `panel` when absent */
     readonly home?: TreeChoice;
+    /** The app's own icons by name (outline path data in a 24×24 view box), which its nodes may name from the start */
+    readonly icons?: JsonObject;
 }
 
 export type CreatePartAppResult =
@@ -51,7 +53,7 @@ export type CreatePartAppResult =
 /**
  * Creates an app of parts: its title, the `uses` it is given, the app node (`{ component: "app" }` with the title as
  * `_title` and the given `layout`, `toasts` or `on`) and a first screen `home` that is its `start` (a node tree, or a
- * library or owner screen pattern). An app is its screens: there is no frame around them, so a shared header or menu is
+ * library or owner screen pattern), with its own `icons` when given. An app is its screens: there is no frame around them, so a shared header or menu is
  * a node (or a composed component) each screen places. The app is checked as a whole first (`checkPartApp`); nothing
  * is stored on a missing part or a blocking error
  */
@@ -91,7 +93,8 @@ export class CreatePartApp {
             ...(Object.keys(uses).length > 0 && { uses }),
             start: FIRST_SCREEN,
             app,
-            screens: { [FIRST_SCREEN]: { title: FIRST_SCREEN_TITLE, root: home.tree } }
+            screens: { [FIRST_SCREEN]: { title: FIRST_SCREEN_TITLE, root: home.tree } },
+            ...(input.icons !== undefined && Object.keys(input.icons).length > 0 && { icons: input.icons })
         } as unknown as UiPartBodies['apps'];
         const check = await checkPartApp(this.parts, this.validator, input.name, body);
         if (check.kind !== 'checked') return check;

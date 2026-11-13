@@ -1,3 +1,4 @@
+import { appIconNames } from '@punyts/stateui-app/core';
 import { setCreatingParents } from '../../domain/documentOperations.js';
 import { parseDocumentPath } from '../../domain/DocumentPath.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -49,9 +50,16 @@ type PropertyFound =
 /**
  * Finds the node and the property `path` names below a resolved root, whose state path is `rootPath` (`app`, or
  * `screens` and a screen name), and checks that the property may be written: not linked, not runtime or exposed state,
- * and a value of the property's shape
+ * and a value of the property's shape (an icon name may be one of the app's own icons, `ownIcons`)
  */
-function findProperty(validator: UiAppValidator, root: JsonObject, rootPath: readonly string[], path: readonly string[], value: JsonValue): PropertyFound {
+function findProperty(
+    validator: UiAppValidator,
+    root: JsonObject,
+    rootPath: readonly string[],
+    path: readonly string[],
+    value: JsonValue,
+    ownIcons: ReadonlySet<string>
+): PropertyFound {
     let node: JsonObject = root;
     let nodeDepth = 0;
     let current: JsonValue = root;
@@ -74,7 +82,7 @@ function findProperty(validator: UiAppValidator, root: JsonObject, rootPath: rea
         return { kind: 'refused', reason: 'linked', message: `${nodeStatePath}.${property} is linked to data: set the data it links to` };
     }
     const component = node['component'] as string;
-    const check = validator.checkProperty(component, property, value, nodeStatePath);
+    const check = validator.checkProperty(component, property, value, nodeStatePath, ownIcons);
     switch (check.kind) {
         case 'unknown-component':
         case 'unknown-property':
@@ -219,7 +227,7 @@ export class SetPartState {
         }
         const node = this.validator.resolveNode(document, documentPath);
         if (node === undefined) return partRefusal(app, 'unknown-path', `$.${rootPath.join('.')} has no node to write to`);
-        const found = findProperty(this.validator, node, rootPath, below, value);
+        const found = findProperty(this.validator, node, rootPath, below, value, appIconNames(document['icons']));
         switch (found.kind) {
             case 'refused':
                 return partRefusal(app, found.reason, found.message);

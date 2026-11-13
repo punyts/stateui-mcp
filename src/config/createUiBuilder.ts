@@ -43,6 +43,7 @@ import { QueryData } from '../application/use-cases/QueryData.js';
 import { RenamePart } from '../application/use-cases/RenamePart.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { CreateTheme, WriteTheme } from '../application/use-cases/WriteTheme.js';
+import { WriteIcons } from '../application/use-cases/WriteIcons.js';
 import { WriteLocale } from '../application/use-cases/WriteLocale.js';
 import { WriteNodes } from '../application/use-cases/WriteNodes.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
@@ -99,6 +100,7 @@ export interface UiBuilderUseCases {
     readonly writePattern: WritePattern;
     readonly writeNodes: WriteNodes;
     readonly writeLocale: WriteLocale;
+    readonly writeIcons: WriteIcons;
     readonly listParts: ListParts;
     readonly getPart: GetPart;
     /** Deleting an app removes its instance */
@@ -129,7 +131,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         searchComponents: new SearchComponents(catalog, parts),
         searchPatterns: new SearchPatterns(patterns, parts),
         getComponent: new GetComponent(catalog),
-        listIcons: new ListIcons(catalog),
+        listIcons: new ListIcons(catalog, parts),
         listTokens: new ListTokens(catalog),
         recordPreviewErrors: new RecordPreviewErrors(previewLog, now, report),
         recordPreviewLoad: new RecordPreviewLoad(previewLog, report),
@@ -148,6 +150,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         createScreen: new CreateScreen(parts, validator, patterns, report),
         writeNodes: new WriteNodes(parts, validator, report),
         writeLocale: new WriteLocale(parts, validator, report),
+        writeIcons: new WriteIcons(parts, validator, report),
         listParts: new ListParts(parts, report),
         getPart: new GetPart(parts, validator, report),
         deletePart: new DeletePart(parts, parts, report, { instances, states: instanceStates, folder: appFolders }),

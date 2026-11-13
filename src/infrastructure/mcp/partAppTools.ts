@@ -39,7 +39,12 @@ export const PART_APP_FIELDS = {
     },
     logic: { type: 'object', description: 'uses.logic, each owner logic module by name with { params: { ... } }' },
     app: APP_ARGUMENT,
-    home: HOME_ARGUMENT
+    home: HOME_ARGUMENT,
+    icons: {
+        type: 'object',
+        description:
+            'Icons the app carries of its own, for glyphs the icon set does not have, so home may name them from the start: each { outline: [paths], filled?: [paths] }, a path the d of an SVG <path> in a 24×24 view box. ui_icons_write changes them later'
+    }
 } as const;
 
 const CONFIGURE = defineInput({
@@ -146,6 +151,7 @@ export interface PartAppCreateArguments {
     readonly logic?: JsonObject;
     readonly app?: JsonObject;
     readonly home?: JsonObject;
+    readonly icons?: JsonObject;
 }
 
 /** `ui_app_create`: an app of parts */
@@ -166,7 +172,8 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
         ...(args.title !== undefined && { title: args.title }),
         ...(themes !== undefined && { themes: themes as string[] }),
         ...(args.data !== undefined && { data: args.data }),
-        ...(args.logic !== undefined && { logic: args.logic })
+        ...(args.logic !== undefined && { logic: args.logic }),
+        ...(args.icons !== undefined && { icons: args.icons })
     });
     if (result.kind === 'created') {
         return succeed({ name: result.name, id: result.id, revision: result.revision, start: 'home', slots: result.slots, warnings: withGuides(result.warnings) });

@@ -54,7 +54,7 @@ function startText({ presets }: GuideContext): string {
 function sectionsText({ index, presets }: GuideContext): string {
     return [
         [
-            '6. Sections: for each part a pattern does not cover, ui_components_search with the need in plain words ("pick a date range", "show totals by month"), ui_component_get for the component you choose, then ui_nodes_write into a slot. ui_composed_write makes a reusable component, ui_locale_write another language.',
+            '6. Sections: for each part a pattern does not cover, ui_components_search with the need in plain words ("pick a date range", "show totals by month"), ui_component_get for the component you choose, then ui_nodes_write into a slot. ui_composed_write makes a reusable component, ui_locale_write another language, ui_icons_write an icon the icon set does not have.',
             '7. Logic: ui_logic_write for the machines, rules and tables of the app or of a logic module.',
             '8. Check: ui_validate, then ui_preview, ui_screenshot with fullPage: true and again with width: 375 (a phone), and ui_interact to try what the user will do.'
         ].join('\n'),
@@ -72,7 +72,7 @@ const REVISIONS = 'Revisions and warnings: every part has its own revision. Read
 
 /** The rules that cost a failed call: names come from their tools, keys are not integer-like, a set needs its parent */
 const KEYS = [
-    'Icon names come from ui_icons_list. Never guess an icon name.',
+    'Icon names come from ui_icons_list. Never guess an icon name. For a glyph the set does not have, draw the app its own icon with ui_icons_write (24×24 outline path data); ui_icons_list with app lists it, and it wins over a set icon of the same name.',
     'Token names for "theme" overrides and overlay names for theme switches come from ui_tokens_list; component token names come from ui_component_get. Never guess a token or overlay name.',
     'Keys of records and of keyed maps (children, options, columns, items, steps, messages, and objects under data) must not be integer-like: use "o42", not "42". JavaScript would reorder them and the order is part of the application.',
     'A set through a missing parent fails. Add the parent first or use merge, which creates missing keys. Read the path with ui_get before writing under it. ui_nodes_write and ui_data_write also take move, which keeps the key and the whole subtree of an entry: prefer it to remove and rewrite.',
@@ -230,6 +230,7 @@ export const VALIDATION_PREFIX_TOPICS: Readonly<Record<string, string>> = Object
     'SUI-STATE-TOKEN': 'keys',
     'SUI-THEME-TOKEN': 'keys',
     'SUI-RUN-ICON': 'keys',
+    'SUI-DOC-ICON': 'keys',
     'SUI-STATE-PAINT': 'drawing',
     'SUI-STATE-LABEL': 'drawing',
     'SUI-RUN-DRAW': 'drawing',

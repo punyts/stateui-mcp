@@ -74,6 +74,25 @@ describe('LiveViews of owner apps', () => {
         expect(views.namespace(shop)).toBe(`instances.default.${OWNER.toLowerCase()}.${shop.id.toLowerCase()}`);
     });
 
+    it("should look up only the icons that are not the app's own: those ride in the document", async () => {
+        // Arrange
+        const { parts, shop } = await setUp();
+        const own = { outline: ['M4 5h16v11H9l-5 4z'] };
+        const document = {
+            app: { component: 'page', children: { a: { component: 'text', icon: 'chat' }, b: { component: 'text', icon: 'star' } } },
+            icons: { chat: own }
+        };
+        const states = { shape: vi.fn(async () => ({ document, bindings: {} })), authority: vi.fn() };
+        const views = new InstanceViews(parts, parts, states as never, CATALOG, [], OWNER);
+
+        // Act
+        const message = await views.message(shop, 'attach');
+
+        // Assert
+        expect(message.icons).toEqual({ star: 'M0 0 star' });
+        expect(message.document['icons']).toEqual({ chat: own });
+    });
+
     it('should leave an id that is neither an app document nor an app part unknown', async () => {
         // Arrange
         const { live } = await setUp();

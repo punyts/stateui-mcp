@@ -1,5 +1,6 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { MissingPart } from '../../application/partAppCheck.js';
+import type { IconOperation } from '../../application/use-cases/WriteIcons.js';
 import type { LocaleOperation } from '../../application/use-cases/WriteLocale.js';
 import { MAX_OPERATIONS_PER_WRITE } from '../../domain/limits.js';
 import { treePath, APP_TREE } from '../../domain/nodeOperations.js';
@@ -74,6 +75,48 @@ const LOCALE_WRITE = defineInput({
         items: LOCALE_ITEMS
     }
 });
+
+const ICON_ITEMS = {
+    op: { type: 'string', required: true, enum: ['set', 'remove'], description: 'set adds the icon or replaces it whole, remove takes it out of the app' },
+    name: {
+        type: 'string',
+        required: true,
+        description: 'The icon name: lower-case letters, digits and dashes, such as "chat" or "zoom-fit". It wins over an icon of the same name in ui_icons_list'
+    },
+    outline: {
+        type: 'json',
+        schema: { type: 'array', items: {} },
+        description:
+            'set only: the outline paths in a 24×24 view box, each the d of an SVG <path> ("M4 5h16v11H9l-5 4z") or { d, fill: true, stroke: false, opacity } for a part the icon fills. They are stroked round with the icon stroke of the theme. Path data only: a circle or rect is written as a path (a circle of radius 8 at 12,12 is "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0")'
+    },
+    filled: { type: 'json', schema: { type: 'array', items: {} }, description: 'set only, optional: the paths of a filled variant, drawn when a node sets filled: true' }
+} as const;
+
+const ICONS_WRITE = defineInput({
+    app: APP,
+    expectedRevision: EXPECTED,
+    operations: {
+        type: 'list',
+        required: true,
+        minItems: 1,
+        maxItems: MAX_OPERATIONS_PER_WRITE,
+        description: 'The icons set or removed, in order, as one checked write',
+        items: ICON_ITEMS
+    }
+});
+
+type IconItem = ParsedArguments<typeof ICON_ITEMS>;
+
+/** One parsed item as an icon operation, or the argument error for a field the operation does not take */
+function toIconOperation(item: IconItem, index: number): IconOperation | ToolOutcome {
+    if (item.op === 'remove') {
+        for (const name of ['outline', 'filled'] as const) if (item[name] !== undefined) return misplaced(index, name, 'is not allowed for remove');
+        return { op: 'remove', name: item.name };
+    }
+    if (!Array.isArray(item.outline)) return misplaced(index, 'outline', 'is required for set: a list of path data');
+    if (item.filled !== undefined && !Array.isArray(item.filled)) return misplaced(index, 'filled', 'must be a list of path data');
+    return { op: 'set', name: item.name, outline: item.outline as never, ...(item.filled !== undefined && { filled: item.filled as never }) };
+}
 
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
@@ -166,10 +209,10 @@ function sharedOutcome(result: SharedResult, app: string, screen: string): ToolO
     }
 }
 
-/** `ui_nodes_write` and `ui_locale_write`, when the server has parts */
-export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' | 'writeLocale'>): readonly UiToolDefinition[] {
-    const { writeNodes, writeLocale } = useCases;
-    if (writeNodes === undefined || writeLocale === undefined) return [];
+/** `ui_nodes_write`, `ui_locale_write` and `ui_icons_write`, when the server has parts */
+export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' | 'writeLocale' | 'writeIcons'>): readonly UiToolDefinition[] {
+    const { writeNodes, writeLocale, writeIcons } = useCases;
+    if (writeNodes === undefined || writeLocale === undefined || writeIcons === undefined) return [];
     return [
         {
             name: 'ui_nodes_write',
@@ -219,6 +262,26 @@ export function createNodeTools(useCases: Pick<UiBuilderUseCases, 'writeNodes' |
                 if (result.kind === 'written') return succeed({ app, screen, language, revision: result.revision, warnings: withGuides(result.warnings) });
                 if (result.kind === 'invalid-language') return fail('invalid-argument', 'language must be a code such as "de" or "pt-BR"', { argument: 'language' });
                 return sharedOutcome(result, app, screen);
+            }
+        },
+        {
+            name: 'ui_icons_write',
+            description: `Build time: write the app's own icons, for a glyph the icon set does not have: up to ${MAX_OPERATIONS_PER_WRITE} operations that set an icon by name (its outline paths in a 24×24 view box, as SVG path data, and optionally a filled variant) or remove one. A node names an app icon as it names any icon (icon: "chat"), and an app icon wins over an icon of the same name in ui_icons_list, which lists the app's icons when given app. Path data only: no markup, url( or other attributes, and a circle or rect is written as a path. The app is checked as a whole and written as one change, or not at all. Pass expectedRevision, the app's. Returns { app, revision, icons (the app's icon names), warnings }.`,
+            inputSchema: ICONS_WRITE.schema,
+            annotations: WRITES,
+            run: async (args) => {
+                const parsed = ICONS_WRITE.parse(args);
+                if (!parsed.ok) return invalidArgument(parsed);
+                const { app, expectedRevision } = parsed.value;
+                const operations: IconOperation[] = [];
+                for (const [index, item] of parsed.value.operations.entries()) {
+                    const converted = toIconOperation(item, index);
+                    if (!('op' in converted)) return converted;
+                    operations.push(converted);
+                }
+                const result = await writeIcons.execute({ app, expectedRevision, operations });
+                if (result.kind === 'written') return succeed({ app, revision: result.revision, icons: result.icons, warnings: withGuides(result.warnings) });
+                return sharedOutcome(result, app, 'app');
             }
         }
     ];
