@@ -34,7 +34,8 @@
             "children": {
                 "upload": { "component": "progress", "_label": "Uploading photos", "value": 64 },
                 "storage": { "component": "progress", "_label": "Storage used", "value": 92, "tone": "warning" },
-                "sync": { "component": "progress", "_label": "Syncing", "indeterminate": true, "size": "sm" }
+                "sync": { "component": "progress", "_label": "Syncing", "indeterminate": true, "size": "sm" },
+                "score": { "component": "progress", "_label": "Profile complete", "value": 72, "shape": "ring", "showValue": true }
             }
         },
         "spinner": {

@@ -21,7 +21,7 @@
       "forms": {
         "id": "forms",
         "label": "Forms",
-        "count": 25
+        "count": 28
       },
       "data": {
         "id": "data",
@@ -41,7 +41,7 @@
       "content": {
         "id": "content",
         "label": "Content",
-        "count": 7
+        "count": 9
       },
       "conversation": {
         "id": "conversation",

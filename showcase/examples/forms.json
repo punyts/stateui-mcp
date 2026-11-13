@@ -110,6 +110,15 @@
         "dateField": {
             "example": { "component": "dateField", "_label": "Due date", "value": "2026-11-20", "min": "2026-11-01", "_help": "Not before November" }
         },
+        "timeField": {
+            "example": { "component": "timeField", "_label": "Pickup time", "value": "09:30", "min": "08:00", "max": "18:00", "_help": "Between 8 in the morning and 6 in the evening" }
+        },
+        "rating": {
+            "example": { "component": "rating", "_label": "How was your stay?", "value": 4 }
+        },
+        "colorField": {
+            "example": { "component": "colorField", "_label": "Brand colour", "value": "#3047d8", "swatches": ["#3047d8", "#16a34a", "#dc2626", "#f59e0b", "#7c3aed"] }
+        },
         "dateRangeField": {
             "example": { "component": "dateRangeField", "_label": "Stay", "value": { "start": "2026-12-18", "end": "2026-12-27" }, "minDays": 1 }
         },

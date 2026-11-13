@@ -59,6 +59,25 @@
                 "divider": { "component": "divider", "_label": "or" },
                 "after": { "component": "text", "_text": "Continue with a passkey" }
             }
+        },
+        "chip": {
+            "example": {
+                "component": "toolbar",
+                "wrap": true,
+                "children": {
+                    "design": { "component": "chip", "_text": "Design", "icon": "palette" },
+                    "research": { "component": "chip", "_text": "Research", "selectable": true, "selected": true },
+                    "draft": { "component": "chip", "_text": "Draft", "removable": true, "tone": "warning" }
+                }
+            }
+        },
+        "avatarGroup": {
+            "example": {
+                "component": "avatarGroup",
+                "_label": "Project team",
+                "max": 4,
+                "people": [{ "name": "Ada Lovelace" }, { "name": "Grace Hopper" }, { "name": "Alan Turing" }, { "name": "Katherine Johnson" }, { "name": "Margaret Hamilton" }]
+            }
         }
     }
 }
