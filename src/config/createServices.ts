@@ -11,6 +11,7 @@ import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js'
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import type { UiPartRepository } from '../application/ports/UiPartRepository.js';
 import type { UiPart } from '../domain/UiPart.js';
+import type { PartKind } from '../domain/partName.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
@@ -110,6 +111,12 @@ export interface Services {
     hostInstance(address: string): Promise<Authority | undefined>;
     /** Stops the instance at an address here: the owner node of a placement let its namespace go */
     releaseInstance(address: string): Promise<void>;
+    /**
+     * A part another server on the same storage changed: the usage index, the open views, the running instances and the
+     * shared datasets catch up as for a change made here. `resync`: changes may have been missed
+     */
+    partChangedElsewhere(kind: PartKind, name: string): Promise<void>;
+    resyncParts(): void;
     /** The catalog's category index, for the server instructions */
     readonly categoryIndex: readonly CategoryIndexEntry[];
     /** The library's theme preset names, for the server instructions */
@@ -235,6 +242,8 @@ export function createServices(options: ServicesOptions): Services {
         instanceViews,
         hostInstance: (address) => instanceStates.hosted(address),
         releaseInstance: (address) => instanceStates.release(address),
+        partChangedElsewhere: (kind, name) => parts.changedElsewhere(kind, name),
+        resyncParts: () => parts.resync(),
         categoryIndex: catalog.categoryIndex(),
         presets: patterns.presets().map((name) => ({ name, summary: patterns.preset(name)?.summary ?? '' })),
         recoverParts: () => storage.recover?.() ?? Promise.resolve(false),

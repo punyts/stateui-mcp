@@ -41,6 +41,25 @@ export class IndexedUiPartRepository implements UiPartRepository {
         return () => this.listeners.delete(listener);
     }
 
+    /**
+     * A change another server made to a part (it shares the storage): the index reads the part again, then the listeners
+     * are told, as for a change made here. A part that is gone (deleted, or the old name of a rename) leaves the index
+     */
+    async changedElsewhere(kind: PartKind, name: string): Promise<void> {
+        if (this.building !== undefined) {
+            const index = await this.usage();
+            const part = await this.inner.findByName(kind, name);
+            if (part === undefined) index.remove(kind, name);
+            else index.set(kind, name, part.body);
+        }
+        this.changed(kind, name);
+    }
+
+    /** Changes made elsewhere may have been missed: the index is built again from storage on its next use */
+    resync(): void {
+        this.building = undefined;
+    }
+
     private changed(kind: PartKind, name: string): void {
         for (const listener of [...this.listeners]) {
             try {
