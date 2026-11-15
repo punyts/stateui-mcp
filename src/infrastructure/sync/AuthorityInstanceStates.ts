@@ -1,10 +1,12 @@
-import type { Authority } from '@punyts/state-sync/authority';
+import type { Access, Authority, AuthorityConnection, AuthoritySession } from '@punyts/state-sync/authority';
+import type { InstancePlacement } from '../../application/ports/InstancePlacement.js';
 import type { ExternalReads, ExternalUses } from './ExternalReads.js';
 import type { InstanceShape, InstanceStates, InstanceWriteOptions } from '../../application/ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
 import { DEFAULT_PERSONA, instanceKeyText, isPersonaName } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
+import { userStateAddress } from '../../domain/StateAddress.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiPart } from '../../domain/UiPart.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
@@ -18,7 +20,9 @@ import type { InstanceStart } from './InstanceStart.js';
 interface Running {
     /** The newest start: the document the views are sent, with the shared records of the last assembly */
     start: InstanceStart;
-    readonly storage: InstanceNamespaceStorage;
+    /** Its storage, made when its authority starts: saving under the epoch it was owned under then */
+    storage?: InstanceNamespaceStorage;
+    readonly instances: UiInstanceRepository;
     /** The definition as JSON text (`definitionText`), to see a definition change */
     readonly document: string;
     /** The authority, attached to the dataset hub; made on first use */
@@ -33,7 +37,11 @@ interface Running {
  * when the assembled document differs from the one the instance runs (the app or a part it reaches was written), the
  * instance's authority is closed, its state saved as its instance, and started again over the new definition, so the
  * views reconnect to it. A change of only the records of a shared dataset is not a definition change: the dataset hub
- * (`DatasetHub`), which the instance's authority is attached to when it starts, writes it into the running state
+ * (`DatasetHub`), which the instance's authority is attached to when it starts, writes it into the running state.
+ *
+ * With a placement (several servers on one database), an instance runs only on the server that owns its address: the
+ * tools claim it first, a view anywhere gets a session from the owner (`connect`), its saves are fenced by the owner's
+ * epoch, and the owner node starts and releases it by address (`hosted`, `release`)
  */
 export class AuthorityInstanceStates implements InstanceStates {
     private readonly running = new Map<string, Running>();
@@ -49,7 +57,9 @@ export class AuthorityInstanceStates implements InstanceStates {
         /** The instances of a persona other than the default one; absent: only the default persona exists */
         private readonly personaInstances?: (persona: string) => UiInstanceRepository,
         /** What instances read of other apps (`uses.external`), subscribed while they run */
-        private readonly external?: ExternalReads
+        private readonly external?: ExternalReads,
+        /** Where instances are ordered when several servers share the storage; absent: all of them here */
+        private readonly placement?: InstancePlacement
     ) {}
 
     async shape(app: UiPart<'apps'>): Promise<InstanceShape> {
@@ -58,22 +68,24 @@ export class AuthorityInstanceStates implements InstanceStates {
     }
 
     async write(app: UiPart<'apps'>, path: string, value: JsonValue | undefined, options: InstanceWriteOptions = {}): Promise<string | undefined> {
+        await this.claim(this.key(app));
         const running = await this.started(app);
         await this.open(running);
-        const { start, storage } = running;
-        return this.authorities.writeInstance(start, storage, path, value, options.logic === false ? { logic: false } : {});
+        return this.authorities.writeInstance(running.start, running.storage as InstanceNamespaceStorage, path, value, options.logic === false ? { logic: false } : {});
     }
 
     async state(app: UiPart<'apps'>): Promise<JsonObject> {
+        await this.claim(this.key(app));
         const running = await this.started(app);
         await this.open(running);
-        const { start, storage } = running;
-        return this.authorities.instanceState(start, storage);
+        return this.authorities.instanceState(running.start, running.storage as InstanceNamespaceStorage);
     }
 
     /** Stops the app's instances, the other personas' too, and runs `whileStopped` before the default one may start again */
     async stop(app: UiPart<'apps'>, whileStopped: () => Promise<void>): Promise<void> {
         const key = this.key(app);
+        // what the owner holds would be saved over what runs while it is stopped: it is stopped here
+        await this.claim(key);
         await this.stopOthers(app.id, () => true);
         const text = instanceKeyText(key);
         await this.lock.run(text, async () => {
@@ -87,8 +99,65 @@ export class AuthorityInstanceStates implements InstanceStates {
      * (`isPersonaName`). Started, or restarted over a changed definition, first
      */
     async authority(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Authority> {
-        if (persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(persona))) throw new Error(`No persona "${persona}"`);
+        this.checkPersona(persona);
+        await this.claim(this.key(app, persona));
         return this.open(await this.started(app, persona));
+    }
+
+    /**
+     * A view's session with a persona's instance of the app: with the instance here, or, with a placement, with the
+     * server that owns it (here when nobody does). The session closes when the instance restarts or moves, and the
+     * view connects again
+     */
+    async connect(app: UiPart<'apps'>, persona: string, connection: AuthorityConnection, access?: Access): Promise<AuthoritySession> {
+        this.checkPersona(persona);
+        const here = async (): Promise<Authority> => this.open(await this.started(app, persona));
+        if (this.placement === undefined) return (await here()).connect(connection, access);
+        return this.placement.connect(this.addressOf(this.key(app, persona)), connection, access, here);
+    }
+
+    /**
+     * The authority of the instance at an address of this owner, for the owner node when this server takes the
+     * namespace: started (saving under the epoch it is owned under) when it is not running. Undefined when the address
+     * is not one of this owner's apps
+     */
+    async hosted(address: string): Promise<Authority | undefined> {
+        const found = this.instanceAt(address);
+        if (found === undefined) return undefined;
+        const app = await this.parts.findById('apps', found.appId);
+        if (app === undefined) return undefined;
+        return this.open(await this.started(app, found.persona));
+    }
+
+    /** The owner node let the namespace at an address go: its instance stops here, and its views connect again */
+    async release(address: string): Promise<void> {
+        const found = this.instanceAt(address);
+        if (found === undefined) return;
+        const text = instanceKeyText(this.keyOf(found.appId, found.persona));
+        await this.lock.run(text, () => this.forget(text));
+    }
+
+    /** The app and persona of an address of this owner (the owner's own id is its default persona) */
+    private instanceAt(address: string): { appId: string; persona: string } | undefined {
+        const [ownerId, appId, scope] = address.split('/');
+        if (ownerId === undefined || appId === undefined || scope !== 'user') return undefined;
+        const persona = ownerId === this.ownerId ? DEFAULT_PERSONA : ownerId;
+        if (persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(persona))) return undefined;
+        return { appId: appId.toLowerCase(), persona };
+    }
+
+    private checkPersona(persona: string): void {
+        if (persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(persona))) throw new Error(`No persona "${persona}"`);
+    }
+
+    private addressOf(key: InstanceKey): string {
+        return userStateAddress(key.ownerId, key.persona, key.appId);
+    }
+
+    /** With a placement, makes this server the owner of the instance's namespace, so its authority runs here */
+    private async claim(key: InstanceKey): Promise<void> {
+        if (this.placement === undefined) return;
+        if (!(await this.placement.claim(this.addressOf(key)))) throw new Error("The app's instance is busy on another server; try again");
     }
 
     /** Closes a running instance (its views reconnect) and forgets it. Under the instance's lock */
@@ -118,7 +187,11 @@ export class AuthorityInstanceStates implements InstanceStates {
     /** The running instance's authority, attached to the dataset hub once */
     private open(running: Running): Promise<Authority> {
         if (running.ready !== undefined) return running.ready;
-        const { start, storage } = running;
+        const { start } = running;
+        const epoch = this.placement?.epochOf(this.addressOf(running.key));
+        if (this.placement !== undefined && epoch === undefined) return Promise.reject(new Error("The app's instance runs on another server"));
+        const storage = new InstanceNamespaceStorage(start, running.instances, this.report, Date.now, epoch);
+        running.storage = storage;
         const ready = this.authorities.instance(start, storage).then(async (authority) => {
             await this.hub?.attach(appNamespace(start.key), authority, start.bindings, (writes) => this.authorities.receiveInstance(start.key, authority, writes));
             this.authorities.deriveInstance(start.key);
@@ -133,7 +206,11 @@ export class AuthorityInstanceStates implements InstanceStates {
     }
 
     private key(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): InstanceKey {
-        return { persona, ownerId: this.ownerId, appId: app.id };
+        return this.keyOf(app.id, persona);
+    }
+
+    private keyOf(appId: string, persona: string): InstanceKey {
+        return { persona, ownerId: this.ownerId, appId };
     }
 
     private async started(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Running> {
@@ -149,7 +226,7 @@ export class AuthorityInstanceStates implements InstanceStates {
             }
             if (current !== undefined) await this.forget(text);
             const instances = persona === DEFAULT_PERSONA ? this.instances : (this.personaInstances as (persona: string) => UiInstanceRepository)(persona);
-            const started: Running = { start, storage: new InstanceNamespaceStorage(start, instances, this.report), document, key };
+            const started: Running = { start, instances, document, key };
             this.running.set(text, started);
             return started;
         });

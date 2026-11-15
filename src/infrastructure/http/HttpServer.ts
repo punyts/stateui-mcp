@@ -13,7 +13,8 @@ import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
 import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
-import type { Authority } from '@punyts/state-sync/authority';
+import type { AuthoritySession } from '@punyts/state-sync/authority';
+import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
 import { REVOKED_CODE } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { takeViewReport } from '../preview/viewReports.js';
@@ -475,8 +476,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
         const first = await liveViews.attachMessage(appId);
         if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        // The view syncs with its persona's instance of the app: the owner's own unless the tenant names another
-        const authority: Authority = await instances.authority(part, persona);
+        // The view syncs with its persona's instance of the app (the owner's own unless the tenant names another), here
+        // or on the server that runs it; the session is asked for once the socket is open
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
                 if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
@@ -488,12 +489,28 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 ws.close(1008, reason.slice(0, 120));
             });
             sendView(first);
-            const session = authority.connect({
-                send: (text) => {
-                    if (ws.readyState === ws.OPEN) ws.send(text);
-                },
-                close: () => ws.close()
-            });
+            let session: AuthoritySession | undefined;
+            let closed = false;
+            /** What the view sent before its session was ready, passed on in order once it is */
+            const early: string[] = [];
+            instances
+                .connect(part, persona ?? DEFAULT_PERSONA, {
+                    send: (text) => {
+                        if (ws.readyState === ws.OPEN) ws.send(text);
+                    },
+                    close: () => ws.close()
+                })
+                .then(
+                    (made) => {
+                        if (closed) return made.close();
+                        session = made;
+                        for (const text of early.splice(0)) made.receive(text);
+                    },
+                    (error: unknown) => {
+                        report.info('Sync connection failed', { app: appId, error: error instanceof Error ? error.message : String(error) });
+                        ws.close(1011, 'The app is not available');
+                    }
+                );
             const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
             const rate = options.socketMessagesPerSecond;
             // A token bucket: `rate` frames a second, at most twice that many at once
@@ -517,12 +534,14 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 hub.touch(appId, viewId);
                 const text = Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8');
                 if (readOnly && refuseWrite(text, ws)) return;
-                session.receive(text);
+                if (session === undefined) early.push(text);
+                else session.receive(text);
             });
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {
                 clearInterval(timer);
-                session.close();
+                closed = true;
+                session?.close();
                 detach();
                 release?.();
             });

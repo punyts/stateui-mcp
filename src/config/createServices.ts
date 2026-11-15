@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authority';
+import type { Authority, Upstream } from '@punyts/state-sync/authority';
+import type { InstancePlacement } from '../application/ports/InstancePlacement.js';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import type { LogicFunctions } from '@punyts/stateui-app/core';
@@ -76,6 +78,11 @@ export interface ServicesOptions {
     readonly logicLimits?: AppLogicLimits;
     /** Ranks the library by meaning for the catalog searches the keyword index marks weak; none: keywords only */
     readonly catalogMeanings?: CatalogMeanings;
+    /**
+     * Where instances are ordered when several servers share the storage (`@punyts/statenet`'s owner mesh): absent, every
+     * instance runs in this process
+     */
+    readonly placement?: InstancePlacement;
 }
 
 /** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
@@ -96,6 +103,13 @@ export interface Services {
     readonly liveViews: LiveViews;
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
+    /**
+     * The authority of the instance at an address of this owner (`<persona>/<appId>/user`), started here: for the owner
+     * node of a placement when this server takes the namespace. Undefined when it is not one of this owner's apps
+     */
+    hostInstance(address: string): Promise<Authority | undefined>;
+    /** Stops the instance at an address here: the owner node of a placement let its namespace go */
+    releaseInstance(address: string): Promise<void>;
     /** The catalog's category index, for the server instructions */
     readonly categoryIndex: readonly CategoryIndexEntry[];
     /** The library's theme preset names, for the server instructions */
@@ -181,7 +195,7 @@ export function createServices(options: ServicesOptions): Services {
      * once for every instance that reads it (`uses.external`)
      */
     let states: AuthorityInstanceStates | undefined;
-    const relay = createRelay(
+    const relay: Upstream = options.placement?.upstream ?? createRelay(
         createAuthorityUpstream(async (address) => {
             const parsed = parseAddress(address);
             if (parsed === undefined || parsed.scope !== 'user' || states === undefined) return undefined;
@@ -191,7 +205,7 @@ export function createServices(options: ServicesOptions): Services {
         })
     );
     const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { report: (message, fields) => options.report.info(message, fields) });
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external);
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external, options.placement);
     states = instanceStates;
     const fileRepository = storage.files;
     const fileStore = storage.fileStore;
@@ -219,6 +233,8 @@ export function createServices(options: ServicesOptions): Services {
         effects: authorities.effects,
         liveViews,
         instanceViews,
+        hostInstance: (address) => instanceStates.hosted(address),
+        releaseInstance: (address) => instanceStates.release(address),
         categoryIndex: catalog.categoryIndex(),
         presets: patterns.presets().map((name) => ({ name, summary: patterns.preset(name)?.summary ?? '' })),
         recoverParts: () => storage.recover?.() ?? Promise.resolve(false),

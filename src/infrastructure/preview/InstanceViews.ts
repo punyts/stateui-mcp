@@ -1,4 +1,4 @@
-import type { Authority } from '@punyts/state-sync/authority';
+import type { Authority, AuthorityConnection, AuthoritySession } from '@punyts/state-sync/authority';
 import { appIconNames } from '@punyts/stateui-app/core';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
 import type { UiPartRepository, UiPartSummary } from '../../application/ports/UiPartRepository.js';
@@ -29,7 +29,7 @@ export class InstanceViews {
     constructor(
         private readonly parts: Pick<UiPartRepository, 'findById' | 'findByName' | 'list'>,
         private readonly usage: UsageSource,
-        private readonly states: Pick<AuthorityInstanceStates, 'shape' | 'authority'>,
+        private readonly states: Pick<AuthorityInstanceStates, 'shape' | 'authority' | 'connect'>,
         private readonly catalog: ComponentCatalog,
         private readonly coreIconNames: readonly string[],
         private readonly ownerId: string
@@ -86,6 +86,14 @@ export class InstanceViews {
      */
     authority(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Authority> {
         return this.states.authority(app, persona);
+    }
+
+    /**
+     * A view's session with a persona's instance of the app, wherever the instance runs (another server's, with a
+     * placement); it closes when the instance restarts or moves, and the view connects again
+     */
+    connect(app: UiPart<'apps'>, persona: string, connection: AuthorityConnection): Promise<AuthoritySession> {
+        return this.states.connect(app, persona, connection);
     }
 
     /** The app parts that show a change of this part: the app itself, and every app that reaches the part */

@@ -96,7 +96,9 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         private readonly start: InstanceStart,
         private readonly instances: UiInstanceRepository,
         private readonly report: InstanceProblemReport,
-        private readonly now: () => number = Date.now
+        private readonly now: () => number = Date.now,
+        /** The owner epoch the instance is saved under, when several servers share the storage */
+        private readonly epoch?: number
     ) {
         this.namespace = appNamespace(start.key);
         this.bound = Object.keys(start.bindings);
@@ -168,14 +170,15 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         // The route and the theme are kept whole, so a stored route always has its screen and params together
         const start = initialRoute(this.start.document as unknown as AppDocument);
         const moved = route !== undefined && JSON.stringify(route) !== JSON.stringify(start ?? null);
-        await this.instances.write(appId, { app: {}, screens: {}, data: {} }, { ...rest, ...(moved && { route }), data: without(allData, this.bound) });
+        const fence = this.epoch === undefined ? undefined : { epoch: this.epoch };
+        await this.instances.write(appId, { app: {}, screens: {}, data: {} }, { ...rest, ...(moved && { route }), data: without(allData, this.bound) }, fence);
 
         for (const binding of this.persona) {
             const records = allData[binding];
             const text = JSON.stringify(records ?? null);
             const model = this.start.bindings[binding]?.model;
             if (text === this.saved.get(binding) || !isJsonObject(records) || model === undefined) continue;
-            await this.instances.writeData(appId, binding, { model, records });
+            await this.instances.writeData(appId, binding, { model, records }, fence);
             this.saved.set(binding, text);
         }
     }

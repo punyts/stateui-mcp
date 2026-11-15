@@ -17,6 +17,15 @@ export interface PersonaDataset {
  * that cannot be read as an instance or a dataset reads as nothing too, with `problem` saying why, for the caller to
  * report
  */
+/**
+ * How a write is fenced when several servers share the storage: the owner epoch it is made under. A store that keeps
+ * epochs refuses a write under an epoch older than the newest one it has seen for the instance (`FencedError`), so a
+ * server that lost the instance can no longer save it
+ */
+export interface InstanceWriteFence {
+    readonly epoch?: number;
+}
+
 export interface InstanceRead<T> {
     readonly value: T;
     readonly problem?: string;
@@ -35,13 +44,13 @@ export interface UiInstanceRepository {
      * Stores what differs between the definition's starting state and the current one (`diffInstance`), both shaped
      * like `AppInstance`. An empty diff removes the file. Returns the diff stored
      */
-    write(appId: string, definition: JsonObject, current: JsonObject): Promise<InstanceDiff>;
+    write(appId: string, definition: JsonObject, current: JsonObject, fence?: InstanceWriteFence): Promise<InstanceDiff>;
 
     /** The records of one persona binding; `undefined` when the persona has none yet */
     getData(appId: string, binding: string): Promise<InstanceRead<PersonaDataset | undefined>>;
 
     /** Replaces the records of one persona binding. The caller checks them against the model first */
-    writeData(appId: string, binding: string, dataset: PersonaDataset): Promise<void>;
+    writeData(appId: string, binding: string, dataset: PersonaDataset, fence?: InstanceWriteFence): Promise<void>;
 
     /** Removes the instance and every persona binding's records of the app, so the next read is the definition */
     reset(appId: string): Promise<void>;

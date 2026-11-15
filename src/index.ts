@@ -52,7 +52,8 @@ export type {
     UiPartSummary,
     UiPartWriteResult
 } from './application/ports/UiPartRepository.js';
-export type { InstanceDiff, InstanceRead, PersonaDataset, UiInstanceRepository } from './application/ports/UiInstanceRepository.js';
+export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository } from './application/ports/UiInstanceRepository.js';
+export type { InstancePlacement } from './application/ports/InstancePlacement.js';
 export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
 export type { SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
 export type { AppFolderStore } from './application/ports/AppFolderStore.js';
