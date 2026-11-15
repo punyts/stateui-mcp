@@ -14,7 +14,8 @@ const MODEL_ITEMS = {
     type: { type: 'string', enum: FIELD_TYPES, description: 'set only, required: the type of the field\'s values' },
     default: { type: 'json', description: 'set only: the value a record without one takes; it must fit the type and the validators' },
     required: { type: 'boolean', description: 'set only: true when every record must hold a value (unless there is a default)' },
-    validators: { type: 'object', description: `set only: validator name to its options, from the closed set: ${VALIDATOR_NAMES.join(', ')}` }
+    validators: { type: 'object', description: `set only: validator name to its options, from the closed set: ${VALIDATOR_NAMES.join(', ')}` },
+    embed: { type: 'boolean', description: 'set only, a string field only: true makes the field of each record searchable by meaning on a server with embeddings (the similar call); other servers ignore it' }
 } as const;
 
 const MODEL_WRITE = defineInput({
@@ -39,7 +40,7 @@ function misplaced(index: number, name: string, message: string, details: Record
 /** One parsed item as a model operation, or the argument error for a missing, misplaced or unknown field */
 function toOperation(item: ModelItem, index: number): ModelOperation | ToolOutcome {
     if (item.op === 'remove') {
-        const extra = (['type', 'default', 'required', 'validators'] as const).find((name) => item[name] !== undefined);
+        const extra = (['type', 'default', 'required', 'validators', 'embed'] as const).find((name) => item[name] !== undefined);
         return extra === undefined ? { op: 'remove', field: item.field } : misplaced(index, extra, 'is not allowed for remove');
     }
     if (item.type === undefined) return misplaced(index, 'type', `is required for set; one of: ${FIELD_TYPES.join(', ')}`, { allowed: FIELD_TYPES });
@@ -49,7 +50,8 @@ function toOperation(item: ModelItem, index: number): ModelOperation | ToolOutco
         type: item.type,
         ...(item.default !== undefined && { default: item.default }),
         ...(item.required !== undefined && { required: item.required }),
-        ...(item.validators !== undefined && { validators: item.validators })
+        ...(item.validators !== undefined && { validators: item.validators }),
+        ...(item.embed !== undefined && { embed: item.embed })
     };
     return { op: 'set', field: item.field, declaration };
 }
@@ -61,7 +63,7 @@ export function createModelTools(useCases: Pick<UiBuilderUseCases, 'writeModel'>
     return [
         {
             name: 'ui_model_write',
-            description: `Build time: write a model, the typed fields of the records of its datasets and persona bindings. set adds a field or replaces its whole declaration ({ type, default?, required?, validators? }); remove takes a field out. Types: ${FIELD_TYPES.join(', ')}. Validators: ${VALIDATOR_NAMES.join(', ')}. A default must fit its type and its own validators. Leave expectedRevision out to create the model; pass it to change one. The model is checked and written as one change, or not at all. Returns { model, revision, created, warnings, datasetWarnings, readers }: datasetWarnings lists the datasets whose records no longer fit ({ dataset, keys, invalidCount }; fix them with ui_data_write), readers the apps and logic modules whose paths read a removed field ({ kind, name, paths }), and warnings the apps that now have errors.`,
+            description: `Build time: write a model, the typed fields of the records of its datasets and persona bindings. set adds a field or replaces its whole declaration ({ type, default?, required?, validators?, embed? }); remove takes a field out. Types: ${FIELD_TYPES.join(', ')}. Validators: ${VALIDATOR_NAMES.join(', ')}. A default must fit its type and its own validators. Leave expectedRevision out to create the model; pass it to change one. The model is checked and written as one change, or not at all. Returns { model, revision, created, warnings, datasetWarnings, readers }: datasetWarnings lists the datasets whose records no longer fit ({ dataset, keys, invalidCount }; fix them with ui_data_write), readers the apps and logic modules whose paths read a removed field ({ kind, name, paths }), and warnings the apps that now have errors.`,
             inputSchema: MODEL_WRITE.schema,
             annotations: WRITES,
             run: async (args) => {

@@ -8,8 +8,14 @@ export const CALL_EVENT = 'logic.call';
 /** The most calls waiting for the agent per app; a call past it is rejected at once */
 export const MAX_PENDING_CALLS = 100;
 
-/** A server procedure a `call` runs: the payload and the app in, the answer out */
-export type AppProcedure = (payload: JsonValue, context: { appId: string }) => LogicAnswer | Promise<LogicAnswer>;
+/** Where a call comes from: the app, and the persona whose instance runs the logic when it is an instance's */
+export interface AppProcedureContext {
+    readonly appId: string;
+    readonly persona?: string;
+}
+
+/** A server procedure a `call` runs: the payload and where it comes from in, the answer out */
+export type AppProcedure = (payload: JsonValue, context: AppProcedureContext) => LogicAnswer | Promise<LogicAnswer>;
 
 /** Queues a call for the agent: the app, the event name and its payload `{ id, name, payload }` */
 export type CallQueue = (appId: string, name: string, payload: JsonValue) => void;
@@ -34,9 +40,9 @@ export class AppCalls {
         private readonly newId: () => string = randomUUID
     ) {}
 
-    ask(appId: string, name: string, payload: JsonValue): Promise<LogicAnswer> {
+    ask(appId: string, name: string, payload: JsonValue, persona?: string): Promise<LogicAnswer> {
         const procedure = Object.hasOwn(this.procedures, name) ? this.procedures[name] : undefined;
-        if (procedure !== undefined) return Promise.resolve().then(() => procedure(payload, { appId }));
+        if (procedure !== undefined) return Promise.resolve().then(() => procedure(payload, { appId, ...(persona !== undefined && { persona }) }));
         const key = appId.toLowerCase();
         if ([...this.pending.values()].filter((call) => call.appId === key).length >= MAX_PENDING_CALLS) {
             return Promise.resolve({ status: 'rejected', reason: `more than ${MAX_PENDING_CALLS} calls are waiting for an answer` });

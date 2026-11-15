@@ -19,6 +19,13 @@ describe('AppCalls', () => {
         expect(queued).toEqual([]);
     });
 
+    it('should tell a procedure the persona whose instance calls it', async () => {
+        const { calls } = setup({ who: (_payload: JsonValue, context: { appId: string; persona?: string }) => ({ status: 'accepted', value: context.persona ?? null }) });
+
+        expect(await calls.ask('A1', 'who', null, 'alice')).toEqual({ status: 'accepted', value: 'alice' });
+        expect(await calls.ask('A1', 'who', null)).toEqual({ status: 'accepted', value: null });
+    });
+
     it('should queue any other call for the agent and resolve it with the answer', async () => {
         // Arrange
         const { calls, queued } = setup();

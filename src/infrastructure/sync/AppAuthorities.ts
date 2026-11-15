@@ -77,7 +77,7 @@ export class AppAuthorities {
 
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
     instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
-        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined);
+        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined, start.key.persona);
     }
 
     /**
@@ -115,7 +115,7 @@ export class AppAuthorities {
     }
 
     /** The authority of a namespace, made on first use; its emits and its logic's events are recorded under `appId` */
-    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true): Promise<Authority> {
+    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true, persona?: string): Promise<Authority> {
         let authority = this.authorities.get(namespace);
         if (authority === undefined) {
             authority = createAuthority({
@@ -126,7 +126,7 @@ export class AppAuthorities {
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
-                this.startLogic(namespace, appId, created, document, derive);
+                this.startLogic(namespace, appId, created, document, derive, persona);
                 return created;
             }, (error: unknown) => {
                 throw this.explain(appId, error);
@@ -138,7 +138,7 @@ export class AppAuthorities {
         return authority;
     }
 
-    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true): void {
+    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true, persona?: string): void {
         if (this.logic === undefined) return;
         const { library, report, procedures, agentAnswers = true } = this.logic;
         const logic = new AppLogic(
@@ -148,7 +148,7 @@ export class AppAuthorities {
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             agentAnswers || procedures !== undefined
                 ? (name, payload) =>
-                      agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
+                      agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload, persona) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
                 : undefined,
             this.gateOf(namespace),
             this.logic.functions,
