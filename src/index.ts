@@ -69,3 +69,6 @@ export type { PartKind } from './domain/partName.js';
 export { isRevisionCurrent } from './domain/revision.js';
 export { isAppId } from './infrastructure/storage/PartFolders.js';
 export { diffInstance } from '@punyts/stateui-app/core';
+/** Statenet addresses: `<ownerId>/<appId>/<scope>` */
+export { appStateAddress, formatAddress, parseAddress, userStateAddress } from './domain/StateAddress.js';
+export type { StateAddress, StateScope } from './domain/StateAddress.js';
