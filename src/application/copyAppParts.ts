@@ -25,6 +25,8 @@ export type CopyAppResult =
 export interface CopyAppOptions {
     /** The copy's name; default the app's name. Either gets `-2`, `-3`… when the target has an app of that name */
     readonly name?: string;
+    /** Keeps the app's id in the target, for a move rather than a copy; the target must not have an app with that id */
+    readonly keepId?: boolean;
 }
 
 const MAX_NAME = 63;
@@ -117,7 +119,7 @@ export async function copyAppParts(
         if ((await to.findByName('apps', name)) === undefined) break;
         appNames.push(name);
     }
-    const created = await to.create({ kind: 'apps', name, body: renamed('apps', app.body) });
+    const created = await to.create({ kind: 'apps', name, body: renamed('apps', app.body), ...(options.keepId === true && { id: app.id }) });
     if (created.kind !== 'created') return { kind: 'failed', reason: created.kind === 'invalid' ? created.reason : `The app "${name}" could not be made` };
     return { kind: 'copied', app: created.part, parts: made.reverse() };
 }
