@@ -113,7 +113,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         this.checkPersona(persona);
         const here = async (): Promise<Authority> => this.open(await this.started(app, persona));
         if (this.placement === undefined) return (await here()).connect(connection, access);
-        return this.placement.connect(this.addressOf(this.key(app, persona)), connection, access, here);
+        return this.placement.connect(this.addressOf(this.key(app, persona)), this.ownerId, connection, access, here);
     }
 
     /**
@@ -127,6 +127,17 @@ export class AuthorityInstanceStates implements InstanceStates {
         const app = await this.parts.findById('apps', found.appId);
         if (app === undefined) return undefined;
         return this.open(await this.started(app, found.persona));
+    }
+
+    /**
+     * Starts again over its definition every instance running here of these apps whose definition changed: for a part
+     * changed by another server, where no view of this server asks for the app (its views may all be elsewhere)
+     */
+    async refresh(apps: readonly UiPart<'apps'>[]): Promise<void> {
+        for (const app of apps) {
+            const personas = [...this.running.values()].filter((running) => running.key.appId === app.id).map((running) => running.key.persona);
+            for (const persona of new Set(personas)) await this.started(app, persona);
+        }
     }
 
     /** The owner node let the namespace at an address go: its instance stops here, and its views connect again */
@@ -157,7 +168,7 @@ export class AuthorityInstanceStates implements InstanceStates {
     /** With a placement, makes this server the owner of the instance's namespace, so its authority runs here */
     private async claim(key: InstanceKey): Promise<void> {
         if (this.placement === undefined) return;
-        if (!(await this.placement.claim(this.addressOf(key)))) throw new Error("The app's instance is busy on another server; try again");
+        if (!(await this.placement.claim(this.addressOf(key), this.ownerId))) throw new Error("The app's instance is busy on another server; try again");
     }
 
     /** Closes a running instance (its views reconnect) and forgets it. Under the instance's lock */

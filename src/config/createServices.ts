@@ -230,6 +230,13 @@ export function createServices(options: ServicesOptions): Services {
         liveViews.partChanged(kind, name).catch((error: unknown) => {
             options.report.info('Views not refreshed after a part change', { kind, name, reason: error instanceof Error ? error.message : String(error) });
         });
+        // With a placement the views of an instance may all be at other servers, so its own server restarts it here
+        if (options.placement !== undefined) {
+            void instanceViews
+                .appsShowing(kind, name)
+                .then((apps) => instanceStates.refresh(apps))
+                .catch((error: unknown) => options.report.info('Instances not restarted after a part change', { kind, name, reason: error instanceof Error ? error.message : String(error) }));
+        }
     });
     return {
         useCases,

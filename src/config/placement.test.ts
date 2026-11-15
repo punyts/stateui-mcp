@@ -54,7 +54,7 @@ function placement() {
             return true;
         },
         epochOf: (address) => owned.get(address),
-        connect: async (address: string, connection: AuthorityConnection, access: Access | undefined, here: () => Promise<Authority>): Promise<AuthoritySession> => {
+        connect: async (address: string, _workspaceId: string, connection: AuthorityConnection, access: Access | undefined, here: () => Promise<Authority>): Promise<AuthoritySession> => {
             if (owned.has(address)) return (await here()).connect(connection, access);
             tunnelled.push(address);
             remote.push(connection);

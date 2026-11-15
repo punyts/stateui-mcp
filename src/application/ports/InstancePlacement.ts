@@ -10,16 +10,17 @@ import type { Access, Authority, AuthorityConnection, AuthoritySession, Upstream
 export interface InstancePlacement {
     /**
      * Makes this server the namespace's owner, claiming it from the server that owns it now: for the tools, which act on
-     * the instance's authority directly. False when the claim failed (the owner did not hand it over)
+     * the instance's authority directly. False when the claim failed (the owner did not hand it over). `workspaceId` is
+     * the workspace the instance is in, which the server that takes it over starts it in
      */
-    claim(address: string): Promise<boolean>;
+    claim(address: string, workspaceId: string): Promise<boolean>;
     /** The epoch this server owns the namespace under; undefined when it does not own it */
     epochOf(address: string): number | undefined;
     /**
      * A view's session: with the authority `here` gives when this server owns the namespace (or takes it because nobody
      * holds it), tunnelled to the server that owns it otherwise
      */
-    connect(address: string, connection: AuthorityConnection, access: Access | undefined, here: () => Promise<Authority>): Promise<AuthoritySession>;
+    connect(address: string, workspaceId: string, connection: AuthorityConnection, access: Access | undefined, here: () => Promise<Authority>): Promise<AuthoritySession>;
     /** What the relay of `uses.external` subscribes through: it follows each namespace to the server that owns it */
     readonly upstream: Upstream;
 }
