@@ -1,3 +1,4 @@
+import type { UiErrorLog } from '../../application/ports/UiErrorLog.js';
 import type { UiViewLoad } from '../../application/ports/UiPreviewLog.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
@@ -33,7 +34,7 @@ function toEntry(value: unknown): LoggedError | undefined {
  * The bounded runtime error log of an app in `errors.json`: the newest `MAX_PREVIEW_ERRORS` are kept, oldest first.
  * Each error keeps the view load it came from, so a later load of a view can drop the errors that no longer happen
  */
-export class FileUiErrorLog {
+export class FileUiErrorLog implements UiErrorLog {
     constructor(
         private readonly folders: PartFolders,
         private readonly lock: KeyedLock

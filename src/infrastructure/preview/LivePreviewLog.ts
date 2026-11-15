@@ -1,18 +1,18 @@
 import type { UiFileRepository } from '../../application/ports/UiFileRepository.js';
 import type { UiPreviewLog, UiPreviewStatus, UiViewLoad } from '../../application/ports/UiPreviewLog.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
-import type { FileUiErrorLog } from '../storage/FileUiErrorLog.js';
+import type { UiErrorLog } from '../../application/ports/UiErrorLog.js';
 import type { PreviewHub } from './PreviewHub.js';
 
 /**
  * The preview log over the live views. Presence is real: an app is attached while a view holds its event stream
  * open (the browser tab of a person or the headless page), so there is no heartbeat window to expire. The error
- * log is the one on disk, so it outlives the views and the process
+ * log is the stored one (`UiErrorLog`), so it outlives the views and the process
  */
 export class LivePreviewLog implements UiPreviewLog {
     constructor(
         private readonly hub: PreviewHub,
-        private readonly errors: FileUiErrorLog,
+        private readonly errors: UiErrorLog,
         private readonly files: Pick<UiFileRepository, 'appExists'>
     ) {}
 

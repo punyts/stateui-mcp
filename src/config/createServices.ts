@@ -6,6 +6,7 @@ import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.j
 import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
 import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import type { UiPartRepository } from '../application/ports/UiPartRepository.js';
+import type { UiPart } from '../domain/UiPart.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
@@ -24,6 +25,7 @@ import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileReposi
 import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js';
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
+import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
@@ -31,10 +33,17 @@ import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js'
 import type { AppEffects } from '../infrastructure/sync/AppEffects.js';
 import type { AppLogicLimits } from '../infrastructure/sync/AppLogic.js';
 import type { ToolCallLog } from '../application/ports/ToolCallLog.js';
+import type { AppFolderStore } from '../application/ports/AppFolderStore.js';
+import type { UiErrorLog } from '../application/ports/UiErrorLog.js';
+import type { UiFileRepository } from '../application/ports/UiFileRepository.js';
+import type { UiFileStore } from '../application/ports/UiFileStore.js';
+import type { UiInstanceRepository } from '../application/ports/UiInstanceRepository.js';
 
 export interface ServicesOptions {
-    /** Where the parts, instances and app files live */
-    readonly dataDir: string;
+    /** Where the parts, instances and app files live, as files; give this or `storage` */
+    readonly dataDir?: string;
+    /** The storage of the owner's parts, instances and files, such as a database's, in place of the files in `dataDir` */
+    readonly storage?: ServicesStorage;
     readonly report: UseCaseReport;
     /**
      * The origin of the server that serves the view pages at `/apps/<id>` (`startHttpServer`). A function, because
@@ -96,15 +105,50 @@ export interface Services {
     readonly toolCallLog?: ToolCallLog;
 }
 
+/**
+ * Where a workspace keeps what the server stores, for a server that does not keep it in files: every adapter is the
+ * owner's only, so none of them takes an owner from its caller
+ */
+export interface ServicesStorage {
+    readonly parts: UiPartRepository;
+    /** The instances and persona datasets of one persona of the owner's apps */
+    instances(persona: string): UiInstanceRepository;
+    readonly files: UiFileRepository;
+    readonly fileStore: UiFileStore;
+    readonly errorLog: UiErrorLog;
+    readonly appFolders: AppFolderStore;
+    /** Stores a part exactly as given (id, name, revision and dates), for importing parts made elsewhere; nothing when it is there */
+    importPart?(part: UiPart): Promise<void>;
+    /** Finishes what a crash left halfway; true when there was something. Storage with transactions has nothing to finish */
+    recover?(): Promise<boolean>;
+}
+
+/** The files of `dataDir` as storage */
+function fileStorage(dataDir: string, ownerId: string, now: () => Date): ServicesStorage & { readonly recover: () => Promise<boolean> } {
+    const folders = new PartFolders(dataDir);
+    const lock = new KeyedLock();
+    const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
+    return {
+        parts: partFiles,
+        instances: (persona) => new FileUiInstanceRepository(folders, lock, ownerId, persona),
+        files: new FileUiFileRepository(folders, lock, now),
+        fileStore: new FsUiFileStore(folders),
+        errorLog: new FileUiErrorLog(folders, lock),
+        appFolders: new FsAppFolderStore(folders, lock),
+        recover: () => partFiles.recover()
+    };
+}
+
 /** The composition root of the server: plain factories, no container */
 export function createServices(options: ServicesOptions): Services {
-    const folders = new PartFolders(options.dataDir);
-    const lock = new KeyedLock();
     const now = (): Date => new Date();
+    const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
+    if (options.storage === undefined && options.dataDir === undefined) throw new Error('createServices needs a dataDir or a storage');
+    const storage = options.storage ?? fileStorage(options.dataDir as string, ownerId, now);
+    const instancesOf = (persona: string): UiInstanceRepository => storage.instances(persona);
     const hub = new PreviewHub(now);
     const { validator, catalog, patterns, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
-    const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
-    const parts = new IndexedUiPartRepository(partFiles);
+    const parts = new IndexedUiPartRepository(storage.parts);
     // Instances bound to one shared dataset see each other's changes (Full mode)
     const writeData = new WriteData(parts, validator, randomUUID, options.report);
     const datasets = new DatasetHub(parts, (name, operations) => writeData.execute({ name, operations }), options.report);
@@ -124,14 +168,13 @@ export function createServices(options: ServicesOptions): Services {
         },
         datasets
     );
-    const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
-    const instances = new FileUiInstanceRepository(folders, lock, ownerId);
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, (persona) => new FileUiInstanceRepository(folders, lock, ownerId, persona));
-    const fileRepository = new FileUiFileRepository(folders, lock, now);
-    const fileStore = new FsUiFileStore(folders);
-    const previewLog = new LivePreviewLog(hub, new FileUiErrorLog(folders, lock), fileRepository);
+    const instances = instancesOf(DEFAULT_PERSONA);
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf);
+    const fileRepository = storage.files;
+    const fileStore = storage.fileStore;
+    const previewLog = new LivePreviewLog(hub, storage.errorLog, fileRepository);
     const useCases = createUiBuilderUseCases(
-        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: new FsAppFolderStore(folders, lock) },
+        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders },
         { now, newId: randomUUID, report: options.report }
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);
@@ -155,7 +198,7 @@ export function createServices(options: ServicesOptions): Services {
         instanceViews,
         categoryIndex: catalog.categoryIndex(),
         presets: patterns.presets().map((name) => ({ name, summary: patterns.preset(name)?.summary ?? '' })),
-        recoverParts: () => partFiles.recover(),
+        recoverParts: () => storage.recover?.() ?? Promise.resolve(false),
         browser,
         report: options.report,
         viewUrl: viewPage,

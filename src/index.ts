@@ -31,3 +31,37 @@ export type { DirectoryEntry } from './domain/viewRelay.js';
 /** The units of an app's logic in run order, each with the paths it reads and writes; for an editor that shows who uses a path */
 export { logicRunOrder } from '@punyts/stateui-app/core';
 export type { LogicDocument, LogicUnitPlace } from '@punyts/stateui-app/core';
+/** Storage other than files (a database): the ports a workspace's storage implements and the rules it shares with the files */
+export { installShowcaseInto } from './config/showcase.js';
+export type { InstallShowcaseIntoOptions } from './config/showcase.js';
+export type { ServicesStorage } from './config/createServices.js';
+export { PART_ID_PROBLEM, PART_ID_TAKEN } from './application/ports/UiPartRepository.js';
+export type {
+    CreateUiPartInput,
+    CreateUiPartResult,
+    UiPartDeleteResult,
+    UiPartInvalid,
+    UiPartRenameResult,
+    UiPartRepository,
+    UiPartRewrite,
+    UiPartRewritten,
+    UiPartSummary,
+    UiPartWriteResult
+} from './application/ports/UiPartRepository.js';
+export type { InstanceDiff, InstanceRead, PersonaDataset, UiInstanceRepository } from './application/ports/UiInstanceRepository.js';
+export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
+export type { SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
+export type { AppFolderStore } from './application/ports/AppFolderStore.js';
+export type { UiErrorLog } from './application/ports/UiErrorLog.js';
+export type { UiViewLoad } from './application/ports/UiPreviewLog.js';
+export type { UiBuildError } from './domain/UiBuildError.js';
+export type { UiFile } from './domain/UiFile.js';
+export { MAX_BYTES_PER_APP, MAX_FILE_BYTES, MAX_FILES_PER_APP } from './domain/UiFile.js';
+export { MAX_PREVIEW_ERRORS } from './domain/limits.js';
+export { createUiPart, isPartBody, isPartKind, PART_BODY_PROBLEM, partInputProblem, partNameProblem, renameUiPart, reviseUiPart } from './domain/UiPart.js';
+export type { UiPart, UiPartBodies } from './domain/UiPart.js';
+export { PART_KINDS } from './domain/partName.js';
+export type { PartKind } from './domain/partName.js';
+export { isRevisionCurrent } from './domain/revision.js';
+export { isAppId } from './infrastructure/storage/PartFolders.js';
+export { diffInstance } from '@punyts/stateui-app/core';
