@@ -1,3 +1,4 @@
+import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import type {
     ComponentCatalog,
     InstanceStates,
@@ -67,6 +68,8 @@ export interface UiBuilderPorts {
     readonly fileStore: UiFileStore;
     /** The side folders of app parts, removed with the app */
     readonly appFolders: AppFolderStore;
+    /** Ranks the library by meaning when a catalog search is weak; none: keywords only */
+    readonly meanings?: CatalogMeanings;
 }
 
 /** What the use cases need besides ports: the clock, ids and the reporter */
@@ -128,8 +131,8 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const runCommand = new RunCommand(catalog, previewLog, now, newId, report);
     const writePart = new WritePart(parts, parts, validator, report);
     return {
-        searchComponents: new SearchComponents(catalog, parts),
-        searchPatterns: new SearchPatterns(patterns, parts),
+        searchComponents: new SearchComponents(catalog, parts, ports.meanings),
+        searchPatterns: new SearchPatterns(patterns, parts, ports.meanings),
         getComponent: new GetComponent(catalog),
         listIcons: new ListIcons(catalog, parts),
         listTokens: new ListTokens(catalog),

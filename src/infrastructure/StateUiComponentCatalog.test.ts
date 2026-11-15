@@ -357,4 +357,48 @@ describe('StateUiComponentCatalog shape components', () => {
         expect(result.results.every((hit) => hit.tier === 'shape')).toBe(true);
         expect(withShape.search({ need: 'compare amounts as bars' }).results[0]?.tier).toBe('shape');
     });
+
+    describe('search by meaning', () => {
+        const NEED = { need: 'holiday from and to' };
+
+        it('should merge a weak keyword result with the library ranked by meaning, and say it is not weak when the meaning is close', () => {
+            // Arrange
+            expect(catalog.search(NEED).weak).toBe(true);
+
+            // Act
+            const result = catalog.search(NEED, [], { ranked: ['dateRangeField', 'calendar'], close: true });
+
+            // Assert
+            expect(result.results[0]).toMatchObject({ name: 'dateRangeField', matched: [], byMeaning: true, source: 'library' });
+            expect(result.results[0]?.example).toEqual(catalog.get('dateRangeField')?.example);
+            expect(result.weak).toBe(false);
+            expect(result.categories).toBeUndefined();
+        });
+
+        it('should stay weak when the meaning is not close', () => {
+            expect(catalog.search(NEED, [], { ranked: ['dateRangeField'], close: false }).weak).toBe(true);
+        });
+
+        it('should leave a result the words answer well as it is', () => {
+            // Arrange
+            const query = { need: 'pick a date range' };
+
+            // Act
+            const result = catalog.search(query, [], { ranked: ['button'], close: true });
+
+            // Assert
+            expect(result).toEqual(catalog.search(query));
+        });
+
+        it('should keep to the category asked for, and to the keyword result when no meaning fits it', () => {
+            // Act
+            const inForms = catalog.search({ ...NEED, category: 'forms' }, [], { ranked: ['calendar', 'dateRangeField'], close: true });
+            const none = catalog.search({ ...NEED, category: 'forms' }, [], { ranked: ['calendar'], close: true });
+
+            // Assert
+            expect(inForms.results.every((found) => found.category === 'forms')).toBe(true);
+            expect(inForms.results.map((found) => found.name)).toContain('dateRangeField');
+            expect(none).toEqual(catalog.search({ ...NEED, category: 'forms' }));
+        });
+    });
 });

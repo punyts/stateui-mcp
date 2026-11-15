@@ -1,4 +1,5 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
+import type { CatalogMeaning } from './CatalogMeanings.js';
 
 export type ComponentTier = 'root' | 'composed' | 'shape';
 
@@ -116,6 +117,8 @@ export interface ComponentSearchHit {
     readonly summary: string;
     /** The purpose phrases that hold a need word, then need words matched only elsewhere; empty for a fallback entry */
     readonly matched: readonly string[];
+    /** True when the need's meaning found it, not its words */
+    readonly byMeaning?: true;
     readonly example: JsonObject;
     /** Where the component comes from: the library, or the owner (`ui_composed_write`) */
     readonly source: 'library' | 'owner';
@@ -166,9 +169,10 @@ export interface ComponentCatalog {
     get(name: string): ComponentEntry | undefined;
     /**
      * Components ranked for a need, the library's and these owner components together, each hit with its `source`;
-     * throws `InvalidSearchArgumentError` for an unknown category or tier
+     * throws `InvalidSearchArgumentError` for an unknown category or tier. Given the library ranked by the need's
+     * meaning, a weak keyword result is merged with it by reciprocal rank, and is weak only when the meaning is not close
      */
-    search(query: ComponentSearchQuery, owner?: readonly OwnerComponent[]): ComponentSearchResult;
+    search(query: ComponentSearchQuery, owner?: readonly OwnerComponent[], meaning?: CatalogMeaning): ComponentSearchResult;
     /** One entry per category that has members, in the order of `COMPONENT_CATEGORIES` */
     categoryIndex(): readonly CategoryIndexEntry[];
     searchIcons(query: IconQuery): IconSearchResult;

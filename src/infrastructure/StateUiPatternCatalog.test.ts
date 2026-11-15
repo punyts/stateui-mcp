@@ -188,4 +188,22 @@ describe('StateUiPatternCatalog', () => {
             ]);
         });
     });
+
+    describe('search by meaning', () => {
+        it('should merge a weak keyword result with the library ranked by meaning, library patterns only', () => {
+            // Arrange
+            const catalog = real().withOwner([{ name: 'top-nav', body: TOP_NAV }]);
+            const need = { need: 'zebra quartz' };
+            const library = real().names()[0] as string;
+            expect(catalog.search(need).weak).toBe(true);
+
+            // Act
+            const result = catalog.search(need, { ranked: ['top-nav', library], close: true });
+
+            // Assert
+            expect(result.results[0]).toMatchObject({ name: library, byMeaning: true, source: 'library' });
+            expect(result.results.map((found) => found.name)).not.toContain('top-nav');
+            expect(result.weak).toBe(false);
+        });
+    });
 });

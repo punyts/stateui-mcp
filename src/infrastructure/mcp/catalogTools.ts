@@ -43,7 +43,7 @@ export function createCatalogTools(
         {
             name: 'ui_components_search',
             description:
-                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), library and owner (ui_composed_write) components, best first: name, category, tier, source (library or owner), summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category.',
+                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), library and owner (ui_composed_write) components, best first: name, category, tier, source (library or owner), summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category. On a server with embeddings, byMeaning: true marks a component found by what the need means rather than by its words.',
             inputSchema: COMPONENTS_SEARCH.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -65,7 +65,7 @@ export function createCatalogTools(
         {
             name: 'ui_patterns_search',
             description:
-                'Find a ready screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start a screen from the one that fits (ui_app_create home or ui_screen_create pattern), then fill its slots. Frame screens such as side-navigation, top-navigation and marketing bring a header, a menu, a content slot and a footer. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns.',
+                'Find a ready screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start a screen from the one that fits (ui_app_create home or ui_screen_create pattern), then fill its slots. Frame screens such as side-navigation, top-navigation and marketing bring a header, a menu, a content slot and a footer. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns. On a server with embeddings, byMeaning: true marks a pattern found by what the need means rather than by its words.',
             inputSchema: PATTERNS_SEARCH.schema,
             annotations: READ_ONLY,
             run: async (args) => {

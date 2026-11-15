@@ -18,6 +18,8 @@ import type {
     ThemeOverlayEntry,
     ThemeToken
 } from '../application/ports/ComponentCatalog.js';
+import type { CatalogMeaning } from '../application/ports/CatalogMeanings.js';
+import { fuseRanks } from './fuseRanks.js';
 import type { CatalogFile, CatalogFileComponent } from './stateUiLibrary.js';
 
 export const DEFAULT_ICON_LIMIT = 30;
@@ -178,7 +180,33 @@ export class StateUiComponentCatalog implements ComponentCatalog {
         return component === undefined ? undefined : toEntry(component);
     }
 
-    search(query: ComponentSearchQuery, owner: readonly OwnerComponent[] = []): ComponentSearchResult {
+    search(query: ComponentSearchQuery, owner: readonly OwnerComponent[] = [], meaning?: CatalogMeaning): ComponentSearchResult {
+        const keyword = this.searchByWords(query, owner);
+        if (!keyword.weak || meaning === undefined) return keyword;
+        const { category, tier } = query;
+        const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_SEARCH_LIMIT), 1), MAX_SEARCH_LIMIT);
+        const fits = (name: string): boolean => {
+            const component = this.byName.get(name);
+            return component !== undefined && (category === undefined || component.category === category) && (tier === undefined || component.tier === tier);
+        };
+        const byMeaning = meaning.ranked.filter(fits);
+        if (byMeaning.length === 0) return keyword;
+        // A fallback entry (matched nothing) is not a keyword rank
+        const byWords = keyword.results.filter((found) => found.matched.length > 0);
+        const kept = new Map(byWords.map((found) => [found.name, found]));
+        const results = fuseRanks([byWords.map((found) => found.name), byMeaning])
+            .slice(0, limit)
+            .map((name): ComponentSearchHit => {
+                const found = kept.get(name);
+                if (found !== undefined) return found;
+                const candidate = this.library.find((entry) => entry.name === name) as Candidate;
+                return { name, category: candidate.category, tier: candidate.tier, summary: candidate.summary, matched: [], byMeaning: true, example: candidate.example, source: 'library' };
+            });
+        return { results, weak: !meaning.close };
+    }
+
+    /** The keyword ranking alone */
+    private searchByWords(query: ComponentSearchQuery, owner: readonly OwnerComponent[]): ComponentSearchResult {
         const { category, tier } = query;
         if (category !== undefined && !(COMPONENT_CATEGORIES as readonly string[]).includes(category)) {
             throw new InvalidSearchArgumentError('category', COMPONENT_CATEGORIES);

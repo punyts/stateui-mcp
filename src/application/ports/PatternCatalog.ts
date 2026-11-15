@@ -1,4 +1,5 @@
 import type { JsonValue, PatternKind, PatternPart, ThemePart } from '@punyts/stateui-app/core';
+import type { CatalogMeaning } from './CatalogMeanings.js';
 
 /** Where a pattern comes from: the component library, or the owner's `patterns` parts */
 export type PatternSource = 'library' | 'owner';
@@ -55,6 +56,8 @@ export interface PatternSearchHit {
     readonly summary: string;
     /** The purpose phrases that hold a need word, then need words matched only elsewhere; empty for a fallback entry */
     readonly matched: readonly string[];
+    /** True when the need's meaning found it, not its words */
+    readonly byMeaning?: true;
     /** Slot name to what goes there */
     readonly slots: Readonly<Record<string, string>>;
     readonly params: Readonly<Record<string, PatternParamView>>;
@@ -82,7 +85,11 @@ export interface PatternCatalog {
     get(name: string): PatternEntry | undefined;
     /** Every pattern name, of both kinds, in catalog order */
     names(): readonly string[];
-    search(query: PatternSearchQuery): PatternSearchResult;
+    /**
+     * Given the library ranked by the need's meaning, a weak keyword result is merged with it by reciprocal rank, and is
+     * weak only when the meaning is not close
+     */
+    search(query: PatternSearchQuery, meaning?: CatalogMeaning): PatternSearchResult;
     preset(name: string): ThemePresetEntry | undefined;
     /** Every theme preset name, in catalog order; empty while the catalog has none */
     presets(): readonly string[];

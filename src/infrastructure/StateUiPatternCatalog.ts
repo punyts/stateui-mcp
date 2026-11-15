@@ -11,6 +11,8 @@ import type {
     PatternSearchResult,
     ThemePresetEntry
 } from '../application/ports/PatternCatalog.js';
+import type { CatalogMeaning } from '../application/ports/CatalogMeanings.js';
+import { fuseRanks } from './fuseRanks.js';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT } from './StateUiComponentCatalog.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 
@@ -91,7 +93,26 @@ export class StateUiPatternCatalog implements PatternCatalog {
         return [...this.patterns.keys()];
     }
 
-    search(query: PatternSearchQuery): PatternSearchResult {
+    search(query: PatternSearchQuery, meaning?: CatalogMeaning): PatternSearchResult {
+        const keyword = this.searchByWords(query);
+        if (!keyword.weak || meaning === undefined) return keyword;
+        const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_SEARCH_LIMIT), 1), MAX_SEARCH_LIMIT);
+        const fits = (name: string): boolean => {
+            const pattern = this.patterns.get(name);
+            return pattern !== undefined && (pattern.source ?? 'library') === 'library' && (query.kind === undefined || pattern.kind === query.kind);
+        };
+        const byMeaning = meaning.ranked.filter(fits);
+        if (byMeaning.length === 0) return keyword;
+        const byWords = keyword.results.filter((found) => found.matched.length > 0);
+        const kept = new Map(byWords.map((found) => [found.name, found]));
+        const results = fuseRanks([byWords.map((found) => found.name), byMeaning])
+            .slice(0, limit)
+            .map((name) => kept.get(name) ?? { ...toHit(this.patterns.get(name) as PatternEntry, []), byMeaning: true as const });
+        return { results, weak: !meaning.close };
+    }
+
+    /** The keyword ranking alone */
+    private searchByWords(query: PatternSearchQuery): PatternSearchResult {
         const { kind } = query;
         if (kind !== undefined && !(PATTERN_KINDS as readonly string[]).includes(kind)) throw new InvalidSearchArgumentError('kind', PATTERN_KINDS);
         const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_SEARCH_LIMIT), 1), MAX_SEARCH_LIMIT);

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import type { LogicFunctions } from '@punyts/stateui-app/core';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
@@ -70,6 +71,8 @@ export interface ServicesOptions {
     readonly agentAnswers?: boolean;
     /** Bounds on each instance's logic, for a server that runs logic other people wrote */
     readonly logicLimits?: AppLogicLimits;
+    /** Ranks the library by meaning for the catalog searches the keyword index marks weak; none: keywords only */
+    readonly catalogMeanings?: CatalogMeanings;
 }
 
 /** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
@@ -174,7 +177,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = storage.fileStore;
     const previewLog = new LivePreviewLog(hub, storage.errorLog, fileRepository);
     const useCases = createUiBuilderUseCases(
-        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders },
+        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders, ...(options.catalogMeanings !== undefined && { meanings: options.catalogMeanings }) },
         { now, newId: randomUUID, report: options.report }
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);
