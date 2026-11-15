@@ -21,7 +21,7 @@ import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
-import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
+import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
 /** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
 export interface HttpTenant {
@@ -72,6 +72,12 @@ export interface HttpServerOptions {
     readonly port: number;
     /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
     readonly runtimePort: number;
+    /**
+     * Where people reach the two origins, such as `https://magnetic.example` and `https://run.magnetic.example`, when a
+     * proxy stands in front. The pages name them instead of `http://<Host>:<port>`, and only their host names (and
+     * loopback) are answered. Absent: each origin is the request's host name with that origin's port
+     */
+    readonly publicOrigins?: PublicOrigins;
     /** The one owner of a local server, or how a request finds its owner on a server with many */
     readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
     /**
@@ -87,6 +93,12 @@ export interface HttpServerOptions {
     /** The compiled host script, served as `/assets/host.js` */
     readonly hostScript: Buffer;
     readonly report: UseCaseReport;
+}
+
+/** The two public origins of a server behind a proxy: the pages', and the runtime frame's, which must differ */
+export interface PublicOrigins {
+    readonly main: string;
+    readonly runtime: string;
 }
 
 export interface RunningHttpServer {
@@ -204,6 +216,13 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     let mainPort = 0;
     let runtimePort = 0;
 
+    const publicHosts = options.publicOrigins === undefined ? undefined : new Set([new URL(options.publicOrigins.main).hostname, new URL(options.publicOrigins.runtime).hostname]);
+    const hostAllowed = (request: IncomingMessage): boolean => (publicHosts === undefined ? isAllowedHost(request.headers.host, options.host) : isPublicHost(request.headers.host, publicHosts));
+    /** The origin of the pages, as the browser of a request reaches it */
+    const mainOriginOf = (request: IncomingMessage): string => options.publicOrigins?.main ?? `http://${hostNameOf(request)}:${mainPort}`;
+    /** The origin of the runtime frame, as the browser of a request reaches it */
+    const runtimeOriginOf = (request: IncomingMessage): string => options.publicOrigins?.runtime ?? `http://${hostNameOf(request)}:${runtimePort}`;
+
     /** The host name the request used, so the other origin is reached by the same name */
     function hostNameOf(request: IncomingMessage): string {
         const name = requestHostName(request.headers.host);
@@ -214,7 +233,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     async function runtimeRoute(request: IncomingMessage, response: ServerResponse): Promise<void> {
         const path = new URL(request.url ?? '/', 'http://localhost').pathname;
         if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
-            const csp = runtimeCsp(`http://${hostNameOf(request)}:${mainPort}`);
+            const csp = runtimeCsp(mainOriginOf(request));
             send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': csp, 'Cache-Control': 'no-cache' });
             return;
         }
@@ -285,7 +304,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     /** The page of an app taken back: it deletes what the browser keeps of the app and says why */
     function revokedRoute(revoked: RevokedApp, request: IncomingMessage, response: ServerResponse, appId: string): void {
-        const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
+        const runtimeOrigin = runtimeOriginOf(request);
         send(
             response,
             200,
@@ -299,7 +318,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
-        const runtimeOrigin = `http://${hostNameOf(request)}:${runtimePort}`;
+        const runtimeOrigin = runtimeOriginOf(request);
         send(
             response,
             200,
@@ -399,7 +418,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     const handler = (handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) => (request: IncomingMessage, response: ServerResponse) => {
         void (async () => {
             try {
-                if (!isAllowedHost(request.headers.host, options.host)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
+                if (!hostAllowed(request)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
                 if (request.method !== 'GET' && request.method !== 'HEAD' && !isSameOrigin(request)) throw new HttpError(403, 'Cross-origin requests are refused', 'forbidden_origin');
                 await handle(request, response);
             } catch (error) {
@@ -450,7 +469,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
      * sync authority, which gets every other text frame. Closing the socket leaves both
      */
     async function syncUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
-        if (!isAllowedHost(request.headers.host, options.host)) return refuseUpgrade(socket, 403, 'Forbidden');
+        if (!hostAllowed(request)) return refuseUpgrade(socket, 403, 'Forbidden');
         // A browser always sends Origin with a WebSocket, so a page of another origin cannot open one
         if (!isSameOrigin(request)) return refuseUpgrade(socket, 403, 'Forbidden');
         const url = new URL(request.url ?? '/', 'http://localhost');

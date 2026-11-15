@@ -82,6 +82,16 @@ export function isAllowedHost(hostHeader: string | undefined, bindHost: string):
 }
 
 /**
+ * The check of a server reached at public origins (behind a proxy, over HTTPS): only their host names, and the loopback
+ * names a health check on the machine uses. Anything else is a name this server was never given
+ */
+export function isPublicHost(hostHeader: string | undefined, publicHostNames: ReadonlySet<string>): boolean {
+    if (hostHeader === undefined) return false;
+    const name = hostName(hostHeader);
+    return publicHostNames.has(name) || new Set(['localhost', '127.0.0.1', '[::1]']).has(name);
+}
+
+/**
  * Guards against a web page that posts to this server from another origin. A request with an `Origin` header must come
  * from the same host the request names; a request without one (curl, an MCP client, Node) is allowed
  */
