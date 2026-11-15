@@ -11,7 +11,7 @@ import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
 
 /** What the descriptions of the app and screen tools teach about `uses` */
 export const USES_TEXT =
-    'uses: { themes: ["theme-name", ...] (the first is the default; a person can switch between them), data: { name: { dataset: "dataset-name" } or { model: "model-name", scope: "persona" } } (each $.data.name the app reads, bound to an owner dataset, or a dataset of that model each person gets their own copy of), logic: { "module-name": { params: { ... } } } (owner logic modules, each with values for the params it declares; every data name a module needs must be bound under data) }';
+    'uses: { themes: ["theme-name", ...] (the first is the default; a person can switch between them), data: { name: { dataset: "dataset-name" } or { model: "model-name", scope: "persona" } } (each $.data.name the app reads, bound to an owner dataset, or a dataset of that model each person gets their own copy of), logic: { "module-name": { params: { ... } } } (owner logic modules, each with values for the params it declares; every data name a module needs must be bound under data), external: { alias: { app: "<app id>", path: "$.data.notes" } } (another app the logic reads: the state the person has in that app, under path, shown read only at $.external.alias; the logic runs on its changes, and nothing of it is stored) }';
 
 /** What the descriptions teach about a node tree or a pattern */
 const TREE_TEXT =

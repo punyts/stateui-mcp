@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authority';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
 import type { LogicFunctions } from '@punyts/stateui-app/core';
@@ -27,6 +28,8 @@ import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js'
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
+import { parseAddress } from '../domain/StateAddress.js';
+import { ExternalReads } from '../infrastructure/sync/ExternalReads.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
@@ -172,7 +175,24 @@ export function createServices(options: ServicesOptions): Services {
         datasets
     );
     const instances = instancesOf(DEFAULT_PERSONA);
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf);
+    /**
+     * The in-process relay (docs/design/statenet-relays.md, S3): it serves the namespaces of this workspace's running
+     * instances by address, a person's state of an app at `<persona>/<appId>/user`, and caches each subscribed path
+     * once for every instance that reads it (`uses.external`)
+     */
+    let states: AuthorityInstanceStates | undefined;
+    const relay = createRelay(
+        createAuthorityUpstream(async (address) => {
+            const parsed = parseAddress(address);
+            if (parsed === undefined || parsed.scope !== 'user' || states === undefined) return undefined;
+            const app = await parts.findById('apps', parsed.appId);
+            if (app === undefined) return undefined;
+            return states.authority(app, parsed.ownerId === ownerId ? DEFAULT_PERSONA : parsed.ownerId).catch(() => undefined);
+        })
+    );
+    const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { report: (message, fields) => options.report.info(message, fields) });
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external);
+    states = instanceStates;
     const fileRepository = storage.files;
     const fileStore = storage.fileStore;
     const previewLog = new LivePreviewLog(hub, storage.errorLog, fileRepository);

@@ -25,6 +25,13 @@ export interface InstanceDataGate {
     durable?(namespace: string): Promise<void>;
 }
 
+/** An app's ephemeral paths, with `$.external` when it reads other apps: what it reads is given again on start, never stored */
+function ephemeralOf(document: UiDocument): string[] {
+    const declared = Array.isArray((document as { ephemeral?: unknown }).ephemeral) ? (document as { ephemeral: string[] }).ephemeral : [];
+    const external = (document as { external?: object }).external;
+    return external !== undefined && Object.keys(external).length > 0 ? [...declared, '$.external'] : declared;
+}
+
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
@@ -127,7 +134,7 @@ export class AppAuthorities {
                 createParents: true,
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey }),
                 // The app's ephemeral paths are shared like any change but never saved, and never hold up a durable save
-                ...(Array.isArray((document as { ephemeral?: unknown }).ephemeral) && { ephemeral: (document as { ephemeral: string[] }).ephemeral })
+                ...(ephemeralOf(document).length > 0 && { ephemeral: ephemeralOf(document) })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
                 this.startLogic(namespace, appId, created, document, derive, persona);

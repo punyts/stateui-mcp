@@ -1,4 +1,5 @@
 import type { Authority } from '@punyts/state-sync/authority';
+import type { ExternalReads, ExternalUses } from './ExternalReads.js';
 import type { InstanceShape, InstanceStates, InstanceWriteOptions } from '../../application/ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
@@ -46,7 +47,9 @@ export class AuthorityInstanceStates implements InstanceStates {
         private readonly report: InstanceProblemReport,
         private readonly hub?: DatasetHub,
         /** The instances of a persona other than the default one; absent: only the default persona exists */
-        private readonly personaInstances?: (persona: string) => UiInstanceRepository
+        private readonly personaInstances?: (persona: string) => UiInstanceRepository,
+        /** What instances read of other apps (`uses.external`), subscribed while they run */
+        private readonly external?: ExternalReads
     ) {}
 
     async shape(app: UiPart<'apps'>): Promise<InstanceShape> {
@@ -93,6 +96,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         const running = this.running.get(text);
         if (running === undefined) return;
         this.hub?.detach(appNamespace(running.key));
+        this.external?.detach(running.key);
         await this.authorities.forgetInstance(running.key);
         this.running.delete(text);
     }
@@ -118,6 +122,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         const ready = this.authorities.instance(start, storage).then(async (authority) => {
             await this.hub?.attach(appNamespace(start.key), authority, start.bindings, (writes) => this.authorities.receiveInstance(start.key, authority, writes));
             this.authorities.deriveInstance(start.key);
+            this.external?.attach(start.key, authority, (start.document as { external?: ExternalUses }).external);
             return authority;
         });
         running.ready = ready;
