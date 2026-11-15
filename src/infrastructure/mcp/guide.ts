@@ -85,6 +85,9 @@ const TABLES = 'A table (logic.tables.<name>: { inputs, outputs, rows }) is a lo
 
 const EFFECTS = 'Three tiers of logic: tables for quick lookups, expressions ({{ }}) for small scripts, and code for the rest. Code is a function the host registers (mountApp logicFunctions, or the MCP server functions in Full mode). A compute (logic.computes.<name>: { inputs, run, outputs }) runs a sync function: inputs are paths or { path | value }, the function gets them by name and returns an object whose fields go to the outputs; a missing input skips the unit, and it runs in the chain like a table. An effect (logic.effects.<name>: { request, run, status, records?: { into, key }, window?, value?, cache? }) does async work with a request token. A cell sets the request (a value at the request path, such as { page, size, filter }); the token is a hash of that value. A new token aborts the call that runs and drops its answer when it comes; the status path holds { token, state: loading | ready | error, total?, reason?, at }. The answer { records, first, total, value } commits at once: records merge into the data map records.into by their key (the primary key, under $.data or $.server), the window node (a ^name or path) shows rows first+i keyed by that key, and a later change to a record rewrites the rows that show it. cache: n keeps the last n answers by token, so going back to a page shows it with no call. Removing the request makes the status idle. A run the host did not register is a warning (SUI-LOGIC-FUNCTION) and fails when it runs; in Full mode the server asks the agent instead: a logic.effect event { id, name, token, request } in ui_events_read, answered with ui_effect_answer. ui_logic_trace lists each effect with its token, running and cache size.';
 
+const SAVING =
+    'A save-data or delete-data with "as" gives its accepted result once the write is durable: stored where it survives the server, the shared dataset record included. So a machine that moves to "saved" on that result shows Saved only when it is, and a write that could not be stored comes back rejected with the reason. "await": "applied" gives the result as soon as the write is in the state, for steps nobody waits on. Some state is shared but never worth storing: a pointer, presence, who is typing, a drag in progress. List those paths in the ephemeral list of the app (ui_app_configure; "$.data.presence.*", * for any one segment): their changes reach everyone using the app at once, are never written to the database, and never hold up a save. Do not make a record or anything a person would miss ephemeral: it is gone when the server restarts.';
+
 const SIMILAR =
     'A server with embeddings can find records by meaning. Mark a string field of a model embed: true (ui_model_write), and the server embeds that field of every record of the datasets and persona bindings of that model as it changes; other servers ignore embed. Logic asks with call (machines only): target similar, value { binding, field, text, limit? } (binding: a data binding of the app; limit: 10 by default, at most 50), and an "as" name. The answer is accepted with the value { results: [{ key, score }] }, the closest records first (score 1 is the same meaning), or rejected with a reason (no such binding, or the field is not embedded). Over a persona binding only the records of the person whose instance runs the logic are searched. The answer gives keys, not records: read each record at $.data.<binding>.<key>, or copy the keys into a list the screen shows. A record just written is found a moment later, once it is embedded.';
 
@@ -165,6 +168,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
     { name: 'keys', when: 'you name an icon or token, give a record key or set a value under a path', text: fixed(KEYS), alwaysOn: true },
     { name: 'modules', when: 'a logic module or the params of a screen', text: fixed(MODULES), alwaysOn: false },
     { name: 'logic', when: 'a machine or rule', text: fixed(LOGIC), alwaysOn: false },
+    { name: 'saving', when: 'a save the person waits for, or shared state such as a pointer that is never stored', text: fixed(SAVING), alwaysOn: false },
     { name: 'similar', when: 'records found by meaning (an embed field and the similar call)', text: fixed(SIMILAR), alwaysOn: false },
     { name: 'tables', when: 'a lookup table (its inputs, outputs and rows)', text: fixed(TABLES), alwaysOn: false },
     { name: 'effects', when: 'a compute unit, an effect, a request token or paged records', text: fixed(EFFECTS), alwaysOn: false },
@@ -235,6 +239,7 @@ export const VALIDATION_PREFIX_TOPICS: Readonly<Record<string, string>> = Object
     'SUI-THEME-TOKEN': 'keys',
     'SUI-RUN-ICON': 'keys',
     'SUI-DOC-ICON': 'keys',
+    'SUI-DOC-EPHEMERAL': 'saving',
     'SUI-STATE-PAINT': 'drawing',
     'SUI-STATE-LABEL': 'drawing',
     'SUI-RUN-DRAW': 'drawing',

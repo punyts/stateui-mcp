@@ -18,6 +18,8 @@ export interface ConfigureAppInput {
     readonly uses?: JsonObject;
     /** The screen the app opens on */
     readonly start?: string;
+    /** Replaces the state paths whose changes are shared but never stored (empty: none) */
+    readonly ephemeral?: readonly string[];
 }
 
 export type ConfigureAppResult =
@@ -46,18 +48,20 @@ export class ConfigureApp {
     }
 
     private async configure(input: ConfigureAppInput): Promise<ConfigureAppResult> {
-        const { name, expectedRevision, title, uses, start } = input;
-        if (title === undefined && uses === undefined && start === undefined) return { kind: 'nothing-to-change' };
+        const { name, expectedRevision, title, uses, start, ephemeral } = input;
+        if (title === undefined && uses === undefined && start === undefined && ephemeral === undefined) return { kind: 'nothing-to-change' };
         const app = await this.parts.findByName('apps', name);
         if (app === undefined) return { kind: 'not-found', nearest: nearestNames(name, (await this.parts.list('apps')).map((summary) => summary.name)) };
         if (app.revision !== expectedRevision) return { kind: 'conflict', currentRevision: app.revision };
         const appNode = (app.body as unknown as { app?: Record<string, unknown> }).app;
+        const { ephemeral: _ephemeral, ...rest } = app.body as unknown as { ephemeral?: unknown };
         const body = {
-            ...app.body,
+            ...(ephemeral === undefined ? app.body : rest),
             // the title is also the app node's _title, the document title
             ...(title !== undefined && { title, ...(appNode !== undefined && { app: { ...appNode, _title: title } }) }),
             ...(uses !== undefined && { uses }),
-            ...(start !== undefined && { start })
+            ...(start !== undefined && { start }),
+            ...(ephemeral !== undefined && ephemeral.length > 0 && { ephemeral: [...ephemeral] })
         } as unknown as UiPartBodies['apps'];
         const check = await checkPartApp(this.parts, this.validator, name, body);
         if (check.kind !== 'checked') return check;

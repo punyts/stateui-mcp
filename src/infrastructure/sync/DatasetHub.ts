@@ -125,6 +125,8 @@ function reasonOf(error: unknown): string {
 export class DatasetHub implements InstanceDataGate {
     private readonly datasets = new Map<string, Promise<Dataset | undefined>>();
     private readonly attached = new Map<string, { readonly members: readonly Member[]; readonly removers: readonly (() => void)[] }>();
+    /** Each namespace's write-throughs not yet waited for, each resolving to why it failed or to undefined */
+    private readonly writing = new Map<string, Promise<string | undefined>[]>();
 
     constructor(
         private readonly parts: DatasetParts,
@@ -182,8 +184,21 @@ export class DatasetHub implements InstanceDataGate {
     applied(namespace: string, writes: readonly ServerWrite[]): void {
         for (const member of this.attached.get(namespace)?.members ?? []) {
             const changes = this.recordChanges(member, writes);
-            if (changes.length > 0) this.enqueue(member.dataset, () => this.writeThrough(member, changes));
+            if (changes.length === 0) continue;
+            const outcome = new Promise<string | undefined>((resolve) => this.enqueue(member.dataset, async () => resolve(await this.writeThrough(member, changes).catch((error: unknown) => reasonOf(error)))));
+            this.writing.set(namespace, [...(this.writing.get(namespace) ?? []), outcome]);
         }
+    }
+
+    /** Resolves once the namespace's write-throughs queued so far are done; rejects with the reason one of them failed */
+    async durable(namespace: string): Promise<void> {
+        const pending = [...(this.writing.get(namespace) ?? [])];
+        if (pending.length === 0) return;
+        const failures = (await Promise.all(pending)).filter((reason): reason is string => reason !== undefined);
+        const left = (this.writing.get(namespace) ?? []).filter((task) => !pending.includes(task));
+        if (left.length === 0) this.writing.delete(namespace);
+        else this.writing.set(namespace, left);
+        if (failures.length > 0) throw new Error(`The shared data was not stored: ${failures[0]}`);
     }
 
     /** Resolves when no write-through or refresh is queued, including those queued while it waits */
@@ -250,10 +265,11 @@ export class DatasetHub implements InstanceDataGate {
         return changes;
     }
 
-    private async writeThrough(member: Member, changes: readonly RecordChange[]): Promise<void> {
+    /** Writes the changes to the dataset part; answers why they were not written, or undefined */
+    private async writeThrough(member: Member, changes: readonly RecordChange[]): Promise<string | undefined> {
         const { dataset } = member;
         const next = changes.reduce(withChange, dataset.records);
-        if (sameJson(next, dataset.records)) return;
+        if (sameJson(next, dataset.records)) return undefined;
         let failure: string | undefined;
         let revision: number | undefined;
         try {
@@ -267,7 +283,7 @@ export class DatasetHub implements InstanceDataGate {
         if (revision === undefined) {
             this.report.info('Shared data not written', { dataset: dataset.name, instance: member.namespace, reason: failure ?? 'unknown' });
             member.deliver([{ path: member.base, op: 'set', value: (part === undefined ? dataset.records : objectOr(part.body.records)) as SyncValue }]);
-            return;
+            return failure ?? 'unknown';
         }
         // Only a write right after the hub's revision is the hub's alone; otherwise the refresh of the write between applies both
         if (part !== undefined && part.revision === revision && dataset.revision === revision - 1) {
@@ -277,6 +293,7 @@ export class DatasetHub implements InstanceDataGate {
         for (const other of dataset.members) {
             if (other !== member) other.deliver(changes.map((change) => toWrite(other.base, change)));
         }
+        return undefined;
     }
 
     private partChanged(kind: PartKind, name: string): void {

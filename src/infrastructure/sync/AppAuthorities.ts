@@ -21,6 +21,8 @@ export type AppEmitHandler = (appId: string, name: string, value: JsonValue | un
 export interface InstanceDataGate {
     check(namespace: string, writes: readonly ServerWrite[]): string | undefined;
     applied(namespace: string, writes: readonly ServerWrite[]): void;
+    /** Resolves once the shared data the namespace has written so far is stored; rejects when a write of it failed */
+    durable?(namespace: string): Promise<void>;
 }
 
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
@@ -123,7 +125,9 @@ export class AppAuthorities {
                 storage,
                 initial,
                 createParents: true,
-                ...(this.serverKey !== undefined && { serverKey: this.serverKey })
+                ...(this.serverKey !== undefined && { serverKey: this.serverKey }),
+                // The app's ephemeral paths are shared like any change but never saved, and never hold up a durable save
+                ...(Array.isArray((document as { ephemeral?: unknown }).ephemeral) && { ephemeral: (document as { ephemeral: string[] }).ephemeral })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
                 this.startLogic(namespace, appId, created, document, derive, persona);
@@ -177,7 +181,7 @@ export class AppAuthorities {
     private gateOf(namespace: string): DataGate | undefined {
         const gate = this.dataGate;
         if (gate === undefined) return undefined;
-        return { check: (writes) => gate.check(namespace, writes), applied: (writes) => gate.applied(namespace, writes) };
+        return { check: (writes) => gate.check(namespace, writes), applied: (writes) => gate.applied(namespace, writes), ...(gate.durable !== undefined && { durable: () => (gate.durable as (namespace: string) => Promise<void>)(namespace) }) };
     }
 
     /** The logic trace of the authority of a namespace (an instance's: `InstanceViews.namespace`), oldest run first; undefined when no logic runs there */

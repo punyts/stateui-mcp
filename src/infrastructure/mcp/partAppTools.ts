@@ -52,7 +52,12 @@ const CONFIGURE = defineInput({
     expectedRevision: { type: 'integer', minimum: 1, required: true, description: 'The app revision you last read; when it has changed since, nothing changes' },
     title: { type: 'string', description: 'The new title' },
     uses: { type: 'object', description: 'The new uses, whole: it replaces the old one and is checked with every binding and module together' },
-    start: { type: 'string', description: 'The screen the app opens on; it must be one of the app\'s screens' }
+    start: { type: 'string', description: 'The screen the app opens on; it must be one of the app\'s screens' },
+    ephemeral: {
+        type: 'json',
+        schema: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+        description: 'The state paths, whole list, whose changes reach everyone using the app but are never stored and never hold up a save, such as a pointer or presence ("$.data.presence.*", * for any one segment); [] for none'
+    }
 });
 
 const SCREEN = defineInput({
@@ -188,14 +193,18 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
     return [
         {
             name: 'ui_app_configure',
-            description: `Build time: change an app's title, uses or start screen; every other field stays as it is. ${USES_TEXT}. A new uses replaces the old one whole and is checked with every binding and module together: a part that does not exist comes back with the nearest names, an error (such as a module need left unbound) with its part. Returns { name, revision, warnings }.`,
+            description: `Build time: change an app's title, uses, start screen or ephemeral paths (state shared but never stored, such as a pointer); every other field stays as it is. ${USES_TEXT}. A new uses replaces the old one whole and is checked with every binding and module together: a part that does not exist comes back with the nearest names, an error (such as a module need left unbound) with its part. Returns { name, revision, warnings }.`,
             inputSchema: CONFIGURE.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = CONFIGURE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { name, expectedRevision, title, uses, start } = parsed.value;
+                const { name, expectedRevision, title, uses, start, ephemeral } = parsed.value;
+                if (ephemeral !== undefined && (!Array.isArray(ephemeral) || !ephemeral.every((item) => typeof item === 'string'))) {
+                    return fail('invalid-argument', 'ephemeral is a list of state paths', { argument: 'ephemeral' });
+                }
                 const result = await configureApp.execute({
+                    ...(ephemeral !== undefined && { ephemeral: ephemeral as string[] }),
                     name,
                     expectedRevision,
                     ...(title !== undefined && { title }),
@@ -206,7 +215,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
                     case 'configured':
                         return succeed({ name, revision: result.revision, warnings: withGuides(result.warnings) });
                     case 'nothing-to-change':
-                        return fail('invalid-argument', 'Give title, uses or start', { argument: 'title' });
+                        return fail('invalid-argument', 'Give title, uses, start or ephemeral', { argument: 'title' });
                     case 'not-found':
                         return sharedOutcome(result, 'name', 'changed');
                     case 'conflict':

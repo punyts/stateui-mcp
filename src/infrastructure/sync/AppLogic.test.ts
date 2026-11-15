@@ -118,6 +118,9 @@ describe('AppLogic', () => {
 
         // Act
         session.receive(change('$.app.children.addContact.saved', true));
+        // the save's result waits until the write is durable
+        await authority.whenDurable();
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         // Assert
         const contacts = authority.get('$.data.contacts') as Record<string, { name: string }>;

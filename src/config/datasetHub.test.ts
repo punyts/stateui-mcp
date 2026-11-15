@@ -64,6 +64,15 @@ const SAVE_BAD = deepFreeze({
     }
 });
 
+/** Shop A saves a record when `$.data.request` is set, and says Saved, or why not, in `$.data.status` */
+const SAVE_FORM = deepFreeze({
+    rules: {
+        add: { when: { path: '$.data.request', is: true }, do: [{ command: 'save-data', into: '$.data.products', key: 'p9', value: { name: 'Desk', price: 5 }, as: 'saved' }] },
+        done: { when: { result: 'saved', is: 'accepted' }, do: [{ command: 'set', target: '$.data.status', value: 'Saved' }] },
+        sorry: { when: { result: 'saved', is: 'rejected' }, do: [{ command: 'set', target: '$.data.status', value: '$result.reason' }] }
+    }
+});
+
 interface Message {
     type: string;
     result?: string;
@@ -75,6 +84,8 @@ let folders: PartFolders;
 let parts: IndexedUiPartRepository;
 let writeData: WriteData;
 let failWrites: boolean;
+/** While set, writes of the datasets wait for it */
+let hold: Promise<void> | undefined;
 let report: ReturnType<typeof vi.fn<(message: string, details?: unknown) => void>>;
 let hub: DatasetHub;
 let authorities: AppAuthorities;
@@ -123,10 +134,11 @@ beforeEach(async () => {
     let next = 0;
     writeData = new WriteData(parts, validator, () => `id${++next}`, QUIET);
     failWrites = false;
+    hold = undefined;
     report = vi.fn<(message: string, details?: unknown) => void>();
     hub = new DatasetHub(
         parts,
-        (name: string, operations: readonly DataOperation[]) => (failWrites ? Promise.reject(new Error('EIO: disk error')) : writeData.execute({ name, operations })),
+        (name: string, operations: readonly DataOperation[]) => (failWrites ? Promise.reject(new Error('EIO: disk error')) : (hold ?? Promise.resolve()).then(() => writeData.execute({ name, operations }))),
         { info: report }
     );
     authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET }, hub);
@@ -300,5 +312,45 @@ describe('DatasetHub', () => {
         expect(b.get('$.data.cart.l1')).toBeUndefined();
         // the two writes are the grosses the pricing rule derived at start, not the cart
         expect((await stored()).revision).toBe(3);
+    });
+
+    describe('a save that waits until it is durable', () => {
+        it('should say Saved only once the shared record is stored', async () => {
+            // Arrange
+            await parts.write('apps', 'shop-a', shop(SAVE_FORM), shopA.revision);
+            const a = await states.authority(await part('shop-a'));
+            await hub.settled();
+            let release!: () => void;
+            hold = new Promise<void>((resolve) => (release = resolve));
+
+            // Act
+            view(a).change('$.data.request', true);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const before = { record: a.get('$.data.products.p9'), status: a.get('$.data.status'), stored: ((await stored()).records as Record<string, unknown>)['p9'] };
+            release();
+            await hub.settled();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            // Assert
+            expect(before).toEqual({ record: { name: 'Desk', price: 5, gross: 10 }, status: undefined, stored: undefined });
+            expect(((await stored()).records as Record<string, unknown>)['p9']).toMatchObject({ name: 'Desk' });
+            expect(a.get('$.data.status')).toBe('Saved');
+        });
+
+        it('should give the reason instead of Saved when the shared record could not be stored', async () => {
+            // Arrange
+            await parts.write('apps', 'shop-a', shop(SAVE_FORM), shopA.revision);
+            const a = await states.authority(await part('shop-a'));
+            await hub.settled();
+            failWrites = true;
+
+            // Act
+            view(a).change('$.data.request', true);
+            await hub.settled();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            // Assert
+            expect(a.get('$.data.status')).toBe('The shared data was not stored: EIO: disk error');
+        });
     });
 });

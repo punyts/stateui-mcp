@@ -68,6 +68,8 @@ function toServerWrite(write: LogicWrite): ServerWrite {
 export interface DataGate {
     check(writes: readonly ServerWrite[]): string | undefined;
     applied(writes: readonly ServerWrite[]): void;
+    /** Resolves once the shared data written so far is stored; rejects when a write of it failed */
+    durable?(): Promise<void>;
 }
 
 /**
@@ -147,6 +149,10 @@ export class AppLogic {
         };
         this.read = read;
         const host: LogicHost = {
+            // A result that waits for durability waits for the instance's own save and for the shared data it wrote
+            durable: async () => {
+                await Promise.all([this.authority.whenDurable(), this.gate?.durable?.()]);
+            },
             get: read,
             commit: (writes) => {
                 const server = writes.map(toServerWrite);
