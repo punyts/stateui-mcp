@@ -35,14 +35,25 @@ function ephemeralOf(document: UiDocument): string[] {
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
+/** The running instance a host's logic functions are made for */
+export interface LogicInstance {
+    readonly appId: string;
+    /** The persona whose instance it is; undefined for the owner's own */
+    readonly persona?: string;
+    readonly namespace: string;
+}
+
+/** Logic functions, or a factory of them per running instance (an effect that must know whose app it runs for) */
+export type LogicFunctionsSource = LogicFunctions | ((instance: LogicInstance) => LogicFunctions);
+
 /** What Full-mode apps need to run their `logic` on the server */
 export interface AppLogicOptions {
     library: ComponentLibrary;
     report: Pick<Report, 'info'>;
     /** The server procedures a `call` runs by name; a call to any other name waits for the agent (`ui_call_answer`) */
     procedures?: Readonly<Record<string, AppProcedure>>;
-    /** The compute, expression and effect functions the logic runs by name */
-    functions?: LogicFunctions;
+    /** The compute, expression and effect functions the logic runs by name, or a factory of them per running instance */
+    functions?: LogicFunctionsSource;
     /**
      * Whether a `call` with no procedure and an effect with no function wait for the agent (`ui_call_answer`,
      * `ui_effect_answer`); false: they fail at once, as on a server where no agent answers them. Default true
@@ -162,7 +173,7 @@ export class AppAuthorities {
                       agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload, persona) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
                 : undefined,
             this.gateOf(namespace),
-            this.logic.functions,
+            typeof this.logic.functions === 'function' ? this.logic.functions({ appId, namespace, ...(persona !== undefined && { persona }) }) : this.logic.functions,
             agentAnswers ? (request, signal) => this.effects.ask(appId, request, signal) : undefined,
             this.logic.limits
         );

@@ -4,7 +4,7 @@ import type { Authority, Upstream } from '@punyts/state-sync/authority';
 import type { InstancePlacement } from '../application/ports/InstancePlacement.js';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
-import type { LogicFunctions } from '@punyts/stateui-app/core';
+import type { LogicFunctionsSource } from '../infrastructure/sync/AppAuthorities.js';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
 import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
@@ -67,8 +67,11 @@ export interface ServicesOptions {
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
     readonly procedures?: Readonly<Record<string, AppProcedure>>;
-    /** The compute, expression and effect functions Full-mode logic runs by name */
-    readonly logicFunctions?: LogicFunctions;
+    /**
+     * The compute, expression and effect functions Full-mode logic runs by name, or a factory of them that each running
+     * instance calls with its app, persona and namespace
+     */
+    readonly logicFunctions?: LogicFunctionsSource;
     /** A file that gets one JSON line per tool call; absent: no log */
     readonly toolLog?: string;
     /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
