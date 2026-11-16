@@ -240,8 +240,16 @@ export class AppAuthorities {
         await created.flush();
     }
 
+    private readonly closing: Array<() => void> = [];
+
+    /** Runs a function when the authorities close, before they do: what reads into the instances stops */
+    onClose(listener: () => void): void {
+        this.closing.push(listener);
+    }
+
     /** Closes every connection and waits for every save */
     async close(): Promise<void> {
+        for (const listener of this.closing.splice(0)) listener();
         await Promise.all([...this.authorities.keys()].map((namespace) => this.forgetNamespace(namespace)));
     }
 }

@@ -38,6 +38,7 @@ export type { ServicesStorage } from './config/createServices.js';
 /** A server procedure Full-mode logic calls by name, and where the call comes from */
 export type { AppProcedure, AppProcedureContext } from './infrastructure/sync/AppCalls.js';
 export type { LogicFunctionsSource, LogicInstance } from './infrastructure/sync/AppAuthorities.js';
+export type { SharedData, SharedDataListener } from './infrastructure/sync/ExternalReads.js';
 /** Search the component catalog by meaning: the port a server with embeddings implements */
 export type { CatalogKind, CatalogMeaning, CatalogMeanings, CatalogText } from './application/ports/CatalogMeanings.js';
 export { PART_ID_PROBLEM, PART_ID_TAKEN } from './application/ports/UiPartRepository.js';

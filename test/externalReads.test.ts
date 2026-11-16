@@ -2,7 +2,9 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UiPartBodies } from '../src/domain/UiPart.js';
-import { inMemoryHarness, tempData } from './helpers.js';
+import { createServices } from '../src/config/createServices.js';
+import type { SharedData, SharedDataListener } from '../src/index.js';
+import { inMemoryHarness, silentReport, tempData } from './helpers.js';
 import type { InMemoryHarness, TempData } from './helpers.js';
 
 let data: TempData;
@@ -65,5 +67,65 @@ describe('Logic that reads another app', () => {
             return text;
         });
         expect(file).not.toContain('external');
+    });
+});
+
+describe("Logic that reads another owner's shared dataset", () => {
+    const OWNER = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+    it('should show its records at $.external, run the logic on their changes, refuse a write there and clear them when the share ends', async () => {
+        // Arrange: a shared dataset this test plays the owner of, read by an app through sharedData
+        const listeners: SharedDataListener[] = [];
+        const opened: string[] = [];
+        let closed = 0;
+        const sharedData: SharedData = {
+            open: (owner, dataset, listener) => {
+                opened.push(`${owner}/${dataset}`);
+                listeners.push(listener);
+                listener.records({ p1: { name: 'Tea', price: 3 } });
+                return { close: () => void (closed += 1) };
+            }
+        };
+        const services = createServices({ dataDir: data.dir + '-shared', report: silentReport, origin: () => 'http://127.0.0.1:4100', sharedData });
+        try {
+            const written = await services.useCases.writePart!.execute({
+                kind: 'apps',
+                name: 'menu',
+                body: {
+                    uses: { external: { prices: { owner: OWNER, dataset: 'price-list' } } },
+                    start: 'home',
+                    app: { component: 'app' },
+                    screens: { home: { root: { component: 'form', children: { last: { component: 'textField', _label: 'Last price' } } } } },
+                    logic: { rules: { last: { when: { path: '$.external.prices.{id}.name' }, do: [{ command: 'set', target: '$.screens.home.children.last.value', value: '$trigger' }] } } }
+                } as unknown as UiPartBodies['apps']
+            });
+            expect(written.kind).toBe('written');
+            const menu = await services.parts.findByName('apps', 'menu');
+            const state = async (): Promise<Record<string, unknown>> => ((await services.useCases.getPartState.execute(menu as never)) as unknown as { state: Record<string, unknown> }).state;
+            await state();
+
+            // Act: the owner changes a record
+            listeners[0]?.records({ p1: { name: 'Tea', price: 3 }, p2: { name: 'Coffee', price: 4 } });
+
+            // Assert: the records show, the logic ran on the change, and a write there is refused
+            const shown = await vi.waitFor(async () => {
+                const current = await state();
+                expect((current['external'] as { prices?: object } | undefined)?.prices).toEqual({ p1: { name: 'Tea', price: 3 }, p2: { name: 'Coffee', price: 4 } });
+                return current;
+            });
+            expect(opened).toEqual([`${OWNER}/price-list`]);
+            expect((shown['screens'] as { home: { children: { last: { value?: string } } } }).home.children.last.value).toBe('Coffee');
+            const refused = await services.useCases.setPartState.execute('menu', { path: '$.external.prices.p3', value: { name: 'Juice' } });
+            expect(refused).toMatchObject({ kind: 'refused' });
+
+            // Act: the share ends
+            listeners[0]?.ended('revoked');
+
+            // Assert: nothing of it is left
+            await vi.waitFor(async () => expect((await state())['external'] ?? {}).toEqual({}));
+        } finally {
+            await services.authorities.close();
+        }
+        expect(closed).toBe(1);
     });
 });

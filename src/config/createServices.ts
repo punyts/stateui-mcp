@@ -33,6 +33,7 @@ import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
 import { parseAddress } from '../domain/StateAddress.js';
 import { ExternalReads } from '../infrastructure/sync/ExternalReads.js';
+import type { SharedData } from '../infrastructure/sync/ExternalReads.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
@@ -87,6 +88,8 @@ export interface ServicesOptions {
      * instance runs in this process
      */
     readonly placement?: InstancePlacement;
+    /** Datasets other owners shared with this owner, read by `uses.external` aliases that name one */
+    readonly sharedData?: SharedData;
 }
 
 /** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
@@ -214,7 +217,8 @@ export function createServices(options: ServicesOptions): Services {
             return states.authority(app, parsed.ownerId === ownerId ? DEFAULT_PERSONA : parsed.ownerId).catch(() => undefined);
         })
     );
-    const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { report: (message, fields) => options.report.info(message, fields) });
+    const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { report: (message, fields) => options.report.info(message, fields), ...(options.sharedData !== undefined && { sharedData: options.sharedData }) });
+    authorities.onClose(() => external.detachAll());
     const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external, options.placement);
     states = instanceStates;
     const fileRepository = storage.files;
