@@ -1,7 +1,13 @@
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
 import { MAX_FILE_BYTES, MAX_FILES_PER_APP } from '../src/domain/UiFile.js';
-import { FORM_DOCUMENT, call, httpHarness, noBrowser, tempData } from './helpers.js';
+import { loadChunk3d } from '../src/infrastructure/http/runtimeBundle.js';
+import { runtimeCsp } from '../src/infrastructure/http/security.js';
+import { FORM_ROOT, call, createApp, httpHarness, noBrowser, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData } from './helpers.js';
 
 const PNG_BYTES = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(32)]);
@@ -10,13 +16,16 @@ let data: TempData;
 let harness: HttpHarness;
 let origin = '';
 let appId = '';
+let appNamespace = '';
 
 beforeAll(async () => {
     data = await tempData();
     harness = await httpHarness(data.dir, noBrowser);
     origin = harness.server.origin;
-    const created = await call(harness.client, 'ui_app_create', { name: 'form <b>bold</b>', document: FORM_DOCUMENT });
-    appId = created.body['appId'] as string;
+    appId = (await createApp(harness.client, 'form', FORM_ROOT)).id;
+    const found = await harness.server.services.useCases.findPartApp.execute('form');
+    if (found.kind !== 'found') throw new Error('the form app is stored');
+    appNamespace = harness.server.services.instanceViews.namespace(found.part);
 });
 
 afterAll(async () => {
@@ -44,15 +53,28 @@ function rawGet(path: string, host: string): Promise<{ status: number }> {
 }
 
 describe('GET /', () => {
-    it('should list the apps with a link to each live view and escape the names', async () => {
+    it('should list the apps with a link to each live view', async () => {
         const response = await fetch(`${origin}/`);
         const html = await response.text();
 
         expect(response.status).toBe(200);
         expect(response.headers.get('content-type')).toContain('text/html');
         expect(html).toContain(`href="/apps/${appId}"`);
-        expect(html).toContain('form &lt;b&gt;bold&lt;/b&gt;');
-        expect(html).not.toContain('<b>bold</b>');
+        expect(html).toContain(`<a href="/apps/${appId}">form</a>`);
+    });
+
+    it('should list every app, the most recently changed first', async () => {
+        // Arrange
+        const created = await createApp(harness.client, 'corner-shop', rootOf({}), { title: 'Corner shop' });
+        const partId = created.id;
+
+        // Act
+        const html = await (await fetch(`${origin}/`)).text();
+
+        // Assert
+        expect(html).toContain(`<a href="/apps/${partId}">corner-shop</a>`);
+        expect(html).toContain(`href="/apps/${appId}"`);
+        expect(html.indexOf(partId)).toBeLessThan(html.indexOf(appId));
     });
 
     it('should send a policy that allows no script', async () => {
@@ -75,28 +97,74 @@ describe('GET /apps/:appId', () => {
         expect(html.replace('<script type="module" src="/assets/host.js"></script>', '')).not.toContain('<script');
         expect(html).not.toContain('style="');
         expect(html).toContain(`data-app-id="${appId}"`);
-        expect(html).toContain('<title>form &lt;b&gt;bold&lt;/b&gt;</title>');
+        expect(html).toContain('<title>form</title>');
+        expect(html).toContain(`data-namespace="${appNamespace}"`);
         expect(csp).toContain("script-src 'self'");
         expect(csp).not.toContain('unsafe');
         expect(csp).toContain("frame-ancestors 'none'");
-        expect(csp).toContain("frame-src 'self'");
+        expect(csp).toContain(`frame-src http://127.0.0.1:${harness.server.runtimePort}`);
     });
 
-    it('should point the frame at the content-hashed runtime page', async () => {
+    it('should point the frame at the content-hashed runtime page on the runtime origin', async () => {
         const html = await (await fetch(`${origin}/apps/${appId}`)).text();
         const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
+        const runtimeOrigin = `http://127.0.0.1:${harness.server.runtimePort}`;
 
-        const page = await fetch(`${origin}${runtime}`);
-        const script = await fetch(`${origin}${runtime.replace('.html', '.js')}`);
+        const page = await fetch(runtime);
+        const script = await fetch(runtime.replace('.html', '.js'));
 
-        expect(runtime).toMatch(/^\/runtime\/[0-9a-f]{16}\.html$/);
+        expect(harness.server.runtimePort).not.toBe(harness.server.port);
+        expect(runtime).toMatch(new RegExp(`^${runtimeOrigin}/runtime/[0-9a-f]{16}\.html$`));
         expect(page.status).toBe(200);
         expect(page.headers.get('content-security-policy')).toContain("script-src 'self' 'unsafe-eval'");
         expect(page.headers.get('content-security-policy')).toContain("connect-src 'none'");
+        expect(page.headers.get('content-security-policy')).toContain(`frame-ancestors ${origin}`);
         expect(script.status).toBe(200);
         expect(script.headers.get('cache-control')).toContain('immutable');
         expect((await script.text()).length).toBeGreaterThan(100_000);
-        expect((await fetch(`${origin}/runtime/0000000000000000.html`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/runtime/0000000000000000.html`)).status).toBe(404);
+    });
+
+    it('should serve the runtime only from the runtime origin, and nothing else there', async () => {
+        const html = await (await fetch(`${origin}/apps/${appId}`)).text();
+        const path = new URL(/data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '').pathname;
+        const runtimeOrigin = `http://127.0.0.1:${harness.server.runtimePort}`;
+
+        expect((await fetch(`${origin}${path}`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/apps/${appId}`)).status).toBe(404);
+        expect((await fetch(`${runtimeOrigin}/mcp`, { method: 'POST' })).status).toBe(404);
+    });
+
+    it('should frame the runtime by the host name the page was opened with', async () => {
+        const port = new URL(origin).port;
+        const response = await new Promise<{ html: string; csp: string }>((resolve, reject) => {
+            const req = httpRequest({ host: '127.0.0.1', port, path: `/apps/${appId}`, headers: { Host: `localhost:${port}` } }, (res) => {
+                let html = '';
+                res.on('data', (chunk: Buffer) => (html += chunk.toString('utf8')));
+                res.on('end', () => resolve({ html, csp: String(res.headers['content-security-policy'] ?? '') }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+
+        expect(response.html).toContain(`data-runtime-url="http://localhost:${harness.server.runtimePort}/runtime/`);
+        expect(response.csp).toContain(`frame-src http://localhost:${harness.server.runtimePort}`);
+    });
+
+    it('should link the runtime stylesheet that removes the body margin and lets the root fill the frame', async () => {
+        const html = await (await fetch(`${origin}/apps/${appId}`)).text();
+        const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
+
+        const page = await (await fetch(runtime)).text();
+        const sheet = await fetch(new URL('./runtime.css', runtime));
+        const css = await sheet.text();
+
+        expect(page).toContain('<link rel="stylesheet" href="./runtime.css">');
+        expect(sheet.status).toBe(200);
+        expect(sheet.headers.get('content-type')).toContain('text/css');
+        expect(css).toContain('margin: 0');
+        expect(css).toContain('min-height: 100%');
     });
 
     it('should answer 404 for an unknown app and 400 for an id that is not a UUID', async () => {
@@ -114,6 +182,86 @@ describe('GET /apps/:appId', () => {
         expect(script.headers.get('content-type')).toContain('text/javascript');
         expect(await script.text()).toContain('/report');
         expect(css.headers.get('content-type')).toContain('text/css');
+    });
+});
+
+describe('the 3D chunk on the runtime origin', () => {
+    const CHUNK_HASH = 'fedcba9876543210';
+    const CHUNK_SCRIPT = "globalThis.__stateui3d = { version: 'fake', createScene3d: function () { return {}; } };\n";
+    let chunkData: TempData;
+    let chunkHarness: HttpHarness;
+    let chunkAppId = '';
+    let bareData: TempData;
+    let bareHarness: HttpHarness;
+    let bareAppId = '';
+
+    beforeAll(async () => {
+        chunkData = await tempData();
+        const chunkDir = join(chunkData.dir, 'chunk');
+        await mkdir(chunkDir);
+        await writeFile(join(chunkDir, 'manifest.json'), JSON.stringify({ hash: CHUNK_HASH, script: `${CHUNK_HASH}.js` }));
+        await writeFile(join(chunkDir, `${CHUNK_HASH}.js`), CHUNK_SCRIPT);
+        chunkHarness = await httpHarness(join(chunkData.dir, 'data'), noBrowser, { chunk3dDir: chunkDir });
+        chunkAppId = (await createApp(chunkHarness.client, 'scene', FORM_ROOT)).id;
+        // A folder with no manifest stands for a server without @punyts/stateui-3d
+        bareData = await tempData();
+        bareHarness = await httpHarness(join(bareData.dir, 'data'), noBrowser, { chunk3dDir: bareData.dir });
+        bareAppId = (await createApp(bareHarness.client, 'flat', FORM_ROOT)).id;
+    });
+
+    afterAll(async () => {
+        await chunkHarness.close();
+        await chunkData.cleanup();
+        await bareHarness.close();
+        await bareData.cleanup();
+    });
+
+    it('should keep the frame policy: no blob, scripts only from the runtime origin and no connections', () => {
+        const csp = runtimeCsp('http://127.0.0.1:4100');
+
+        expect(csp).toContain("script-src 'self' 'unsafe-eval'");
+        expect(csp).toContain("connect-src 'none'");
+        expect(csp).not.toContain('blob:');
+        expect(csp).not.toContain('worker-src');
+    });
+
+    it('should serve the chunk by its hash with the immutable cache of the runtime script, and 404 another hash', async () => {
+        const runtimeOrigin = `http://127.0.0.1:${chunkHarness.server.runtimePort}`;
+
+        const chunk = await fetch(`${runtimeOrigin}/runtime/${CHUNK_HASH}.js`);
+        const other = await fetch(`${runtimeOrigin}/runtime/0123456789abcdef.js`);
+        const onMain = await fetch(`${chunkHarness.server.origin}/runtime/${CHUNK_HASH}.js`);
+
+        expect(chunk.status).toBe(200);
+        expect(chunk.headers.get('content-type')).toContain('text/javascript');
+        expect(chunk.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+        expect(await chunk.text()).toBe(CHUNK_SCRIPT);
+        expect(other.status).toBe(404);
+        expect(onMain.status).toBe(404);
+    });
+
+    it('should name the chunk to the host page in data-chunk-3d', async () => {
+        const html = await (await fetch(`${chunkHarness.server.origin}/apps/${chunkAppId}`)).text();
+
+        expect(html).toMatch(new RegExp(`data-runtime-url="[^"]+" data-chunk-3d="${CHUNK_HASH}"`));
+    });
+
+    it('should start without a chunk, name none and serve none', async () => {
+        const html = await (await fetch(`${bareHarness.server.origin}/apps/${bareAppId}`)).text();
+        const runtimeOrigin = `http://127.0.0.1:${bareHarness.server.runtimePort}`;
+
+        expect(html).toContain('data-runtime-url="');
+        expect(html).not.toContain('data-chunk-3d');
+        expect((await fetch(`${runtimeOrigin}/runtime/${CHUNK_HASH}.js`)).status).toBe(404);
+    });
+
+    it('should read no chunk from a folder without a manifest, and refuse a manifest without a valid hash', async () => {
+        const badDir = join(bareData.dir, 'bad');
+        await mkdir(badDir);
+        await writeFile(join(badDir, 'manifest.json'), JSON.stringify({ hash: '../runtime' }));
+
+        expect(loadChunk3d(bareData.dir)).toBeUndefined();
+        expect(() => loadChunk3d(badDir)).toThrow(/no valid hash/);
     });
 });
 
@@ -142,7 +290,7 @@ describe('POST /apps/:appId/files', () => {
     it('should store a file, sniff its type and let ui_file_read read it', async () => {
         const response = await upload(`/apps/${appId}/files`, Buffer.from('a,b\n1,2\n'), 'rows.csv');
         const body = (await response.json()) as { id: string; name: string; size: number; type: string };
-        const read = await call(harness.client, 'ui_file_read', { appId, fileId: body.id });
+        const read = await call(harness.client, 'ui_file_read', { app: 'form', fileId: body.id });
 
         expect(response.status).toBe(201);
         expect(body).toMatchObject({ name: 'rows.csv', size: 8, type: 'text/csv' });
@@ -200,8 +348,7 @@ describe('POST /apps/:appId/files', () => {
     });
 
     it('should answer 409 with the reason once an app holds the most files', async () => {
-        const created = await call(harness.client, 'ui_app_create', { name: 'quota' });
-        const quotaApp = created.body['appId'] as string;
+        const quotaApp = (await createApp(harness.client, 'quota', rootOf({}))).id;
 
         for (let n = 0; n < MAX_FILES_PER_APP; n++) {
             expect((await upload(`/apps/${quotaApp}/files`, Buffer.from(`file ${n}`), `f${n}.txt`)).status).toBe(201);
@@ -213,143 +360,231 @@ describe('POST /apps/:appId/files', () => {
     });
 });
 
-describe('GET /apps/:appId/events and POST /apps/:appId/report', () => {
-    const VIEW = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
+describe('DELETE /apps/:appId/files/:fileId', () => {
+    async function stored(name: string): Promise<string> {
+        return ((await (await upload(`/apps/${appId}/files`, Buffer.from(name), name)).json()) as { id: string }).id;
+    }
 
-    async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, needle: string): Promise<string> {
-        const decoder = new TextDecoder();
-        let text = '';
-        const deadline = Date.now() + 5000;
-        while (!text.includes(needle) && Date.now() < deadline) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            text += decoder.decode(value);
-        }
-        return text;
+    /** A DELETE with headers of our choosing, such as a Host that `fetch` does not allow */
+    function rawDelete(path: string, headers: Record<string, string>): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const url = new URL(origin);
+            const req = httpRequest({ host: url.hostname, port: url.port, path, method: 'DELETE', headers }, (response) => {
+                response.resume();
+                resolve(response.statusCode ?? 0);
+            });
+            req.on('error', reject);
+            req.end();
+        });
+    }
+
+    it('should remove a file nothing references with 204, then answer 404 for it (a release is idempotent)', async () => {
+        const id = await stored('gone.txt');
+        const bytes = join(data.dir, appId.toLowerCase(), 'files', id);
+        const storedBefore = existsSync(bytes);
+
+        const first = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE', headers: { origin } });
+        const second = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+
+        expect(first.status).toBe(204);
+        expect(await first.text()).toBe('');
+        expect(second.status).toBe(404);
+        expect(((await second.json()) as { error: string }).error).toBe('not_found');
+        expect(read.status).toBe(404);
+        expect([storedBefore, existsSync(bytes)]).toEqual([true, false]);
+    });
+
+    it('should answer 409 and keep a file the state of the instance references', async () => {
+        const id = await stored('held.txt');
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: id });
+
+        const response = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+        await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: '' });
+        const afterLetGo = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
+
+        expect(response.status).toBe(409);
+        expect(((await response.json()) as { error: string }).error).toBe('referenced');
+        expect(read.status).toBe(200);
+        expect(afterLetGo.status).toBe(204);
+    });
+
+    it("should answer 404 for another app's file and an unknown app, and 400 for ids that are not UUIDs", async () => {
+        const otherApp = (await createApp(harness.client, 'release-other', rootOf({}))).id;
+        const id = await stored('mine.txt');
+
+        const fromOther = await fetch(`${origin}/apps/${otherApp}/files/${id}`, { method: 'DELETE' });
+        const unknownApp = await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111/files/${id}`, { method: 'DELETE' });
+        const badFile = await fetch(`${origin}/apps/${appId}/files/not-a-uuid`, { method: 'DELETE' });
+        const badApp = await fetch(`${origin}/apps/not-a-uuid/files/${id}`, { method: 'DELETE' });
+
+        expect([fromOther.status, unknownApp.status, badFile.status, badApp.status]).toEqual([404, 404, 400, 400]);
+        expect((await fetch(`${origin}/apps/${appId}/files/${id}`)).status).toBe(200);
+    });
+
+    it('should refuse a cross-origin DELETE and a foreign Host header with 403, and keep the file', async () => {
+        const id = await stored('guarded.txt');
+        const path = `/apps/${appId}/files/${id}`;
+
+        const crossOrigin = await fetch(`${origin}${path}`, { method: 'DELETE', headers: { origin: 'http://evil.example' } });
+        const foreignHost = await rawDelete(path, { Host: 'evil.example' });
+
+        expect(crossOrigin.status).toBe(403);
+        expect(((await crossOrigin.json()) as { error: string }).error).toBe('forbidden_origin');
+        expect(foreignHost).toBe(403);
+        expect((await fetch(`${origin}${path}`)).status).toBe(200);
+    });
+});
+
+describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
+    const VIEW = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
+    const LIVE_PATH = '$.screens.home.children.form.children.email.value';
+    const TYPED_PATH = '$.screens.home.children.form.children.email.value';
+
+    interface OpenSocket {
+        readonly socket: WebSocket;
+        readonly received: Record<string, unknown>[];
+        next(match: (message: Record<string, unknown>) => boolean): Promise<Record<string, unknown>>;
+        send(message: object): void;
+    }
+
+    /** A view's sync socket: it records every frame and resolves a wait when a matching one comes */
+    function openSync(id: string, headers: Record<string, string> = { Origin: origin }): Promise<OpenSocket> {
+        const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${id}/sync?view=${VIEW}&kind=browser`, { headers });
+        const received: Record<string, unknown>[] = [];
+        const waits: { match: (message: Record<string, unknown>) => boolean; resolve: (message: Record<string, unknown>) => void }[] = [];
+        socket.on('message', (data) => {
+            const message = JSON.parse(String(data)) as Record<string, unknown>;
+            received.push(message);
+            for (const wait of [...waits]) {
+                if (!wait.match(message)) continue;
+                waits.splice(waits.indexOf(wait), 1);
+                wait.resolve(message);
+            }
+        });
+        const next = (match: (message: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> => {
+            const found = received.find(match);
+            if (found !== undefined) return Promise.resolve(found);
+            return new Promise((resolve, reject) => {
+                waits.push({ match, resolve });
+                setTimeout(() => reject(new Error('no matching frame')), 5000);
+            });
+        };
+        return new Promise((resolve, reject) => {
+            socket.once('open', () => resolve({ socket, received, next, send: (message) => socket.send(JSON.stringify(message)) }));
+            socket.once('error', reject);
+        });
+    }
+
+    /** The status a refused upgrade answers with */
+    function refusedStatus(id: string, view: string, headers: Record<string, string> = {}): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${id}/sync?view=${view}`, { headers });
+            socket.once('unexpected-response', (_request, response) => {
+                resolve(response.statusCode ?? 0);
+                socket.terminate();
+            });
+            socket.once('open', () => {
+                socket.close();
+                reject(new Error('the upgrade was accepted'));
+            });
+            socket.once('error', () => undefined);
+        });
+    }
+
+    function hello(view: OpenSocket): void {
+        view.send({ type: 'hello', namespace: appNamespace, revision: 0, clientId: VIEW, protocol: 1 });
     }
 
     function report(body: Record<string, unknown>): Promise<Response> {
         return fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ viewId: VIEW, ...body }) });
     }
 
-    it('should stream the app on connect and every later write, and detach when the view closes', async () => {
-        const controller = new AbortController();
-        const response = await fetch(`${origin}/apps/${appId}/events?view=${VIEW}&kind=browser`, { signal: controller.signal });
-        const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    it('should send the app first, sync the state and a tool write, and detach when the socket closes', async () => {
+        // Arrange
+        const view = await openSync(appId);
 
-        const first = await readUntil(reader, '"reason":"attach"');
+        // Act
+        const first = await view.next((message) => message['type'] === 'view');
+        hello(view);
+        const welcome = await view.next((message) => message['type'] === 'welcome');
         const attachedWhileOpen = harness.server.services.hub.viewCount(appId);
-        await call(harness.client, 'ui_state_set', { appId, path: '$.data.live', value: 'yes' });
-        const second = await readUntil(reader, '"reason":"state"');
-        controller.abort();
+        await call(harness.client, 'ui_state_set', { app: 'form', path: LIVE_PATH, value: 'yes' });
+        const changes = await view.next((message) => message['type'] === 'changes');
+        view.socket.close();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        expect(response.headers.get('content-type')).toContain('text/event-stream');
-        expect(first).toContain('"type":"app"');
-        expect(first).toContain('"component":"panel"');
+        // Assert
+        expect(first['message']).toMatchObject({ type: 'app', reason: 'attach' });
+        expect(JSON.stringify(first['message'])).toContain('"component":"panel"');
+        expect(welcome).toMatchObject({ type: 'welcome' });
         expect(attachedWhileOpen).toBe(1);
-        expect(second).toContain('"live":"yes"');
+        expect(changes['changes']).toEqual([expect.objectContaining({ path: LIVE_PATH, op: 'set', value: 'yes' })]);
         expect(harness.server.services.hub.viewCount(appId)).toBe(0);
     });
 
-    it('should refuse a view id that is not a UUID and an unknown app', async () => {
-        const malformed = await fetch(`${origin}/apps/${appId}/events?view=x`);
-        const unknown = await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111/events?view=${VIEW}`);
+    it('should apply a change a view sends and queue its emit for ui_events_read', async () => {
+        const view = await openSync(appId);
+        hello(view);
+        await view.next((message) => message['type'] === 'welcome');
 
-        expect(malformed.status).toBe(400);
-        expect(unknown.status).toBe(404);
-    });
+        view.send({ type: 'change', change: { id: 'typed-1', path: TYPED_PATH, op: 'set', value: 'x', base: 0 } });
+        const ack = await view.next((message) => message['type'] === 'ack');
+        view.send({ type: 'emit', name: 'form.saved', value: { ok: true } });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const state = await call(harness.client, 'ui_state_get', { app: 'form' });
+        const events = await call(harness.client, 'ui_events_read', { app: 'form' });
+        view.socket.close();
 
-    it('should queue an emit report for ui_events_read', async () => {
-        const response = await report({ type: 'emit', name: 'form.saved', payload: { ok: true } });
-        const events = await call(harness.client, 'ui_events_read', { appId });
-
-        expect(response.status).toBe(200);
+        expect(ack).toMatchObject({ id: 'typed-1', result: 'applied' });
+        expect(JSON.stringify(state.body['state'])).toContain('"value":"x"');
         expect((events.body['events'] as { name: string; payload: unknown }[]).at(-1)).toMatchObject({ name: 'form.saved', payload: { ok: true } });
     });
 
-    it('should keep the runtime errors a view reports and show them in ui_validate', async () => {
+    it('should refuse a view id that is not a UUID, an unknown app and another origin', async () => {
+        const malformed = await refusedStatus(appId, 'x');
+        const unknown = await refusedStatus('11111111-1111-4111-8111-111111111111', VIEW);
+        const crossOrigin = await refusedStatus(appId, VIEW, { Origin: 'http://evil.example' });
+
+        expect([malformed, unknown, crossOrigin]).toEqual([400, 404, 403]);
+    });
+
+    it('should keep the runtime errors a view reports and show them in ui_state_get', async () => {
         const response = await report({ type: 'errors', errors: [{ code: 'SUI-RUN-BINDING', message: 'boom', statePath: '$.app' }, { nope: true }], revision: 1 });
-        const validated = await call(harness.client, 'ui_validate', { appId });
+        const validated = await call(harness.client, 'ui_state_get', { app: 'form' });
 
         expect(response.status).toBe(200);
         expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toContain('SUI-RUN-BINDING');
     });
 
-    it('should save a preview snapshot at the rendered revision and refuse a stale one with 409', async () => {
-        const current = (await call(harness.client, 'ui_app_get', { appId, depth: 0, path: 'app' })).body['revision'] as number;
+    it('should drop the errors of an earlier load when the view renders again', async () => {
+        // Arrange
+        await report({ type: 'errors', errors: [{ code: 'SUI-RUN-STALE', message: 'old bundle' }], revision: 1, load: 1 });
 
-        const saved = await report({ type: 'state', revision: current, snapshot: { data: { typed: 'x' }, app: {} } });
-        const stale = await report({ type: 'state', revision: current - 1, snapshot: { data: { typed: 'old' }, app: {} } });
+        // Act
+        const ready = await report({ type: 'ready', revision: 1, load: 2 });
+        await report({ type: 'errors', errors: [{ code: 'SUI-RUN-BINDING', message: 'still there' }], revision: 1, load: 2 });
+        const validated = await call(harness.client, 'ui_state_get', { app: 'form' });
 
-        expect(saved.status).toBe(200);
-        expect(stale.status).toBe(409);
-        expect(((await stale.json()) as { currentRevision: number }).currentRevision).toBe(current);
+        // Assert
+        expect(ready.status).toBe(200);
+        expect((validated.body['preview'] as { errors: { code: string }[] }).errors.map((error) => error.code)).toEqual(['SUI-RUN-BINDING']);
     });
 
-    it('should refuse a report that is not valid', async () => {
+    it('should refuse a report that is not valid, the state report that no longer exists and the emit report the sync socket replaced', async () => {
         const noView = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
         const unknownType = await report({ type: 'launch' });
+        const state = await report({ type: 'state', revision: 1, snapshot: { data: {} } });
+        const emit = await report({ type: 'emit', name: 'form.saved' });
         const notJson = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', body: 'x' });
 
-        expect([noView.status, unknownType.status, notJson.status]).toEqual([400, 400, 400]);
+        expect([noView.status, unknownType.status, state.status, emit.status, notJson.status]).toEqual([400, 400, 400, 400, 400]);
     });
 });
 
-describe('/mcp session flow', () => {
-    const HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
-    const INITIALIZE = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'raw', version: '1' } }
-    };
-
-    /** The JSON-RPC message of a response that is either JSON or one server-sent event */
-    async function rpc(response: Response): Promise<{ result?: Record<string, unknown>; error?: { code: number } }> {
-        const text = await response.text();
-        const line = text.split('\n').find((candidate) => candidate.startsWith('data: '));
-        return JSON.parse(line === undefined ? text : line.slice(6)) as { result?: Record<string, unknown>; error?: { code: number } };
-    }
-
-    it('should open a session on initialize, serve tools/list with its id and close it on DELETE', async () => {
-        const init = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-        const sessionId = init.headers.get('mcp-session-id') ?? '';
-        const initialized = await rpc(init);
-        await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
-        const list = await rpc(
-            await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) })
-        );
-        const closed = await fetch(`${origin}/mcp`, { method: 'DELETE', headers: { 'mcp-session-id': sessionId } });
-        const afterClose = await fetch(`${origin}/mcp`, { method: 'POST', headers: { ...HEADERS, 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' }) });
-
-        expect(sessionId).not.toBe('');
-        expect(initialized.result?.['instructions']).toEqual(expect.stringContaining('Working loop'));
-        expect((list.result?.['tools'] as unknown[]).length).toBe(19);
-        expect(closed.status).toBe(200);
-        expect(afterClose.status).toBe(404);
-    });
-
-    it('should refuse a request with no session that is not initialize', async () => {
-        const response = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
-
-        expect(response.status).toBe(400);
-    });
-
-    it('should answer a GET for an unknown session with 404 and a body that is not JSON with 400', async () => {
-        const unknown = await fetch(`${origin}/mcp`, { headers: { accept: 'text/event-stream', 'mcp-session-id': 'nope' } });
-        const garbage = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: '{not json' });
-
-        expect(unknown.status).toBe(404);
-        expect(garbage.status).toBe(400);
-    });
-
-    it('should keep two sessions apart', async () => {
-        const first = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-        const second = await fetch(`${origin}/mcp`, { method: 'POST', headers: HEADERS, body: JSON.stringify(INITIALIZE) });
-
-        expect(first.headers.get('mcp-session-id')).not.toBe(second.headers.get('mcp-session-id'));
-        await first.text();
-        await second.text();
+describe('the embedded endpoint', () => {
+    it('should not serve MCP, which the server speaks on stdio only', async () => {
+        expect((await fetch(origin + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(404);
     });
 });

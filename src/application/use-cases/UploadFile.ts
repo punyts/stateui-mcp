@@ -60,7 +60,7 @@ export class UploadFile {
             return this.refuse(appId, { kind: 'quota', reason: 'bytes' });
         }
 
-        const type = detectMagicType(saved.head) ?? detectBodyType(name, await this.store.read(appId, id));
+        const type = detectMagicType(saved.head, saved.size) ?? detectBodyType(name, await this.store.read(appId, id));
         if (type === undefined) {
             await this.store.remove(appId, id);
             return this.refuse(appId, { kind: 'unsupported-type' });

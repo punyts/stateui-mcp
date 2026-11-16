@@ -1,0 +1,42 @@
+{
+  "id": "4e0b1ef0-b1dd-5d72-940e-97d5c0f91196",
+  "kind": "models",
+  "name": "showcase-person",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "name": {
+        "type": "string",
+        "required": true
+      },
+      "role": {
+        "type": "string"
+      },
+      "team": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "city": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "joined": {
+        "type": "string"
+      },
+      "projects": {
+        "type": "integer",
+        "default": 0
+      }
+    }
+  }
+}

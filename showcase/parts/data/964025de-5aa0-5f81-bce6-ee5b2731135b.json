@@ -1,0 +1,79 @@
+{
+  "id": "964025de-5aa0-5f81-bce6-ee5b2731135b",
+  "kind": "data",
+  "name": "showcase-people",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-person",
+    "records": {
+      "p1": {
+        "id": "p1",
+        "name": "Ada Lovelace",
+        "role": "Engineering lead",
+        "team": "Platform",
+        "email": "ada@example.com",
+        "city": "London",
+        "status": "active",
+        "joined": "2019-03-04",
+        "projects": 7
+      },
+      "p2": {
+        "id": "p2",
+        "name": "Grace Hopper",
+        "role": "Compiler engineer",
+        "team": "Platform",
+        "email": "grace@example.com",
+        "city": "New York",
+        "status": "active",
+        "joined": "2020-06-15",
+        "projects": 5
+      },
+      "p3": {
+        "id": "p3",
+        "name": "Katherine Johnson",
+        "role": "Data scientist",
+        "team": "Insights",
+        "email": "katherine@example.com",
+        "city": "Hampton",
+        "status": "away",
+        "joined": "2021-01-11",
+        "projects": 4
+      },
+      "p4": {
+        "id": "p4",
+        "name": "Alan Turing",
+        "role": "Researcher",
+        "team": "Insights",
+        "email": "alan@example.com",
+        "city": "Manchester",
+        "status": "active",
+        "joined": "2018-09-24",
+        "projects": 9
+      },
+      "p5": {
+        "id": "p5",
+        "name": "Margaret Hamilton",
+        "role": "Software architect",
+        "team": "Flight",
+        "email": "margaret@example.com",
+        "city": "Boston",
+        "status": "active",
+        "joined": "2017-05-02",
+        "projects": 11
+      },
+      "p6": {
+        "id": "p6",
+        "name": "Linus Pauling",
+        "role": "Designer",
+        "team": "Flight",
+        "email": "linus@example.com",
+        "city": "Portland",
+        "status": "away",
+        "joined": "2022-02-28",
+        "projects": 2
+      }
+    }
+  }
+}

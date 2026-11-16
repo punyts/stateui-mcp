@@ -1,171 +1,153 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
-import { CREATES, READ_ONLY, defineInput, fail, succeed } from './toolKit.js';
+import { formatRenderedTree } from '../../application/outline/formatRenderedTree.js';
+import { BrowserUnavailableError } from '../preview/BrowserPreview.js';
+import type { PreviewBrowser } from '../preview/BrowserPreview.js';
+import { PART_APP_FIELDS, USES_TEXT, runPartAppCreate } from './partAppTools.js';
+import { CREATES, READ_ONLY, defineInput, documentPath, fail, statePath, succeed, withGuides } from './toolKit.js';
 import type { ToolOutcome, UiToolDefinition } from './toolKit.js';
-
-const APP_ID = { type: 'string', uuid: true, required: true, description: 'The application id from ui_app_create or ui_app_list' } as const;
+import { isRunTarget, RUN_APP_FIELDS, runName, runTargets } from './runTarget.js';
+import type { RunTargetDependencies } from './runTarget.js';
 
 const APP_CREATE = defineInput({
-    name: { type: 'string', required: true, description: 'The application name; unique among the applications' },
-    document: { type: 'object', description: 'An optional starting document as a JSON object; without it the app starts as an empty page' }
+    name: {
+        type: 'string',
+        required: true,
+        description: 'The app name, unique among the apps: lower-case letters, digits and dashes, starting with a letter'
+    },
+    ...PART_APP_FIELDS
 });
 
-const APP_LIST = defineInput({});
-
-const APP_GET = defineInput({
-    appId: APP_ID,
-    path: { type: 'string', description: 'A dotted document path such as "app.children.main"; without it the whole document' },
-    depth: { type: 'integer', minimum: 0, description: 'How many children levels to include; deeper nodes come back as { component, childCount }' },
-    resolved: { type: 'boolean', description: 'true: merge in component defaults. Read only; never write a resolved value back' }
+const VALIDATE = defineInput({
+    app: { type: 'string', required: true, description: 'The app name from ui_list (kind "apps")' }
 });
 
-const VALIDATE = defineInput({ appId: APP_ID });
-
-const OUTLINE = defineInput({
-    appId: APP_ID,
-    path: { type: 'string', description: 'A dotted document path to a node; without it the application root' },
-    depth: { type: 'integer', minimum: 0, description: 'How many children levels to show; deeper nodes are one line with a child count' },
-    locale: { type: 'string', description: 'Show content in this language when the app has an overlay for it' }
+const TREE = defineInput({
+    ...RUN_APP_FIELDS,
+    screen: { type: 'string', description: 'Draw only this screen below the app node (and, with rendered, open it first). Without it every screen' },
+    content: { type: 'boolean', description: 'true: what the user sees (text, links, marks, record counts) instead of the structure with paths' },
+    logic: { type: 'boolean', description: 'true adds the machines with their current state, the rules, guards and tables, those of the logic modules too' },
+    path: { type: 'string', description: 'The node to start at, such as "$.app.children.main" or "$.screens.home.children.form"; without it the app root' },
+    depth: { type: 'integer', minimum: 0, description: 'How many levels to show below path; deeper nodes are counted on the line of their ancestor' },
+    paths: { type: 'boolean', description: 'false: leave the state path off each line, for a shorter tree. Default true' },
+    rendered: {
+        type: 'boolean',
+        description:
+            'true: list what the headless page draws instead of the document, with the runtime paths of rows and cards. Opens the headless page when none is open'
+    }
 });
 
-function notFound(appId: string): ToolOutcome {
-    return fail('not-found', 'No application with this id', { appId });
+function unknownScreen(screen: string, screens: readonly string[]): ToolOutcome {
+    const known = screens.length > 0 ? `its screens: ${screens.join(', ')}` : 'it has no screens';
+    return fail('invalid-argument', `The app has no screen "${screen}"; ${known}`, { argument: 'screen', screens });
 }
 
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
 }
 
-/** The lifecycle and read tools: create, list, get, validate, outline and read the state */
+/** The app tools: create, validate and the tree */
 export function createAppTools(
-    useCases: Pick<UiBuilderUseCases, 'createApp' | 'listApps' | 'getApp' | 'validateApp' | 'outlineApp' | 'getState'>
+    useCases: Pick<UiBuilderUseCases, 'createPartApp' | 'validatePartApp' | 'outlinePartApp' | 'findPartApp'>,
+    /** The headless page, for ui_tree with rendered: true; absent, that answers browser-unavailable */
+    browser: Pick<PreviewBrowser, 'rendered' | 'open'> | undefined,
+    /** The views of app parts */
+    instanceViews: RunTargetDependencies['instanceViews']
 ): readonly UiToolDefinition[] {
+    const resolve = runTargets({ useCases, instanceViews });
     return [
         {
             name: 'ui_app_create',
             description:
-                'Create an application, empty or from a starting document. The document is validated first; blocking errors are returned with their state paths and nothing is created. Returns { appId, revision }.',
+                `Build time: create an app of the owner's parts, with a title, the parts it uses, the app node (app: its layout, toasts and app events; the title becomes its _title, the document title) and the first screen, home (its start screen; home: a node tree or a screen pattern such as side-navigation). An app is its screens: there is no frame around them, so a header or menu shared by several screens is placed in each screen (ui_composed_write makes it one composed component). ui_screen_create adds more screens. icons: the app's own icons, for glyphs ui_icons_list does not have (see ui_icons_write). ${USES_TEXT}. Here themes, data and logic are the three parts of uses. The app is checked as a whole first: a part that does not exist comes back with the nearest names, an error with its part and path, and nothing is created. Returns { name, id, revision, start, slots, warnings }: slots are the home pattern's places to fill, each { name, path, description } with the node path for ui_nodes_write (none for a node tree).`,
             inputSchema: APP_CREATE.schema,
             annotations: CREATES,
             run: async (args) => {
                 const parsed = APP_CREATE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.createApp.execute({ name: parsed.value.name, ...(parsed.value.document !== undefined && { document: parsed.value.document }) });
-                switch (result.kind) {
-                    case 'created':
-                        return succeed({ appId: result.appId, revision: result.revision });
-                    case 'invalid':
-                        return fail('invalid-document', 'The document has blocking errors; nothing was created', { errors: result.errors });
-                    case 'invalid-name':
-                        return fail('invalid-name', 'The name must not be blank');
-                    case 'duplicate-name':
-                        return fail('duplicate-name', 'An application with this name already exists');
-                }
-            }
-        },
-        {
-            name: 'ui_app_list',
-            description: 'List the applications: appId, name, owner, revision and last update. No documents.',
-            inputSchema: APP_LIST.schema,
-            annotations: READ_ONLY,
-            run: async (args) => {
-                const parsed = APP_LIST.parse(args);
-                if (!parsed.ok) return invalidArgument(parsed);
-                const apps = await useCases.listApps.execute();
-                return succeed({ count: apps.length, apps });
-            }
-        },
-        {
-            name: 'ui_app_get',
-            description:
-                'Read an application or part of it: by dotted path, limited depth, optionally with component defaults merged in (read only). Returns { appId, revision, path, value }. A missing path reports where it stops existing.',
-            inputSchema: APP_GET.schema,
-            annotations: READ_ONLY,
-            run: async (args) => {
-                const parsed = APP_GET.parse(args);
-                if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, depth, resolved } = parsed.value;
-                const result = await useCases.getApp.execute(appId, {
-                    ...(path !== undefined && { path }),
-                    ...(depth !== undefined && { depth }),
-                    ...(resolved !== undefined && { resolved })
-                });
-                switch (result.kind) {
-                    case 'found':
-                        return succeed({
-                            appId: result.appId,
-                            revision: result.revision,
-                            path: result.path,
-                            value: result.value,
-                            resolved: result.resolved,
-                            ...(result.note !== undefined && { note: result.note })
-                        });
-                    case 'not-found':
-                        return notFound(result.appId);
-                    case 'invalid-path':
-                        return fail('invalid-path', result.reason, { appId: result.appId });
-                    case 'missing-path':
-                        return fail('missing-path', `Nothing exists at ${result.missingAt}`, { appId: result.appId, path: result.path, missingAt: result.missingAt });
-                    case 'invalid-input':
-                        return fail('invalid-argument', result.message, { appId: result.appId });
-                }
+                return runPartAppCreate(useCases.createPartApp, parsed.value);
             }
         },
         {
             name: 'ui_validate',
             description:
-                'Validate the stored application. Returns { appId, revision, valid, errors, warnings, preview }: each error and warning has a code and the state path it concerns; preview says whether a preview is open and lists its runtime errors.',
+                'Build time: validate an app of parts, assembled with every part it uses. Returns { app, revision, valid, errors, warnings, uses }: each error and warning has a code and the state path it concerns, and names the part that holds it, and uses lists the parts the app names.',
             inputSchema: VALIDATE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
                 const parsed = VALIDATE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const result = await useCases.validateApp.execute(parsed.value.appId);
-                if (result.kind === 'not-found') return notFound(result.appId);
-                return succeed({
-                    appId: result.appId,
-                    revision: result.revision,
-                    valid: result.valid,
-                    errors: result.errors,
-                    warnings: result.warnings,
-                    preview: result.preview
-                });
+                const { app } = parsed.value;
+                const part = await useCases.validatePartApp.execute(app);
+                if (part.kind === 'not-found') return fail('not-found', `No app named "${app}"; ui_list lists the apps`, { app });
+                return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: withGuides(part.errors), warnings: withGuides(part.warnings), uses: part.uses });
             }
         },
         {
-            name: 'ui_outline',
+            name: 'ui_tree',
             description:
-                'Get a text outline of what the user will see: one line per node with its component, key, text, links and hidden or closed marks. Data values are not shown. Capped at 400 lines; the result says how many were cut.',
-            inputSchema: OUTLINE.schema,
+                'Run time: show the instance of an app part as a nested list, one line per node, two spaces per level: the app node, with each screen drawn below it under its name, each screen node with its own path ($.screens.home.children.form); screen draws only that screen. Default: the structure, key (component) and path per node, bullets alternating - and *; [slot] marks a node held by a slot property (a footer, a row template), and a row template draws once per record. content: true shows what the user sees instead: component, key, text, links, hidden or closed marks and record counts (no data values). logic: true adds the logic after the tree: each machine with its current state in the instance, then the rules, guards and tables, the units of a logic module named with the module as prefix (cart:totals). rendered: true lists what the headless page draws: each row and card with its runtime path (such as ...board.cols.k_open.body.main.slots.0) and each interactive shape of a drawing (...rows.<recordKey> for a drawRepeat copy), the path ui_interact and ui_screenshot need; a node with no box is (hidden) and its subtree is counted. path starts at a node, depth limits the levels, paths: false leaves the paths off. Capped at 400 lines. Returns { app, revision, text, lineCount, cutLines, nodeCount?, screens? }.',
+            inputSchema: TREE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
-                const parsed = OUTLINE.parse(args);
+                const parsed = TREE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { appId, path, depth, locale } = parsed.value;
-                const result = await useCases.outlineApp.execute(appId, {
-                    ...(path !== undefined && { path }),
+                const { screen, content, logic, path, depth, paths, rendered } = parsed.value;
+                const target = await resolve(parsed.value);
+                if (!isRunTarget(target)) return target;
+                if (screen !== undefined && !target.screens.includes(screen)) return unknownScreen(screen, target.screens);
+                if (rendered === true) {
+                    if (content === true || logic === true) return fail('invalid-argument', 'rendered lists what the page draws; leave content and logic out', { argument: 'rendered' });
+                    if (browser === undefined) return fail('browser-unavailable', 'This server has no headless browser, so it cannot list what the page draws');
+                    // Without a path: everything the page draws, the app node and the screen it shows (the one asked for is opened first)
+                    const under = path === undefined ? '$' : statePath(path);
+                    try {
+                        if (screen !== undefined) await browser.open(target.appId, target.viewRevision, { screen });
+                        const drawn = await browser.rendered(target.appId, target.viewRevision, under);
+                        // The page's own root (`$`) has no box and would fold everything below it: the nodes are the app's and the screens'
+                        const nodes = path === undefined ? drawn.filter((node) => node.path === '$.app' || node.path.startsWith('$.app.') || node.path.startsWith('$.screens.')) : drawn;
+                        if (nodes.length === 0) {
+                            return fail('not-rendered', `The page draws nothing at ${under}; check the path with ui_tree, and open what holds it (a tab, a drawer, a screen)`, { ...runName(target), path: under });
+                        }
+                        const tree = formatRenderedTree({ nodes, depth, paths: paths !== false });
+                        return succeed({ ...runName(target), revision: target.revision, text: tree.text, lineCount: tree.lineCount, cutLines: tree.cutLines, nodeCount: tree.nodeCount });
+                    } catch (error) {
+                        if (error instanceof BrowserUnavailableError) return fail('browser-unavailable', error.message);
+                        throw error;
+                    }
+                }
+                const at = {
+                    ...(path !== undefined && { path: documentPath(path) }),
                     ...(depth !== undefined && { depth }),
-                    ...(locale !== undefined && { locale })
+                    ...(paths !== undefined && { paths })
+                };
+                const result = await useCases.outlinePartApp.execute(target.part, {
+                    ...at,
+                    ...(screen !== undefined && { screen }),
+                    ...(content !== undefined && { content }),
+                    ...(logic !== undefined && { logic })
                 });
+                const name = { app: target.app };
                 switch (result.kind) {
                     case 'outline':
                         return succeed({
-                            appId: result.appId,
-                            revision: result.revision,
+                            ...name,
+                            revision: target.revision,
                             text: result.text,
                             lineCount: result.lineCount,
                             cutLines: result.cutLines,
-                            localeApplied: result.localeApplied
+                            ...(result.nodeCount !== undefined && { nodeCount: result.nodeCount }),
+                            screens: result.screens
                         });
-                    case 'not-found':
-                        return notFound(result.appId);
+                    case 'unknown-screen':
+                        return unknownScreen(screen ?? '', result.screens);
                     case 'invalid-path':
-                        return fail('invalid-path', result.reason, { appId: result.appId });
+                        return fail('invalid-path', result.reason, name);
                     case 'missing-path':
-                        return fail('missing-path', `Nothing exists at ${result.missingAt}`, { appId: result.appId, path: result.path, missingAt: result.missingAt });
+                        return fail('missing-path', `Nothing exists at ${result.missingAt}`, { ...name, path: result.path, missingAt: result.missingAt });
                     case 'not-a-node':
-                        return fail('not-a-node', `${result.path} is not a node, so it has no outline`, { appId: result.appId, path: result.path });
+                        return fail('not-a-node', `${result.path} is not a node, so it has no tree`, { ...name, path: result.path });
                     case 'invalid-input':
-                        return fail('invalid-argument', result.message, { appId: result.appId });
+                        return fail('invalid-argument', result.message, name);
                 }
             }
         }

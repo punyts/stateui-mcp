@@ -1,4 +1,4 @@
-import type { UiAppSummary } from '../../application/ports/UiAppRepository.js';
+import type { UiPartSummary } from '../../application/ports/UiPartRepository.js';
 
 /** Everything that comes from an app (its name) is escaped before it reaches a page */
 export function escapeHtml(text: string): string {
@@ -19,7 +19,7 @@ body.view[data-status="failed"]::after { content: attr(data-note); position: fix
 `;
 
 /** `GET /`: the apps with a link to each live view */
-export function indexPage(apps: readonly UiAppSummary[]): string {
+export function indexPage(apps: readonly Pick<UiPartSummary, 'id' | 'name' | 'revision' | 'updatedAt'>[]): string {
     const rows = apps
         .map(
             (app) =>
@@ -50,8 +50,17 @@ export interface AppPageOptions {
     readonly appId: string;
     readonly name: string;
     readonly runtimeUrl: string;
+    /** The hash of the 3D renderer chunk the runtime origin serves beside the runtime (`data-chunk-3d`); absent when there is none */
+    readonly chunk3d?: string;
     /** `headless` for the page of Playwright, `browser` for a person */
     readonly viewKind: 'browser' | 'headless';
+    /** The sync namespace of the view's state: the app's instance */
+    readonly namespace: string;
+    /**
+     * Why the app was taken back from the person (`data-revoked`): the host script deletes what the browser keeps
+     * under the namespace and shows this instead of the app
+     */
+    readonly revoked?: string;
 }
 
 /** `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame */
@@ -65,7 +74,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}" data-view-kind="${options.viewKind}" data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}"${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`} data-status="loading">`,
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',

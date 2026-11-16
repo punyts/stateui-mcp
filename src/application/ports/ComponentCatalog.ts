@@ -1,6 +1,7 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
+import type { CatalogMeaning } from './CatalogMeanings.js';
 
-export type ComponentTier = 'root' | 'composed';
+export type ComponentTier = 'root' | 'composed' | 'shape';
 
 /** One line of the component list */
 export interface ComponentSummary {
@@ -8,10 +9,23 @@ export interface ComponentSummary {
     readonly tier: ComponentTier;
     readonly size: string;
     readonly summary: string;
+    /** One of `COMPONENT_CATEGORIES` */
+    readonly category: string;
+    /** What a person uses the component for, in plain words */
+    readonly purposes: readonly string[];
+}
+
+/** A token a component's CSS reads, which a node's `theme` may override for its subtree: `image.fill`, type `color`, default `{color.surface.sunken}` */
+export interface ComponentToken {
+    readonly path: string;
+    readonly type: string;
+    readonly default: string;
 }
 
 interface ComponentEntryBase extends ComponentSummary {
     readonly example: JsonObject;
+    /** The component tokens, empty when the component declares none */
+    readonly tokens: readonly ComponentToken[];
     /** The language codes the component ships translations for */
     readonly locales: readonly string[];
 }
@@ -32,8 +46,15 @@ export interface ComposedComponentEntry extends ComponentEntryBase {
     readonly exposes: readonly JsonObject[];
 }
 
+/** A shape component: a state file only, drawn by a graphics renderer; it has a shape and events but no slots or commands */
+export interface ShapeComponentEntry extends ComponentEntryBase {
+    readonly tier: 'shape';
+    readonly shape: JsonObject;
+    readonly events: readonly string[];
+}
+
 /** The full catalog entry of a component */
-export type ComponentEntry = RootComponentEntry | ComposedComponentEntry;
+export type ComponentEntry = RootComponentEntry | ComposedComponentEntry | ShapeComponentEntry;
 
 export interface IconQuery {
     /** Words that must each appear in the icon name, one of its tags or an alias that names it */
@@ -77,10 +98,83 @@ export interface ThemeOverlayEntry {
     readonly groups: readonly string[];
 }
 
+/** What a person needs a component for, in plain words, with optional narrowing */
+export interface ComponentSearchQuery {
+    readonly need: string;
+    /** Only components of this category; one of the categories the catalog uses */
+    readonly category?: string;
+    /** Only components of this tier; one of the tiers the catalog uses */
+    readonly tier?: string;
+    /** How many results; 5 by default, at most 20 */
+    readonly limit?: number;
+}
+
+/** One component a search returned */
+export interface ComponentSearchHit {
+    readonly name: string;
+    readonly category: string;
+    readonly tier: string;
+    readonly summary: string;
+    /** The purpose phrases that hold a need word, then need words matched only elsewhere; empty for a fallback entry */
+    readonly matched: readonly string[];
+    /** True when the need's meaning found it, not its words */
+    readonly byMeaning?: true;
+    readonly example: JsonObject;
+    /** Where the component comes from: the library, or the owner (`ui_composed_write`) */
+    readonly source: 'library' | 'owner';
+}
+
+/**
+ * An owner component as the search sees it: its name and the search fields of its write. One with all three fields
+ * ranks with the library; one without them is found by the words of its name only
+ */
+export interface OwnerComponent {
+    readonly name: string;
+    readonly summary?: string;
+    readonly category?: string;
+    readonly purposes?: readonly string[];
+}
+
+/** One category that has members, with how many and three typical ones */
+export interface CategoryIndexEntry {
+    readonly category: string;
+    readonly count: number;
+    /** The three members with the most purposes, ties by name */
+    readonly typical: readonly string[];
+}
+
+/** Never empty: a need with no match falls back to a category's entries */
+export interface ComponentSearchResult {
+    readonly results: readonly ComponentSearchHit[];
+    /** True when the best match is below the weak floor, or nothing matched */
+    readonly weak: boolean;
+    /** The category index, given when nothing matched and no category was asked for */
+    readonly categories?: readonly CategoryIndexEntry[];
+}
+
+/** A search argument outside the allowed values: an unknown `category` or `tier`, or a pattern `kind` */
+export class InvalidSearchArgumentError extends Error {
+    constructor(
+        readonly argument: 'category' | 'tier' | 'kind',
+        readonly allowed: readonly string[]
+    ) {
+        super(`Unknown ${argument}; use one of: ${allowed.join(', ')}`);
+        this.name = 'InvalidSearchArgumentError';
+    }
+}
+
 /** The component library, its theme tokens and the icon set, loaded once and read only */
 export interface ComponentCatalog {
     list(): readonly ComponentSummary[];
     get(name: string): ComponentEntry | undefined;
+    /**
+     * Components ranked for a need, the library's and these owner components together, each hit with its `source`;
+     * throws `InvalidSearchArgumentError` for an unknown category or tier. Given the library ranked by the need's
+     * meaning, a weak keyword result is merged with it by reciprocal rank, and is weak only when the meaning is not close
+     */
+    search(query: ComponentSearchQuery, owner?: readonly OwnerComponent[], meaning?: CatalogMeaning): ComponentSearchResult;
+    /** One entry per category that has members, in the order of `COMPONENT_CATEGORIES` */
+    categoryIndex(): readonly CategoryIndexEntry[];
     searchIcons(query: IconQuery): IconSearchResult;
     /** The semantic tokens, in the order of the default token tree; primitive and component tokens are not here */
     listTokens(): readonly ThemeToken[];

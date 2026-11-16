@@ -1,0 +1,334 @@
+{
+    "title": "Graphics",
+    "icon": "shape",
+    "description": "Vector drawings of shapes and WebGL 3D scenes, themed and linkable to data.",
+    "components": {
+        "drawing": {
+            "wide": true,
+            "example": {
+                "component": "drawing",
+                "_title": "A night in the valley",
+                "_description": "A drawing made of every 2D shape: a gradient sky, stars from a dataset, mountains, a hill, a lake, a road, a house you can drag and a postcard",
+                "viewBox": { "x": 0, "y": 0, "width": 300, "height": 160 },
+                "paints": {
+                    "duskSky": { "kind": "linear", "angle": 90, "stops": { "top": { "offset": 0, "color": "#1d2b53" }, "bottom": { "offset": 1, "color": "#8a5a9b" } } }
+                },
+                "children": {
+                    "sky": { "component": "rect", "x": 0, "y": 0, "width": 300, "height": 160, "fill": "duskSky" },
+                    "stars": {
+                        "component": "drawRepeat",
+                        "<-records": "$.data.markers",
+                        "row": { "component": "circle", "<-cx": "$row.x", "<-cy": "$row.y", "<-r": "$row.r", "<-fill": "$row.fill" }
+                    },
+                    "moon": { "component": "circle", "cx": 246, "cy": 42, "r": 14, "fill": "#fff3c4" },
+                    "mountains": { "component": "polygon", "points": [[0, 120], [60, 62], [110, 108], [170, 52], [240, 112], [300, 84], [300, 160], [0, 160]], "fill": "#3b3f6b" },
+                    "horizon": { "component": "line", "points": [[0, 121], [300, 121]], "stroke": "#ffffff", "opacity": 0.25 },
+                    "hill": { "component": "path", "d": "M0 132 Q 75 104 150 126 T 300 120 L 300 160 L 0 160 Z", "fill": "#2f5d50" },
+                    "lake": { "component": "ellipse", "cx": 92, "cy": 146, "rx": 54, "ry": 8, "fill": "#5c7fb8", "opacity": 0.8 },
+                    "road": { "component": "polyline", "points": [[150, 160], [172, 142], [206, 138]], "fill": "transparent", "stroke": "#e0e0e0", "strokeWidth": 2, "dash": [4, 3], "cap": "round" },
+                    "house": {
+                        "component": "drawGroup",
+                        "x": 196,
+                        "y": 106,
+                        "interactive": true,
+                        "draggable": "x",
+                        "_label": "The house: drag it along the hill",
+                        "children": {
+                            "wall": { "component": "rect", "x": 0, "y": 12, "width": 40, "height": 26, "fill": "#e9d8a6" },
+                            "roof": { "component": "polygon", "points": [[-4, 14], [20, -4], [44, 14]], "fill": "#ae2012" },
+                            "window": { "component": "rect", "x": 8, "y": 20, "width": 9, "height": 9, "fill": "#ffd166" },
+                            "door": { "component": "rect", "x": 24, "y": 22, "width": 9, "height": 16, "fill": "#6d4c41" }
+                        }
+                    },
+                    "title": { "component": "drawText", "x": 12, "y": 22, "fontSize": 12, "fill": "#ffffff", "_text": "A night in the valley" },
+                    "postcard": { "component": "drawImage", "src": "@image:landscape", "x": 14, "y": 34, "width": 56, "height": 32, "fit": "cover", "rotate": -6, "stroke": "#ffffff", "strokeWidth": 2 }
+                }
+            }
+        },
+        "scene3d": {
+            "wide": true,
+            "example": {
+                "component": "scene3d",
+                "_title": "A small product stage",
+                "_description": "A floor, a group of shapes that bobs, a turning torus, four bars from a dataset, a label and a model file; turn it with the pointer",
+                "_fallback": "This 3D scene cannot be shown in this browser: it has a floor, a few shapes, four bars and a model.",
+                "controls": "orbit",
+                "children": {
+                    "camera": { "component": "camera", "position": [4.5, 3.2, 6], "target": [0, 0.6, 0], "fov": 45, "active": true },
+                    "sun": { "component": "light", "kind": "directional", "position": [5, 8, 4], "intensity": 1.4, "shadows": true },
+                    "floor": { "component": "mesh", "geometry": { "kind": "plane", "width": 8, "height": 8 }, "rotation": [-90, 0, 0], "material": { "color": "{color.surface.sunken}", "roughness": 0.9 }, "receiveShadow": true },
+                    "shapes": {
+                        "component": "group3d",
+                        "position": [-1.8, 0, 0.6],
+                        "animate": { "name": "bob", "duration": 3000, "loop": true },
+                        "children": {
+                            "box": { "component": "mesh", "geometry": { "kind": "box", "width": 0.8, "height": 0.8, "depth": 0.8 }, "position": [0, 0.4, 0], "material": { "color": "{color.accent.base}", "roughness": 0.4 }, "castShadow": true },
+                            "ball": { "component": "mesh", "geometry": { "kind": "sphere", "radius": 0.35 }, "position": [0, 1.15, 0], "material": { "color": "#f2a93b", "metalness": 0.3, "roughness": 0.3 }, "castShadow": true }
+                        }
+                    },
+                    "ring": { "component": "mesh", "geometry": { "kind": "torus", "radius": 0.5, "tube": 0.16 }, "position": [0, 1, 1.2], "material": { "color": "#e2556f", "metalness": 0.5, "roughness": 0.25 }, "animate": { "name": "spin", "duration": 6000, "loop": true }, "castShadow": true },
+                    "bars": {
+                        "component": "repeat3d",
+                        "<-records": "$.data.bars",
+                        "row": { "component": "mesh", "geometry": { "kind": "box", "width": 0.5, "height": 1, "depth": 0.5 }, "material": { "color": "#4f7cff" }, "<-position": "$row.at", "<-scale": "$row.size", "<-material": "$row.paint" }
+                    },
+                    "model": { "component": "model", "src": "@file:box.glb", "position": [1.9, 0.5, 0.9], "scale": [0.9, 0.9, 0.9], "_label": "A textured box from a GLB file" },
+                    "label": { "component": "label3d", "_text": "Sales by quarter", "position": [0, 2.3, -1.6], "fontSize": 0.28 }
+                }
+            }
+        },
+        "rect": {
+            "example": {
+                "component": "drawing",
+                "_title": "Rectangles",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "plain": { "component": "rect", "x": 10, "y": 15, "width": 60, "height": 50, "fill": "{color.accent.base}" },
+                    "rounded": { "component": "rect", "x": 90, "y": 15, "width": 60, "height": 50, "radius": 12, "fill": "{color.success.base}" },
+                    "outlined": { "component": "rect", "x": 170, "y": 15, "width": 60, "height": 50, "radius": 4, "stroke": "{color.danger.base}", "strokeWidth": 3, "dash": [6, 4] }
+                }
+            }
+        },
+        "circle": {
+            "example": {
+                "component": "drawing",
+                "_title": "Circles; drag the large one",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "small": { "component": "circle", "cx": 30, "cy": 40, "r": 14, "fill": "{color.data.categorical.1}" },
+                    "middle": { "component": "circle", "cx": 80, "cy": 40, "r": 22, "fill": "{color.data.categorical.2}" },
+                    "large": { "component": "circle", "cx": 160, "cy": 40, "r": 32, "fill": "{color.data.categorical.3}", "interactive": true, "draggable": "both", "_label": "A circle you can drag" }
+                }
+            }
+        },
+        "ellipse": {
+            "example": {
+                "component": "drawing",
+                "_title": "Ellipses",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "wide": { "component": "ellipse", "cx": 70, "cy": 40, "rx": 55, "ry": 22, "fill": "{color.info.soft}", "stroke": "{color.info.base}", "strokeWidth": 2 },
+                    "tall": { "component": "ellipse", "cx": 180, "cy": 40, "rx": 20, "ry": 34, "fill": "{color.warning.base}", "rotate": 20 }
+                }
+            }
+        },
+        "line": {
+            "example": {
+                "component": "drawing",
+                "_title": "Lines",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "solid": { "component": "line", "points": [[10, 20], [230, 20]], "stroke": "{color.text.base}", "strokeWidth": 2 },
+                    "dashed": { "component": "line", "points": [[10, 40], [230, 40]], "stroke": "{color.accent.base}", "strokeWidth": 3, "dash": [8, 5] },
+                    "round": { "component": "line", "points": [[10, 62], [230, 62]], "stroke": "{color.success.base}", "strokeWidth": 8, "cap": "round" }
+                }
+            }
+        },
+        "polyline": {
+            "example": {
+                "component": "drawing",
+                "_title": "A sparkline of revenue",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "trend": { "component": "polyline", "points": [[10, 62], [55, 50], [100, 56], [145, 34], [190, 22], [230, 10]], "fill": "transparent", "stroke": "{color.accent.base}", "strokeWidth": 3, "join": "round", "cap": "round" }
+                }
+            }
+        },
+        "polygon": {
+            "example": {
+                "component": "drawing",
+                "_title": "Polygons",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "triangle": { "component": "polygon", "points": [[20, 70], [60, 10], [100, 70]], "fill": "{color.danger.base}" },
+                    "star": { "component": "polygon", "points": [[170, 6], [179, 30], [204, 30], [184, 45], [191, 70], [170, 55], [149, 70], [156, 45], [136, 30], [161, 30]], "fill": "{color.warning.base}", "stroke": "{color.text.base}", "join": "round" }
+                }
+            }
+        },
+        "path": {
+            "example": {
+                "component": "drawing",
+                "_title": "A wave and a heart from path data",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "wave": { "component": "path", "d": "M10 40 C 40 10, 70 70, 100 40 S 160 10, 190 40", "fill": "transparent", "stroke": "{color.info.base}", "strokeWidth": 3 },
+                    "heart": { "component": "path", "d": "M215 66 C 180 44, 196 16, 215 32 C 234 16, 250 44, 215 66 Z", "fill": "{color.danger.base}" }
+                }
+            }
+        },
+        "drawText": {
+            "example": {
+                "component": "drawing",
+                "_title": "Text in a drawing",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "guide": { "component": "line", "points": [[120, 0], [120, 80]], "stroke": "{color.border.base}" },
+                    "start": { "component": "drawText", "x": 120, "y": 20, "anchor": "start", "_text": "anchor start", "fill": "{color.text.base}" },
+                    "middle": { "component": "drawText", "x": 120, "y": 45, "anchor": "middle", "_text": "anchor middle", "fill": "{color.accent.base}", "fontSize": 14 },
+                    "end": { "component": "drawText", "x": 120, "y": 70, "anchor": "end", "_text": "anchor end", "fill": "{color.text.muted}" }
+                }
+            }
+        },
+        "drawImage": {
+            "example": {
+                "component": "drawing",
+                "_title": "A picture placed in a drawing",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "frame": { "component": "rect", "x": 66, "y": 4, "width": 108, "height": 72, "radius": 6, "fill": "{color.surface.sunken}" },
+                    "photo": { "component": "drawImage", "src": "@image:landscape", "x": 72, "y": 10, "width": 96, "height": 60, "fit": "cover" }
+                }
+            }
+        },
+        "drawGroup": {
+            "example": {
+                "component": "drawing",
+                "_title": "Two copies of one group, moved and turned",
+                "viewBox": { "x": 0, "y": 0, "width": 240, "height": 80 },
+                "children": {
+                    "badge": {
+                        "component": "drawGroup",
+                        "x": 20,
+                        "y": 10,
+                        "children": {
+                            "back": { "component": "rect", "width": 80, "height": 60, "radius": 10, "fill": "{color.accent.soft}" },
+                            "dot": { "component": "circle", "cx": 40, "cy": 30, "r": 16, "fill": "{color.accent.base}" }
+                        }
+                    },
+                    "turned": {
+                        "component": "drawGroup",
+                        "x": 140,
+                        "y": 10,
+                        "rotate": 12,
+                        "opacity": 0.7,
+                        "children": {
+                            "back": { "component": "rect", "width": 80, "height": 60, "radius": 10, "fill": "{color.success.soft}" },
+                            "dot": { "component": "circle", "cx": 40, "cy": 30, "r": 16, "fill": "{color.success.base}" }
+                        }
+                    }
+                }
+            }
+        },
+        "drawRepeat": {
+            "example": {
+                "component": "drawing",
+                "_title": "One circle per record of a dataset",
+                "viewBox": { "x": 0, "y": 0, "width": 300, "height": 50 },
+                "children": {
+                    "back": { "component": "rect", "width": 300, "height": 50, "radius": 6, "fill": "#1d2b53" },
+                    "stars": {
+                        "component": "drawRepeat",
+                        "<-records": "$.data.markers",
+                        "row": { "component": "circle", "<-cx": "$row.x", "<-cy": "$row.y", "<-r": "$row.r", "<-fill": "$row.fill" }
+                    }
+                }
+            }
+        },
+        "mesh": {
+            "wide": true,
+            "example": {
+                "component": "scene3d",
+                "_title": "The mesh primitives",
+                "_fallback": "This 3D scene shows a box, a sphere, a cylinder, a cone, a torus and a capsule.",
+                "children": {
+                    "camera": { "component": "camera", "position": [0, 2.2, 6.5], "target": [0, 0.4, 0], "active": true },
+                    "box": { "component": "mesh", "geometry": { "kind": "box", "width": 0.8, "height": 0.8, "depth": 0.8 }, "position": [-3, 0.4, 0], "material": { "color": "#4f7cff" } },
+                    "sphere": { "component": "mesh", "geometry": { "kind": "sphere", "radius": 0.45 }, "position": [-1.8, 0.45, 0], "material": { "color": "#22b3a6" } },
+                    "cylinder": { "component": "mesh", "geometry": { "kind": "cylinder", "radiusTop": 0.35, "radiusBottom": 0.35, "height": 0.9 }, "position": [-0.6, 0.45, 0], "material": { "color": "#f2a93b" } },
+                    "cone": { "component": "mesh", "geometry": { "kind": "cone", "radius": 0.45, "height": 0.9 }, "position": [0.6, 0.45, 0], "material": { "color": "#e2556f" } },
+                    "torus": { "component": "mesh", "geometry": { "kind": "torus", "radius": 0.38, "tube": 0.14 }, "position": [1.8, 0.45, 0], "material": { "color": "#8d6cf0", "metalness": 0.4 } },
+                    "capsule": { "component": "mesh", "geometry": { "kind": "capsule", "radius": 0.3, "height": 0.5 }, "position": [3, 0.55, 0], "material": { "color": "#5c9e4a" } }
+                }
+            }
+        },
+        "camera": {
+            "example": {
+                "component": "scene3d",
+                "_title": "Seen through a camera node; turn it with the pointer",
+                "_fallback": "This 3D scene shows a box seen from above at an angle.",
+                "controls": "orbit",
+                "children": {
+                    "camera": { "component": "camera", "position": [2.5, 2.5, 3], "target": [0, 0, 0], "fov": 40, "active": true },
+                    "box": { "component": "mesh", "geometry": { "kind": "box", "width": 1, "height": 1, "depth": 1 }, "material": { "color": "{color.accent.base}" } }
+                }
+            }
+        },
+        "light": {
+            "example": {
+                "component": "scene3d",
+                "_title": "A sphere lit by a warm point light and a cool spot",
+                "_fallback": "This 3D scene shows a sphere lit in orange from one side and in blue from the other.",
+                "environment": "none",
+                "background": "#10131a",
+                "children": {
+                    "camera": { "component": "camera", "position": [0, 0.5, 3.5], "target": [0, 0, 0], "active": true },
+                    "ambient": { "component": "light", "kind": "ambient", "intensity": 0.15 },
+                    "warm": { "component": "light", "kind": "point", "color": "#ff9a3c", "intensity": 30, "position": [-2, 1, 2] },
+                    "cool": { "component": "light", "kind": "spot", "color": "#4f9dff", "intensity": 40, "position": [2, 2, 1.5], "target": [0, 0, 0] },
+                    "ball": { "component": "mesh", "geometry": { "kind": "sphere", "radius": 0.9, "segments": 48 }, "material": { "color": "#ffffff", "roughness": 0.35 } }
+                }
+            }
+        },
+        "group3d": {
+            "example": {
+                "component": "scene3d",
+                "_title": "A group of three shapes that turns as one",
+                "_fallback": "This 3D scene shows a box, a sphere and a cone turning together.",
+                "children": {
+                    "camera": { "component": "camera", "position": [0, 1.5, 4], "target": [0, 0, 0], "active": true },
+                    "group": {
+                        "component": "group3d",
+                        "rotation": [0, 30, 0],
+                        "animate": { "name": "spin", "duration": 8000, "loop": true },
+                        "children": {
+                            "box": { "component": "mesh", "geometry": { "kind": "box", "width": 0.6, "height": 0.6, "depth": 0.6 }, "position": [-1, 0, 0], "material": { "color": "#4f7cff" } },
+                            "ball": { "component": "mesh", "geometry": { "kind": "sphere", "radius": 0.35 }, "position": [0, 0, 0], "material": { "color": "#22b3a6" } },
+                            "cone": { "component": "mesh", "geometry": { "kind": "cone", "radius": 0.35, "height": 0.7 }, "position": [1, 0, 0], "material": { "color": "#f2a93b" } }
+                        }
+                    }
+                }
+            }
+        },
+        "repeat3d": {
+            "example": {
+                "component": "scene3d",
+                "_title": "One bar per record of a dataset",
+                "_fallback": "This 3D scene shows four bars of rising height.",
+                "children": {
+                    "camera": { "component": "camera", "position": [0, 1.8, 3], "target": [0, 0.6, -1.6], "active": true },
+                    "bars": {
+                        "component": "repeat3d",
+                        "<-records": "$.data.bars",
+                        "row": { "component": "mesh", "geometry": { "kind": "box", "width": 0.5, "height": 1, "depth": 0.5 }, "material": { "color": "#4f7cff" }, "<-position": "$row.at", "<-scale": "$row.size", "<-material": "$row.paint" }
+                    }
+                }
+            }
+        },
+        "label3d": {
+            "example": {
+                "component": "scene3d",
+                "_title": "Labels that face the camera",
+                "_fallback": "This 3D scene shows a box with a label above it.",
+                "controls": "orbit",
+                "children": {
+                    "camera": { "component": "camera", "position": [2, 1.6, 3.2], "target": [0, 0.4, 0], "active": true },
+                    "box": { "component": "mesh", "geometry": { "kind": "box", "width": 0.8, "height": 0.8, "depth": 0.8 }, "material": { "color": "#8d6cf0" } },
+                    "title": { "component": "label3d", "_text": "Parcel 14", "position": [0, 0.8, 0], "fontSize": 0.3 },
+                    "weight": { "component": "label3d", "_text": "2.4 kg", "position": [0, -0.65, 0], "fontSize": 0.2, "color": "{color.text.muted}" }
+                }
+            }
+        },
+        "model": {
+            "example": {
+                "component": "scene3d",
+                "_title": "A model from a GLB file of the app",
+                "_fallback": "This 3D scene shows a textured box from a GLB file.",
+                "controls": "orbit",
+                "children": {
+                    "camera": { "component": "camera", "position": [1.6, 1.3, 2], "target": [0, 0, 0], "active": true },
+                    "model": { "component": "model", "src": "@file:box.glb", "animate": { "name": "spin", "duration": 9000, "loop": true } }
+                }
+            }
+        }
+    }
+}

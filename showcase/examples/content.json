@@ -1,0 +1,105 @@
+{
+    "title": "Content",
+    "icon": "file-text",
+    "description": "Text, pictures, icons and surfaces that show content.",
+    "components": {
+        "text": {
+            "children": {
+                "display": { "component": "text", "textRole": "display", "_text": "Display" },
+                "title": { "component": "text", "textRole": "title", "element": "h3", "_text": "A title" },
+                "body": { "component": "text", "element": "p", "_text": "Body text for paragraphs. Each text has a typographic role; the theme sets its size and family." },
+                "caption": { "component": "text", "textRole": "caption", "tone": "accent", "_text": "A caption in the accent tone" },
+                "code": { "component": "text", "textRole": "code", "_text": "npm run showcase:build" }
+            }
+        },
+        "markdown": {
+            "example": {
+                "component": "markdown",
+                "_text": "### Release notes\n\nThis release adds **3D scenes** and a *component showcase*.\n\n- Tables keep their header while you scroll\n- Charts format currency without cents\n\n> Run `npm run showcase:build` after adding a component."
+            }
+        },
+        "card": {
+            "example": {
+                "component": "card",
+                "_title": "Weekend in the hills",
+                "_subtitle": "2 nights from 180 EUR",
+                "media": { "component": "image", "src": "@image:landscape", "_alt": "Green hills under a dusk sky", "ratio": "16:9" },
+                "children": { "text": { "component": "text", "_text": "A quiet cottage with a view of the valley." } },
+                "actions": { "component": "button", "size": "sm", "_title": "Book" }
+            }
+        },
+        "image": {
+            "example": { "component": "image", "src": "@image:landscape", "_alt": "Green hills under a dusk sky", "ratio": "16:9", "radius": "md" }
+        },
+        "avatar": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "ada": { "component": "avatar", "_name": "Ada Lovelace", "size": "sm" },
+                    "grace": { "component": "avatar", "_name": "Grace Hopper" },
+                    "alan": { "component": "avatar", "_name": "Alan Turing", "size": "lg" },
+                    "team": { "component": "avatar", "_name": "Platform team", "shape": "square", "size": "lg" }
+                }
+            }
+        },
+        "icon": {
+            "example": {
+                "component": "toolbar",
+                "children": {
+                    "home": { "component": "icon", "name": "home" },
+                    "star": { "component": "icon", "name": "star", "filled": true, "tone": "warning" },
+                    "heart": { "component": "icon", "name": "heart", "filled": true, "tone": "danger", "size": "lg" },
+                    "check": { "component": "icon", "name": "circle-check", "tone": "success", "size": "lg", "decorative": false, "_label": "Done" }
+                }
+            }
+        },
+        "divider": {
+            "children": {
+                "before": { "component": "text", "_text": "Sign in with your email address" },
+                "divider": { "component": "divider", "_label": "or" },
+                "after": { "component": "text", "_text": "Continue with a passkey" }
+            }
+        },
+        "chip": {
+            "example": {
+                "component": "toolbar",
+                "wrap": true,
+                "children": {
+                    "design": { "component": "chip", "_text": "Design", "icon": "palette" },
+                    "research": { "component": "chip", "_text": "Research", "selectable": true, "selected": true },
+                    "draft": { "component": "chip", "_text": "Draft", "removable": true, "tone": "warning" }
+                }
+            }
+        },
+        "chipList": {
+            "example": {
+                "component": "chipList",
+                "_label": "Filters",
+                "items": { "f1": { "text": "Open" }, "f2": { "text": "Design", "icon": "palette" }, "f3": { "text": "This week" } }
+            }
+        },
+        "avatarGroup": {
+            "example": {
+                "component": "avatarGroup",
+                "_label": "Project team",
+                "max": 4,
+                "people": [{ "name": "Ada Lovelace" }, { "name": "Grace Hopper" }, { "name": "Alan Turing" }, { "name": "Katherine Johnson" }, { "name": "Margaret Hamilton" }]
+            }
+        },
+        "carousel": {
+            "example": {
+                "component": "carousel",
+                "_label": "Highlights",
+                "loop": true,
+                "children": {
+                    "sale": { "component": "card", "_title": "Spring sale", "placement": { "_slide": "Sale" }, "children": { "text": { "component": "text", "_text": "Up to 40% off garden tools" } } },
+                    "new": { "component": "card", "_title": "New arrivals", "placement": { "_slide": "New" }, "children": { "text": { "component": "text", "_text": "Fresh oak furniture, made to order" } } },
+                    "delivery": { "component": "card", "_title": "Free delivery", "placement": { "_slide": "Delivery" }, "children": { "text": { "component": "text", "_text": "On every order over 50" } } }
+                }
+            }
+        },
+        "codeBlock": {
+            "example": { "component": "codeBlock", "language": "ts", "lineNumbers": true, "code": "const total = items\n    .map((item) => item.price * item.qty)\n    .reduce((sum, line) => sum + line, 0);" }
+        }
+    }
+}

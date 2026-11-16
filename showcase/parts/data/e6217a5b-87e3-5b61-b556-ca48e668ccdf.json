@@ -1,0 +1,43 @@
+{
+  "id": "e6217a5b-87e3-5b61-b556-ca48e668ccdf",
+  "kind": "data",
+  "name": "showcase-events",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-event",
+    "records": {
+      "e1": {
+        "id": "e1",
+        "title": "Design review",
+        "start": "2026-11-03T10:00",
+        "end": "2026-11-03T11:00"
+      },
+      "e2": {
+        "id": "e2",
+        "title": "Team lunch",
+        "start": "2026-11-06T12:30",
+        "end": "2026-11-06T13:30"
+      },
+      "e3": {
+        "id": "e3",
+        "title": "Release 0.2",
+        "start": "2026-11-12",
+        "end": "2026-11-12"
+      },
+      "e4": {
+        "id": "e4",
+        "title": "Workshop",
+        "start": "2026-11-17",
+        "end": "2026-11-19"
+      },
+      "e5": {
+        "id": "e5",
+        "title": "Retrospective",
+        "start": "2026-11-26T15:00",
+        "end": "2026-11-26T16:00"
+      }
+    }
+  }
+}

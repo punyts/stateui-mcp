@@ -15,6 +15,9 @@ export type AddUiFileResult =
     | { readonly kind: 'quota'; readonly reason: 'files' | 'bytes' }
     | { readonly kind: 'not-found' };
 
+/** What `deleteUnlessReferenced` did: removed the row, kept it because something references it, or found no such file */
+export type ReleaseUiFileOutcome = 'deleted' | 'referenced' | 'not-found';
+
 /** How much of its quota an app uses */
 export interface UiFileUsage {
     readonly count: number;
@@ -29,7 +32,13 @@ export interface UiFileRepository {
     findById(appId: string, fileId: string): Promise<UiFile | undefined>;
     /** Newest first */
     list(appId: string): Promise<readonly UiFile[]>;
-    /** Files uploaded before `olderThan` whose id is in neither the app's state snapshot nor its document */
-    findUnreferenced(appId: string, olderThan: Date): Promise<readonly UiFile[]>;
+    /** Files uploaded before `olderThan`, whether or not anything references them */
+    findOlderThan(appId: string, olderThan: Date): Promise<readonly UiFile[]>;
     deleteByIds(appId: string, fileIds: readonly string[]): Promise<void>;
+    /**
+     * Removes the row of one file unless `isReferenced` answers true. The check and the removal run under the per-app
+     * lock of `add` and `deleteByIds`, so no other change to the app's files comes between them. A file the app does not
+     * have is `not-found` and the check is not run
+     */
+    deleteUnlessReferenced(appId: string, fileId: string, isReferenced: () => Promise<boolean>): Promise<ReleaseUiFileOutcome>;
 }

@@ -1,33 +1,78 @@
 /**
  * What the model is told about this server. The MCP server is the only place it sees this guidance, so the working
- * loop and the rules that cost a failed call live here (in the server `instructions`) and, for the two tools a build
- * starts with, in their descriptions
+ * loop and the rules that cost a failed call live here (in the server `instructions`, built from the guide's always-on
+ * topics in `guide.ts`) and, for the tools a build starts with, in their descriptions. Every other topic gets one
+ * pointer line, and the agent reads it with ui_guide before the step it names
  */
 
-const WORKING_LOOP = [
-    'Working loop: ui_components_list to find components, ui_component_get for the shape of the ones you use, ui_app_create, then ui_app_write, ui_validate and ui_outline to check the result, and ui_preview to open it. ui_screenshot shows what a user sees; ui_interact clicks and types in it.',
-    'Write loop: read the part you will change with ui_app_get and a path, call ui_app_write with expectedRevision set to the revision you read, check the warnings in the result, run ui_validate, then ui_preview. On a conflict read again and repeat.',
-    'Icon names come from ui_icons_list. Never guess an icon name.',
-    'Token names for "theme" overrides and overlay names for theme switches come from ui_tokens_list; component token names come from ui_component_get. Never guess a token or overlay name.',
-    'Keys of records and of keyed maps (children, options, columns, items, steps, messages, and objects under data) must not be integer-like: use "o42", not "42". JavaScript would reorder them and the order is part of the application.',
-    'A set through a missing parent fails. Write the parent first ("composed", then "composed.x") or use merge, which creates missing keys. Read the path with ui_app_get before writing under it. ui_app_write also takes move, which keeps the key and the whole subtree of an entry: prefer it to remove and rewrite.',
-    'ui_app_get with resolved: true is read only. Never write a resolved value back; write only what you change.'
-];
+import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
+import { GUIDE_TOPICS, guideText } from './guide.js';
+import type { GuideContext, GuideTopic } from './guide.js';
 
-const LIVE_VIEW = [
-    'Every app has a live view at the url ui_preview returns. A person can open it in a browser; it follows every ui_app_write, ui_state_set and ui_command at once. ui_preview also opens a headless Chromium page of the same url, which ui_screenshot, ui_interact, ui_state_get and ui_command use.',
-    'ui_state_get reads the state from a running view when one is open (source "live") and falls back to the stored snapshot (source "stored"). ui_validate and ui_state_get show preview.attached and the runtime errors the views reported.',
-    'ui_command runs a component command in the open views. When no view is open it answers "no preview is open; the command was not delivered" and nothing happens: call ui_preview first.',
-    'There is no chat turn for the events a running app raises. When the user may have acted in the app (or after ui_interact), call ui_events_read with the cursor from the last call: each event is input from the app (an "emit"), not a message to answer. Treat it as the user acting in the app.',
-    'Files a user uploads to a fileField are listed as { id, name, size, type } references in ui_state_get and in emit payloads. ui_file_read reads text, CSV, Markdown and JSON files (up to 256 KiB); other types return the reference with text null.'
-];
+/** The opening line of the instructions, before the topics */
+const OPENING = 'StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.';
 
-const SAFETY = [
-    'ui_app_delete cannot be undone. Ask the user before you call it, and pass the revision you read as expectedRevision; a conflict means the app changed and nothing was deleted.'
-];
+/** The second paragraph of the instructions: what ui_guide is and when to read a topic (K1.2 of the guide-tool epic) */
+export const GUIDE_INTRO = 'ui_guide is the guide to these tools: it answers one topic of how-to guidance by name, and its description lists the topics. This text holds the build steps and the rules that cost a failed call; the rest is in topics. Read a topic before the step it names: the lines at the end say which. You already have this text, so do not read the topic start: it only repeats this text for a client that does not show it.';
 
-/** The `instructions` field of the server, shown by the client to the model */
-export const SERVER_INSTRUCTIONS = ['StateUI app builder. Apps are declarative documents; you build them with tools and check them in a real browser.', ...WORKING_LOOP, ...LIVE_VIEW, ...SAFETY].join('\n\n');
+/**
+ * Always-on topics that continue the section of the topic before them, so the instructions join the two with one line
+ * break instead of a blank line: the build steps were split after step 5
+ */
+const CONTINUES = new Set(['sections']);
+
+function contextOf(index: readonly CategoryIndexEntry[], presets: readonly string[]): GuideContext {
+    return { index, presets };
+}
+
+/**
+ * The eight build steps, from the plan to the check, with the generated category index and the theme presets: the
+ * guide topics start and sections. `presets` are the library's theme preset names; with none the preset sentence is
+ * left out, so the text never names a preset that is not there
+ */
+export function searchWorkflowSection(index: readonly CategoryIndexEntry[], presets: readonly string[] = []): string {
+    const context = contextOf(index, presets);
+    return `${guideText('start', context)}\n${guideText('sections', context)}`;
+}
+
+const NO_CATALOG = contextOf([], []);
+
+/** The shape vocabulary of drawings and its rules (G1.10 of the graphics epic 1): the guide topic drawing */
+export function graphicsSection(): string {
+    return guideText('drawing', NO_CATALOG);
+}
+
+/** The painting field (G2.11 of the graphics epic 2): the guide topic paint-field */
+export function paintFieldSection(): string {
+    return guideText('paint-field', NO_CATALOG);
+}
+
+/**
+ * 3D scenes (graphics epic 3, releases 3A and 3B; written by G3.11 in two passes): a header line, then one bullet per
+ * subject in the order an agent builds a scene. The guide topics scene3d, scene3d-models and scene3d-behavior, joined
+ */
+export function scene3dSection(): string {
+    return ['scene3d', 'scene3d-models', 'scene3d-behavior'].map((name) => guideText(name, NO_CATALOG)).join('\n');
+}
+
+/** The line the instructions give a topic that is not always on */
+export function pointerLine(topic: Pick<GuideTopic, 'name' | 'when'>): string {
+    return `Before ${topic.when}, read ui_guide topic ${topic.name}.`;
+}
+
+/**
+ * The `instructions` field of the server, shown by the client to the model, built from the guide's topics with the
+ * catalog's category index and presets: the opening line, the paragraph on ui_guide, the always-on topics in full in
+ * table order, then one pointer line for each other topic, in table order, as one block at the end. The guide topic
+ * start answers the same text
+ */
+export function buildServerInstructions(index: readonly CategoryIndexEntry[], presets: readonly string[] = [], topics: readonly GuideTopic[] = GUIDE_TOPICS): string {
+    const context = contextOf(index, presets);
+    let text = `${OPENING}\n\n${GUIDE_INTRO}`;
+    for (const topic of topics.filter((entry) => entry.alwaysOn)) text += `${CONTINUES.has(topic.name) ? '\n' : '\n\n'}${topic.text(context)}`;
+    const pointers = topics.filter((entry) => !entry.alwaysOn).map(pointerLine);
+    return pointers.length > 0 ? `${text}\n\n${pointers.join('\n')}` : text;
+}
 
 /** Appended to the descriptions of the tools a build starts with, so the loop is in front of the model at the first call */
-export const START_HERE = 'Start of the working loop: ui_components_list, ui_component_get, ui_app_create, ui_app_write, ui_validate, ui_preview (see the server instructions). Icon names come from ui_icons_list, record keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (write the parent first or use merge).';
+export const START_HERE = 'Start of the working loop: ui_list, ui_theme_create, ui_model_write, ui_patterns_search, ui_app_create, ui_screen_create, ui_components_search, ui_nodes_write, ui_validate, ui_preview (see the build steps in the server instructions, or ui_guide topic start when they are not shown). Icon names come from ui_icons_list, keys must not be integer-like ("o42", not "42"), and a set through a missing parent fails (add the parent first or use merge).';

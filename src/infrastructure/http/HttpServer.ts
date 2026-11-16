@@ -1,58 +1,123 @@
 import busboy from 'busboy';
 import { createServer } from 'node:http';
+import type { Duplex } from 'node:stream';
+import { WebSocketServer } from 'ws';
+import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { UiAppRepository } from '../../application/ports/UiAppRepository.js';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
-import type { JsonValue } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
-import type { UiBuildError } from '../../domain/UiBuildError.js';
-import { isAppId } from '../storage/AppFolders.js';
+import { isAppId } from '../storage/PartFolders.js';
+import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
+import type { AuthoritySession } from '@punyts/state-sync/authority';
+import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
+import { REVOKED_CODE } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
+import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
-import type { RuntimeBundle } from './runtimeBundle.js';
-import { runtimePage } from './runtimeBundle.js';
-import { COMMON_HEADERS, FILE_CSP, HOST_PAGE_CSP, isAllowedHost, isSameOrigin, LIST_PAGE_CSP, RUNTIME_CSP } from './security.js';
+import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
+import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
+import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
-/** The MCP side of `/mcp`: sessions of the streamable HTTP transport */
-export interface McpEndpoint {
-    handle(request: IncomingMessage, response: ServerResponse, body: unknown): Promise<void>;
-    close(): Promise<void>;
+/** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
+export interface HttpTenant {
+    readonly useCases: UiBuilderUseCases;
+    readonly hub: PreviewHub;
+    readonly liveViews: LiveViews;
+    /** The views of the owner's apps (parts): what a view is sent and the authority its socket talks to */
+    readonly instances: InstanceViews;
+    /**
+     * Told when a view's socket opens, with a function that closes it (with 1008 and the reason given, such as on
+     * sign-out; with `revoked`, the view is first sent the sync error `revoked`, so it deletes what it keeps of the
+     * app); the function it returns is called when the socket closes
+     */
+    readonly retain?: (close: (reason: string, revoked?: boolean) => void) => () => void;
+    /**
+     * The persona whose instance of the app the views sync with; default the owner's own (`DEFAULT_PERSONA`). Another
+     * person given an app keeps their own state in it under a persona of their own (`isPersonaName`)
+     */
+    readonly persona?: string;
+    /**
+     * What the request may do: `owner` (default) anything; `use` run the app with its own state, but not upload or
+     * release the app's files; `view` that and no change to the state either: each change a view sends is rejected
+     * (`ack` `rejected`) and its events are dropped
+     */
+    readonly access?: 'owner' | 'use' | 'view';
 }
+
+/**
+ * An app taken back from the person asking: its page deletes what the browser keeps of it (`data-revoked`) and shows
+ * the message, and its socket answers the sync error `revoked`, so an open page deletes it too
+ */
+export interface RevokedApp {
+    readonly message: string;
+    /** The sync namespace the person kept the app's state under */
+    readonly namespace: string;
+    /** The app's name, for the page title */
+    readonly name: string;
+}
+
+/**
+ * Whose apps a request reaches: the tenant, or a refusal with its status. A page request (`GET` of `/` or of an app)
+ * with a `location` is redirected there instead, such as to a sign-in page
+ */
+export type TenantAnswer = { readonly tenant: HttpTenant } | { readonly refuse: 401 | 403 | 404; readonly location?: string } | { readonly revoked: RevokedApp };
 
 export interface HttpServerOptions {
     readonly host: string;
     readonly port: number;
-    readonly useCases: UiBuilderUseCases;
-    readonly repository: UiAppRepository;
-    readonly hub: PreviewHub;
-    readonly liveViews: LiveViews;
-    readonly mcp: McpEndpoint;
+    /** The port of the runtime origin, which serves only the runtime page, bundle and stylesheet. 0 picks a free port */
+    readonly runtimePort: number;
+    /**
+     * Where people reach the two origins, such as `https://magnetic.example` and `https://run.magnetic.example`, when a
+     * proxy stands in front. The pages name them instead of `http://<Host>:<port>`, and only their host names (and
+     * loopback) are answered. Absent: each origin is the request's host name with that origin's port
+     */
+    readonly publicOrigins?: PublicOrigins;
+    /** The one owner of a local server, or how a request finds its owner on a server with many */
+    readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
+    /**
+     * Routes of the embedding server, tried before the endpoint's own and after the host and origin checks: true when
+     * they answered the request. A thrown `HttpError` is answered with its status and code
+     */
+    readonly routes?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+    /** The text frames one view's socket may send per second, with a burst of twice as many; absent: no limit */
+    readonly socketMessagesPerSecond?: number;
     readonly runtime: RuntimeBundle;
+    /** The 3D renderer chunk of `@punyts/stateui-3d`, served beside the runtime; absent when it is not installed */
+    readonly chunk3d?: RuntimeChunk;
     /** The compiled host script, served as `/assets/host.js` */
     readonly hostScript: Buffer;
     readonly report: UseCaseReport;
+}
+
+/** The two public origins of a server behind a proxy: the pages', and the runtime frame's, which must differ */
+export interface PublicOrigins {
+    readonly main: string;
+    readonly runtime: string;
 }
 
 export interface RunningHttpServer {
     /** The origin the server listens on, such as `http://127.0.0.1:4100`. Known after `listen`, so a port of 0 works */
     readonly origin: string;
     readonly port: number;
+    /** The port of the runtime origin */
+    readonly runtimePort: number;
     close(): Promise<void>;
 }
 
-const MAX_JSON_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_REPORT_BODY_BYTES = 2 * 1024 * 1024;
 const KEEP_ALIVE_MS = 15_000;
-const MAX_EVENT_NAME = 256;
-const MAX_REPORTED_ERRORS = 50;
+/** A sync message is at most 1,000,000 characters (`parseMessage`); a frame may hold that many bytes of UTF-8 twice over */
+const MAX_SYNC_FRAME_BYTES = 4 * 1024 * 1024;
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
-class HttpError extends Error {
+/** An error a route answers with: its status, and `{ error: code, message }` as the body */
+export class HttpError extends Error {
     constructor(
         readonly status: number,
         message: string,
@@ -101,54 +166,104 @@ function isUuid(value: string | null): value is string {
     return value !== null && isAppId(value);
 }
 
-function toBuildErrors(value: unknown): UiBuildError[] {
-    if (!Array.isArray(value)) return [];
-    const errors: UiBuildError[] = [];
-    for (const item of value.slice(-MAX_REPORTED_ERRORS)) {
-        if (!isJsonObject(item) || typeof item['code'] !== 'string' || typeof item['message'] !== 'string') continue;
-        const severity = item['severity'];
-        errors.push({
-            code: item['code'].slice(0, 64),
-            message: item['message'].slice(0, 2000),
-            ...((severity === 'error' || severity === 'warning') && { severity }),
-            ...(typeof item['statePath'] === 'string' && { statePath: item['statePath'].slice(0, 500) }),
-            ...(typeof item['component'] === 'string' && { component: item['component'].slice(0, 100) })
-        });
-    }
-    return errors;
-}
-
 /**
- * The one HTTP server: `POST/GET/DELETE /mcp` for MCP clients and the browser endpoint for people and for Playwright.
+ * The browser endpoint of a server that serves its own view pages, for people and for Playwright: what an embedding
+ * server with sign-in and many owners uses (Magnetic). The stateui-mcp server itself serves no HTTP: its views live
+ * in a statenet (`StatenetViews`) and their pages come from Vite or a CDN.
  *
  * | Route | What |
  * |---|---|
- * | `GET /` | the apps, with a link to each |
- * | `GET /apps/:appId` | the live view of an app |
- * | `GET /apps/:appId/events` | the event stream of a view (server to view) |
- * | `POST /apps/:appId/report` | what a view tells the server: state, `emit` events, errors, ready |
+ * | `GET /` | the app parts, with a link to each |
+ * | `GET /apps/:appId` | the live view of an app part: assembled, with the default persona's instance |
+ * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
+ * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
+ * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
- * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js` | the content-hashed StateUI runtime page and bundle |
+ *
+ * A second listener on `runtimePort` is the runtime origin. It serves only the app frame:
+ *
+ * | Route | What |
+ * |---|---|
+ * | `GET /runtime/<hash>.html`, `/runtime/<hash>.js`, `/runtime/runtime.css` | the content-hashed StateUI runtime page and bundle, and the page's stylesheet |
+ * | `GET /runtime/<chunk hash>.js` | the content-hashed 3D renderer chunk, when `@punyts/stateui-3d` is installed; the app page names it in `data-chunk-3d` |
+ *
+ * The frame is sandboxed with `allow-scripts allow-same-origin`. Its own origin keeps it apart from the host page, and
+ * browsers that refuse a frame with an opaque origin (some embedded browsers) still show it
  */
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
-    const { useCases, repository, hub, liveViews, runtime, report } = options;
+    const { runtime, chunk3d, report } = options;
+    const fixed = typeof options.tenant === 'function' ? undefined : { tenant: options.tenant };
+    const findTenant = fixed === undefined ? (options.tenant as (request: IncomingMessage) => Promise<TenantAnswer>) : async (): Promise<TenantAnswer> => fixed;
+
+    /** The tenant of a request; a refusal is thrown, or redirected for a page with a location (then `undefined`) */
+    async function tenantOf(request: IncomingMessage, response: ServerResponse, page: boolean): Promise<HttpTenant | undefined> {
+        const answer = await findTenant(request);
+        if ('tenant' in answer) return answer.tenant;
+        if ('revoked' in answer) throw new HttpError(403, answer.revoked.message, 'revoked');
+        if (page && answer.location !== undefined) {
+            response.writeHead(303, { ...COMMON_HEADERS, Location: answer.location, 'Cache-Control': 'no-store' });
+            response.end();
+            return undefined;
+        }
+        if (answer.refuse === 404) throw new HttpError(404, 'Not found', 'not_found');
+        throw new HttpError(answer.refuse, answer.refuse === 401 ? 'Sign in first' : 'Not allowed', answer.refuse === 401 ? 'unauthorized' : 'forbidden');
+    }
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
+    // Both known after listen, so a port of 0 works
+    let mainPort = 0;
+    let runtimePort = 0;
+
+    const publicHosts = options.publicOrigins === undefined ? undefined : new Set([new URL(options.publicOrigins.main).hostname, new URL(options.publicOrigins.runtime).hostname]);
+    const hostAllowed = (request: IncomingMessage): boolean => (publicHosts === undefined ? isAllowedHost(request.headers.host, options.host) : isPublicHost(request.headers.host, publicHosts));
+    /** The origin of the pages, as the browser of a request reaches it */
+    const mainOriginOf = (request: IncomingMessage): string => options.publicOrigins?.main ?? `http://${hostNameOf(request)}:${mainPort}`;
+    /** The origin of the runtime frame, as the browser of a request reaches it */
+    const runtimeOriginOf = (request: IncomingMessage): string => options.publicOrigins?.runtime ?? `http://${hostNameOf(request)}:${runtimePort}`;
+
+    /** The host name the request used, so the other origin is reached by the same name */
+    function hostNameOf(request: IncomingMessage): string {
+        const name = requestHostName(request.headers.host);
+        if (name === undefined) throw new HttpError(400, 'The Host header is not a host name', 'bad_host');
+        return name;
+    }
+
+    async function runtimeRoute(request: IncomingMessage, response: ServerResponse): Promise<void> {
+        const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+        if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
+            const csp = runtimeCsp(mainOriginOf(request));
+            send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': csp, 'Cache-Control': 'no-cache' });
+            return;
+        }
+        if (request.method === 'GET' && path === `${runtimeBase}/runtime.css`) {
+            send(response, 200, 'text/css; charset=utf-8', RUNTIME_CSS, { 'Cache-Control': 'no-cache' });
+            return;
+        }
+        if (request.method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {
+            send(response, 200, 'text/javascript; charset=utf-8', runtime.script, { 'Cache-Control': 'public, max-age=31536000, immutable' });
+            return;
+        }
+        if (chunk3d !== undefined && request.method === 'GET' && path === `${runtimeBase}/${chunk3d.hash}.js`) {
+            send(response, 200, 'text/javascript; charset=utf-8', chunk3d.script, { 'Cache-Control': 'public, max-age=31536000, immutable' });
+            return;
+        }
+        throw new HttpError(404, 'Not found', 'not_found');
+    }
 
     async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
         const url = new URL(request.url ?? '/', 'http://localhost');
         const path = url.pathname;
         const method = request.method ?? 'GET';
 
-        if (path === '/mcp') {
-            const body = method === 'POST' ? await readJsonBody(request, MAX_JSON_BODY_BYTES) : undefined;
-            await options.mcp.handle(request, response, body);
-            return;
-        }
+        if (options.routes !== undefined && (await options.routes(request, response))) return;
         if (method === 'GET' && path === '/') {
-            send(response, 200, 'text/html; charset=utf-8', indexPage(await repository.list()), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
+            const tenant = await tenantOf(request, response, true);
+            if (tenant === undefined) return;
+            // The owner's app parts, the most recently changed first
+            const apps = [...(await tenant.instances.list())].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+            send(response, 200, 'text/html; charset=utf-8', indexPage(apps), { 'Content-Security-Policy': LIST_PAGE_CSP, 'Cache-Control': 'no-store' });
             return;
         }
         if (method === 'GET' && path === '/assets/host.js') {
@@ -159,141 +274,75 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             send(response, 200, 'text/css; charset=utf-8', PAGE_CSS, { 'Cache-Control': 'no-cache' });
             return;
         }
-        if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.html`) {
-            send(response, 200, 'text/html; charset=utf-8', runtimePageBuffer, { 'Content-Security-Policy': RUNTIME_CSP, 'Cache-Control': 'no-cache' });
-            return;
-        }
-        if (method === 'GET' && path === `${runtimeBase}/${runtime.hash}.js`) {
-            send(response, 200, 'text/javascript; charset=utf-8', runtime.script, {
-                'Content-Security-Policy': RUNTIME_CSP,
-                'Cache-Control': 'public, max-age=31536000, immutable',
-                // The frame is sandboxed without allow-same-origin, so its origin is opaque and its script load is cross-origin
-                'Cross-Origin-Resource-Policy': 'cross-origin'
-            });
-            return;
-        }
 
         const parts = path.split('/').filter((part) => part !== '');
         if (parts[0] === 'apps' && parts[1] !== undefined && SEGMENT.test(parts[1])) {
             const appId = parts[1];
             if (!isAppId(appId)) throw new HttpError(400, 'An app id is a UUID', 'invalid_id');
             const rest = parts.slice(2);
-            if (method === 'GET' && rest.length === 0) return appRoute(request, response, appId);
-            if (method === 'GET' && rest.length === 1 && rest[0] === 'events') return eventsRoute(request, response, appId, url);
-            if (method === 'POST' && rest.length === 1 && rest[0] === 'report') return reportRoute(request, response, appId);
-            if (method === 'POST' && rest.length === 1 && rest[0] === 'files') return uploadRoute(request, response, appId);
-            if (method === 'GET' && rest.length === 2 && rest[0] === 'files' && rest[1] !== undefined) return downloadRoute(response, appId, rest[1]);
+            const page = method === 'GET' && rest.length === 0;
+            const fileId = rest.length === 2 && rest[0] === 'files' ? rest[1] : undefined;
+            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
+            if (known) {
+                if (page) {
+                    const answer = await findTenant(request);
+                    if ('revoked' in answer) return revokedRoute(answer.revoked, request, response, appId);
+                }
+                const tenant = await tenantOf(request, response, page);
+                if (tenant === undefined) return;
+                if (page) return appRoute(tenant, request, response, appId);
+                const owner = (tenant.access ?? 'owner') === 'owner';
+                if (method === 'POST' && rest[0] === 'report') return reportRoute(tenant, request, response, appId);
+                if (method === 'GET') return downloadRoute(tenant, response, appId, fileId as string);
+                if (!owner) throw new HttpError(403, "Only the app's owner adds or removes its files", 'forbidden');
+                if (method === 'POST') return uploadRoute(tenant, request, response, appId);
+                return releaseRoute(tenant, response, appId, fileId as string);
+            }
         }
         throw new HttpError(404, 'Not found', 'not_found');
     }
 
-    async function appRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
-        const app = await repository.findById(appId);
-        if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-        const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
+    /** The page of an app taken back: it deletes what the browser keeps of the app and says why */
+    function revokedRoute(revoked: RevokedApp, request: IncomingMessage, response: ServerResponse, appId: string): void {
+        const runtimeOrigin = runtimeOriginOf(request);
         send(
             response,
             200,
             'text/html; charset=utf-8',
-            appPage({ appId, name: app.name, runtimeUrl: `${runtimeBase}/${runtime.hash}.html`, viewKind: headless ? 'headless' : 'browser' }),
-            { 'Content-Security-Policy': HOST_PAGE_CSP, 'Cache-Control': 'no-store' }
+            appPage({ appId, name: revoked.name, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: 'browser', namespace: revoked.namespace, revoked: revoked.message }),
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
         );
     }
 
-    async function eventsRoute(request: IncomingMessage, response: ServerResponse, appId: string, url: URL): Promise<void> {
-        const viewId = url.searchParams.get('view');
-        if (!isUuid(viewId)) throw new HttpError(400, 'The view parameter is a UUID', 'invalid_view');
-        const first = await liveViews.attachMessage(appId);
-        if (first === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-
-        response.writeHead(200, {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-store',
-            Connection: 'keep-alive',
-            'X-Accel-Buffering': 'no',
-            ...COMMON_HEADERS
-        });
-        const write = (message: ViewMessage): void => {
-            response.write(`data: ${JSON.stringify(message)}\n\n`);
-        };
-        const connection: ViewConnection = {
-            id: viewId,
-            kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser',
-            send: write
-        };
-        const detach = hub.attach(appId, connection);
-        const timer = setInterval(() => response.write(': keep-alive\n\n'), KEEP_ALIVE_MS);
-        let closed = false;
-        const cleanup = (): void => {
-            if (closed) return;
-            closed = true;
-            clearInterval(timer);
-            detach();
-        };
-        request.on('close', cleanup);
-        response.on('close', cleanup);
-        write(first);
+    async function appRoute({ instances, persona }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+        const part = await instances.find(appId);
+        if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
+        const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
+        const runtimeOrigin = runtimeOriginOf(request);
+        send(
+            response,
+            200,
+            'text/html; charset=utf-8',
+            appPage({
+                appId,
+                name: part.name,
+                runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
+                ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
+                viewKind: headless ? 'headless' : 'browser',
+                namespace: instances.namespace(part, persona)
+            }),
+            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
+        );
     }
 
-    async function reportRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
-        const body = await readJsonBody(request, MAX_REPORT_BODY_BYTES);
-        if (!isJsonObject(body) || !isUuid(typeof body['viewId'] === 'string' ? body['viewId'] : null)) {
-            throw new HttpError(400, 'A report is a JSON object with a viewId', 'invalid_report');
-        }
-        const viewId = body['viewId'] as string;
-        const revision = typeof body['revision'] === 'number' ? body['revision'] : undefined;
-        switch (body['type']) {
-            case 'ready':
-                hub.touch(appId, viewId, { ready: true, ...(revision !== undefined && { revision }) });
-                sendJson(response, 200, { ok: true });
-                return;
-            case 'rendered':
-                hub.touch(appId, viewId, { ...(revision !== undefined && { revision }) });
-                sendJson(response, 200, { ok: true });
-                return;
-            case 'state': {
-                if (revision === undefined) throw new HttpError(400, 'A state report needs the revision it rendered', 'invalid_report');
-                const saved = await useCases.savePreviewState.execute(appId, { snapshot: body['snapshot'] as JsonValue, expectedRevision: revision });
-                hub.touch(appId, viewId);
-                if (saved.kind === 'saved') sendJson(response, 200, { ok: true, revision: saved.revision });
-                else if (saved.kind === 'conflict') sendJson(response, 409, { error: 'conflict', currentRevision: saved.currentRevision });
-                else if (saved.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
-                else throw new HttpError(400, saved.reason, 'invalid_report');
-                return;
-            }
-            case 'emit': {
-                const name = body['name'];
-                if (typeof name !== 'string' || name === '' || name.length > MAX_EVENT_NAME) throw new HttpError(400, 'An emit report needs a name', 'invalid_report');
-                if ((await repository.findById(appId)) === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-                hub.recordEvent(appId, viewId, name, body['payload'] as JsonValue | undefined);
-                hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            case 'errors': {
-                const errors = toBuildErrors(body['errors']);
-                if (errors.length === 0) throw new HttpError(400, 'An errors report needs at least one error', 'invalid_report');
-                hub.recordErrors(appId, errors);
-                const recorded = await useCases.recordPreviewErrors.execute(appId, errors, revision);
-                if (recorded.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
-                hub.touch(appId, viewId);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            case 'snapshot-reply': {
-                const requestId = body['requestId'];
-                const snapshot = body['snapshot'];
-                if (typeof requestId !== 'string' || (snapshot !== null && !isJsonObject(snapshot))) throw new HttpError(400, 'A snapshot reply needs a requestId and a snapshot', 'invalid_report');
-                hub.answerSnapshot(appId, requestId, snapshot);
-                sendJson(response, 200, { ok: true });
-                return;
-            }
-            default:
-                throw new HttpError(400, 'Unknown report type', 'invalid_report');
-        }
+    async function reportRoute(tenant: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+        const outcome = await takeViewReport(tenant, appId, await readJsonBody(request, MAX_REPORT_BODY_BYTES));
+        if (outcome.kind === 'invalid') throw new HttpError(400, outcome.message, 'invalid_report');
+        if (outcome.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
+        sendJson(response, 200, { ok: true });
     }
 
-    async function uploadRoute(request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function uploadRoute({ useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const contentType = request.headers['content-type'] ?? '';
         if (!/^multipart\/form-data/i.test(contentType)) throw new HttpError(400, 'Send multipart/form-data with one field named file', 'invalid_upload');
         const result = await new Promise<UploadFileResult | undefined>((resolve, reject) => {
@@ -332,7 +381,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
     }
 
-    async function downloadRoute(response: ServerResponse, appId: string, fileId: string): Promise<void> {
+    async function downloadRoute({ useCases }: HttpTenant, response: ServerResponse, appId: string, fileId: string): Promise<void> {
         if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
         const result = await useCases.readFile.execute(appId, fileId);
         if (result.kind === 'not-found') throw new HttpError(404, 'No file with this id', 'not_found');
@@ -347,12 +396,31 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         result.content.pipe(response);
     }
 
-    const server: Server = createServer((request, response) => {
+    /**
+     * Releases a file (`fileRelease` of the runtime, through the host page). The host and same-origin checks of `handler`
+     * apply, as to every method but GET and HEAD. A file the app's definition or live state still references stays: `409`
+     */
+    async function releaseRoute({ useCases }: HttpTenant, response: ServerResponse, appId: string, fileId: string): Promise<void> {
+        if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
+        const result = await useCases.releaseFile.execute(appId, fileId);
+        switch (result.kind) {
+            case 'released':
+                response.writeHead(204, { ...COMMON_HEADERS, 'Cache-Control': 'no-store' });
+                response.end();
+                return;
+            case 'referenced':
+                throw new HttpError(409, 'The app or its live state still references this file', 'referenced');
+            case 'not-found':
+                throw new HttpError(404, 'No file with this id', 'not_found');
+        }
+    }
+
+    const handler = (handle: (request: IncomingMessage, response: ServerResponse) => Promise<void>) => (request: IncomingMessage, response: ServerResponse) => {
         void (async () => {
             try {
-                if (!isAllowedHost(request.headers.host, options.host)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
+                if (!hostAllowed(request)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
                 if (request.method !== 'GET' && request.method !== 'HEAD' && !isSameOrigin(request)) throw new HttpError(403, 'Cross-origin requests are refused', 'forbidden_origin');
-                await route(request, response);
+                await handle(request, response);
             } catch (error) {
                 if (response.headersSent) {
                     response.end();
@@ -366,23 +434,180 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 sendError(response, new HttpError(500, 'Internal error', 'internal_error'));
             }
         })();
-    });
+    };
 
-    await new Promise<void>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(options.port, options.host, () => {
-            server.off('error', reject);
-            resolve();
+    const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_SYNC_FRAME_BYTES });
+
+    /**
+     * For a view that may only look: a change is rejected at once (its path shows the authority's value again) and an
+     * event is dropped. True when the frame was one of them, so it never reaches the authority
+     */
+    function refuseWrite(text: string, ws: WebSocket): boolean {
+        let frame: unknown;
+        try {
+            frame = JSON.parse(text);
+        } catch {
+            return false;
+        }
+        if (!isJsonObject(frame)) return false;
+        if (frame['type'] === 'emit') return true;
+        if (frame['type'] !== 'change') return false;
+        const change = frame['change'];
+        const id = isJsonObject(change) && typeof change['id'] === 'string' ? change['id'] : undefined;
+        if (id !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ack', id, result: 'rejected', reason: 'This app is shared with you to look at only' }));
+        return true;
+    }
+
+    /** Refuses an upgrade with a plain HTTP answer and closes the socket */
+    function refuseUpgrade(socket: Duplex, status: number, reason: string): void {
+        socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    }
+
+    /**
+     * `GET /apps/:appId/sync`: the WebSocket of one view. The view joins the hub (document, commands, locale, theme and
+     * deletion reach it as `{ type: 'view', message }` frames, the attach message first) and connects to the instance's
+     * sync authority, which gets every other text frame. Closing the socket leaves both
+     */
+    async function syncUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+        if (!hostAllowed(request)) return refuseUpgrade(socket, 403, 'Forbidden');
+        // A browser always sends Origin with a WebSocket, so a page of another origin cannot open one
+        if (!isSameOrigin(request)) return refuseUpgrade(socket, 403, 'Forbidden');
+        const url = new URL(request.url ?? '/', 'http://localhost');
+        const parts = url.pathname.split('/').filter((part) => part !== '');
+        const appId = parts[1];
+        const viewId = url.searchParams.get('view');
+        if (parts.length !== 3 || parts[0] !== 'apps' || parts[2] !== 'sync' || appId === undefined || !isAppId(appId)) return refuseUpgrade(socket, 404, 'Not Found');
+        if (!isUuid(viewId)) return refuseUpgrade(socket, 400, 'Bad Request');
+        const answer = await findTenant(request);
+        if ('revoked' in answer) {
+            // Opened, so the view hears why: it deletes what it keeps of the app, and never reconnects
+            const { message } = answer.revoked;
+            sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
+                ws.send(JSON.stringify({ type: 'error', code: REVOKED_CODE, message }));
+                ws.close(1008, 'Revoked');
+            });
+            return;
+        }
+        if (!('tenant' in answer)) return refuseUpgrade(socket, answer.refuse, answer.refuse === 404 ? 'Not Found' : answer.refuse === 401 ? 'Unauthorized' : 'Forbidden');
+        const { instances, liveViews, hub, retain, persona } = answer.tenant;
+        const readOnly = answer.tenant.access === 'view';
+        const part = await instances.find(appId);
+        if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
+        const first = await liveViews.attachMessage(appId);
+        if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
+        // The view syncs with its persona's instance of the app (the owner's own unless the tenant names another), here
+        // or on the server that runs it; the session is asked for once the socket is open
+        sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
+            const sendView = (message: ViewMessage): void => {
+                if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'view', message }));
+            };
+            const connection: ViewConnection = { id: viewId, kind: url.searchParams.get('kind') === 'headless' ? 'headless' : 'browser', send: sendView };
+            const detach = hub.attach(appId, connection);
+            const release = retain?.((reason, revoked) => {
+                if (revoked === true && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'error', code: REVOKED_CODE, message: reason }));
+                ws.close(1008, reason.slice(0, 120));
+            });
+            sendView(first);
+            let session: AuthoritySession | undefined;
+            let closed = false;
+            /** What the view sent before its session was ready, passed on in order once it is */
+            const early: string[] = [];
+            instances
+                .connect(part, persona ?? DEFAULT_PERSONA, {
+                    send: (text) => {
+                        if (ws.readyState === ws.OPEN) ws.send(text);
+                    },
+                    close: () => ws.close()
+                })
+                .then(
+                    (made) => {
+                        if (closed) return made.close();
+                        session = made;
+                        for (const text of early.splice(0)) made.receive(text);
+                    },
+                    (error: unknown) => {
+                        report.info('Sync connection failed', { app: appId, error: error instanceof Error ? error.message : String(error) });
+                        ws.close(1011, 'The app is not available');
+                    }
+                );
+            const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
+            const rate = options.socketMessagesPerSecond;
+            // A token bucket: `rate` frames a second, at most twice that many at once
+            let tokens = rate === undefined ? 0 : rate * 2;
+            let filledAt = Date.now();
+            ws.on('message', (data, isBinary) => {
+                if (isBinary) {
+                    ws.close(1003, 'Text frames only');
+                    return;
+                }
+                if (rate !== undefined) {
+                    const now = Date.now();
+                    tokens = Math.min(rate * 2, tokens + ((now - filledAt) / 1000) * rate);
+                    filledAt = now;
+                    if (tokens < 1) {
+                        ws.close(1008, 'Too many messages');
+                        return;
+                    }
+                    tokens -= 1;
+                }
+                hub.touch(appId, viewId);
+                const text = Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8');
+                if (readOnly && refuseWrite(text, ws)) return;
+                if (session === undefined) early.push(text);
+                else session.receive(text);
+            });
+            ws.on('error', () => ws.terminate());
+            ws.on('close', () => {
+                clearInterval(timer);
+                closed = true;
+                session?.close();
+                detach();
+                release?.();
+            });
+        });
+    }
+
+    const listen = (target: Server, port: number): Promise<AddressInfo> =>
+        new Promise<AddressInfo>((resolve, reject) => {
+            target.once('error', reject);
+            target.listen(port, options.host, () => {
+                target.off('error', reject);
+                resolve(target.address() as AddressInfo);
+            });
+        });
+    const stop = async (target: Server): Promise<void> => {
+        if (!target.listening) return;
+        target.closeAllConnections();
+        await new Promise<void>((resolve) => target.close(() => resolve()));
+    };
+
+    const server: Server = createServer(handler(route));
+    const runtimeServer: Server = createServer(handler(runtimeRoute));
+    server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+        socket.on('error', () => socket.destroy());
+        syncUpgrade(request, socket, head).catch((error: unknown) => {
+            report.info('Sync connection failed', { path: request.url?.split('?')[0], error: error instanceof Error ? error.message : String(error) });
+            if (!socket.destroyed) refuseUpgrade(socket, 500, 'Internal Server Error');
         });
     });
-    const address = server.address() as AddressInfo;
+    const address = await listen(server, options.port);
+    mainPort = address.port;
+    try {
+        runtimePort = (await listen(runtimeServer, options.runtimePort)).port;
+    } catch (error) {
+        await stop(server);
+        throw error instanceof Error ? new Error(`The runtime port ${options.runtimePort}: ${error.message}`) : error;
+    }
     const hostForUrl = address.family === 'IPv6' ? `[${address.address}]` : address.address;
     return {
         origin: `http://${hostForUrl}:${address.port}`,
         port: address.port,
+        runtimePort,
         close: async () => {
-            server.closeAllConnections();
-            await new Promise<void>((resolve) => server.close(() => resolve()));
+            // Upgraded sockets are no longer the HTTP server's connections
+            for (const client of sockets.clients) client.terminate();
+            sockets.close();
+            await Promise.all([stop(server), stop(runtimeServer)]);
         }
     };
 }

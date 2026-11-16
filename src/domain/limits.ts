@@ -72,6 +72,3 @@ export function checkOperationLimit(operationCount: number): UiBuildError | unde
 
 /** How long after its last event a preview still counts as attached. A preview host reports at least this often */
 export const PREVIEW_HEARTBEAT_WINDOW_MS = 30_000;
-
-/** Largest state snapshot a preview may save, in UTF-8 bytes. Matches `MAX_SNAPSHOT_BYTES` of the runtime protocol */
-export const MAX_PREVIEW_SNAPSHOT_BYTES = 1024 * 1024;

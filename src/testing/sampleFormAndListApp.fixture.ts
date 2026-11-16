@@ -11,14 +11,14 @@ export function deepFreeze<T extends JsonValue>(value: T): T {
 }
 
 /**
- * A valid form-and-list application: a `page` with a `panel` that holds a `form` (a `textField` and a
- * `selectField`) and a `list` linked to `$.data.customers`, a footer `toolbar` with a Save `button`, and a closed
- * `modal`. Children keys are prefix-free words, never integer-like, so their order is the display order.
+ * A valid form-and-list application of one tree: a `panel` with a `panel` that holds a `form` (a `textField` and a
+ * `selectField`) and a `list` linked to `$.data.customers`, a closed `modal` and a footer `toolbar` with a Save
+ * `button`. Children keys are prefix-free words, never integer-like, so their order is the display order.
  * The fixture of the validator tests (E6.4), reused by the preview tests (E6.7)
  */
 export const SAMPLE_FORM_AND_LIST_APP: UiDocument = deepFreeze({
     app: {
-        component: 'page',
+        component: 'panel',
         _title: 'Customers',
         children: {
             main: {
@@ -46,12 +46,12 @@ export const SAMPLE_FORM_AND_LIST_APP: UiDocument = deepFreeze({
                     }
                 }
             },
-            confirm: { component: 'modal', open: false, _title: 'Discard changes?' }
-        },
-        footer: {
-            component: 'toolbar',
-            children: {
-                save: { component: 'button', _title: 'Save', tone: 'accent' }
+            confirm: { component: 'modal', open: false, _title: 'Discard changes?' },
+            footer: {
+                component: 'toolbar',
+                children: {
+                    save: { component: 'button', _title: 'Save', tone: 'accent' }
+                }
             }
         }
     },

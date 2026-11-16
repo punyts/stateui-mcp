@@ -1,0 +1,168 @@
+{
+    "models": {
+        "person": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "name": { "type": "string", "required": true },
+                "role": { "type": "string" },
+                "team": { "type": "string" },
+                "email": { "type": "string" },
+                "city": { "type": "string" },
+                "status": { "type": "string" },
+                "joined": { "type": "string" },
+                "projects": { "type": "integer", "default": 0 }
+            }
+        },
+        "sale": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "month": { "type": "string", "required": true },
+                "revenue": { "type": "number", "default": 0 },
+                "costs": { "type": "number", "default": 0 }
+            }
+        },
+        "share": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "label": { "type": "string", "required": true },
+                "count": { "type": "integer", "default": 0 }
+            }
+        },
+        "task": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "title": { "type": "string", "required": true },
+                "column": { "type": "string", "default": "todo" },
+                "order": { "type": "number", "default": 0 },
+                "assignee": { "type": "string" }
+            }
+        },
+        "event": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "title": { "type": "string", "required": true },
+                "start": { "type": "string", "required": true },
+                "end": { "type": "string" }
+            }
+        },
+        "folder": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "label": { "type": "string", "required": true },
+                "parentId": { "type": "string" },
+                "hasChildren": { "type": "boolean", "default": false }
+            }
+        },
+        "message": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "author": { "type": "string", "required": true },
+                "text": { "type": "string", "required": true },
+                "time": { "type": "string" }
+            }
+        },
+        "marker": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "x": { "type": "number", "default": 0 },
+                "y": { "type": "number", "default": 0 },
+                "r": { "type": "number", "default": 1 },
+                "fill": { "type": "string" }
+            }
+        },
+        "bar": {
+            "fields": {
+                "id": { "type": "string", "required": true },
+                "at": { "type": "array" },
+                "size": { "type": "array" },
+                "paint": { "type": "object" }
+            }
+        }
+    },
+    "datasets": {
+        "people": {
+            "model": "person",
+            "records": {
+                "p1": { "id": "p1", "name": "Ada Lovelace", "role": "Engineering lead", "team": "Platform", "email": "ada@example.com", "city": "London", "status": "active", "joined": "2019-03-04", "projects": 7 },
+                "p2": { "id": "p2", "name": "Grace Hopper", "role": "Compiler engineer", "team": "Platform", "email": "grace@example.com", "city": "New York", "status": "active", "joined": "2020-06-15", "projects": 5 },
+                "p3": { "id": "p3", "name": "Katherine Johnson", "role": "Data scientist", "team": "Insights", "email": "katherine@example.com", "city": "Hampton", "status": "away", "joined": "2021-01-11", "projects": 4 },
+                "p4": { "id": "p4", "name": "Alan Turing", "role": "Researcher", "team": "Insights", "email": "alan@example.com", "city": "Manchester", "status": "active", "joined": "2018-09-24", "projects": 9 },
+                "p5": { "id": "p5", "name": "Margaret Hamilton", "role": "Software architect", "team": "Flight", "email": "margaret@example.com", "city": "Boston", "status": "active", "joined": "2017-05-02", "projects": 11 },
+                "p6": { "id": "p6", "name": "Linus Pauling", "role": "Designer", "team": "Flight", "email": "linus@example.com", "city": "Portland", "status": "away", "joined": "2022-02-28", "projects": 2 }
+            }
+        },
+        "sales": {
+            "model": "sale",
+            "records": {
+                "m01": { "id": "m01", "month": "Jun", "revenue": 18200, "costs": 12100 },
+                "m02": { "id": "m02", "month": "Jul", "revenue": 21400, "costs": 12900 },
+                "m03": { "id": "m03", "month": "Aug", "revenue": 19800, "costs": 13400 },
+                "m04": { "id": "m04", "month": "Sep", "revenue": 24600, "costs": 14100 },
+                "m05": { "id": "m05", "month": "Oct", "revenue": 27900, "costs": 14800 },
+                "m06": { "id": "m06", "month": "Nov", "revenue": 31200, "costs": 15600 }
+            }
+        },
+        "tasks": {
+            "model": "task",
+            "records": {
+                "t1": { "id": "t1", "title": "Draft the release notes", "column": "todo", "order": 1, "assignee": "Ada" },
+                "t2": { "id": "t2", "title": "Review the date picker", "column": "todo", "order": 2, "assignee": "Grace" },
+                "t3": { "id": "t3", "title": "Tune the chart colours", "column": "doing", "order": 1, "assignee": "Katherine" },
+                "t4": { "id": "t4", "title": "Write the 3D guide", "column": "doing", "order": 2, "assignee": "Margaret" },
+                "t5": { "id": "t5", "title": "Ship the board", "column": "done", "order": 1, "assignee": "Alan" }
+            }
+        },
+        "events": {
+            "model": "event",
+            "records": {
+                "e1": { "id": "e1", "title": "Design review", "start": "2026-11-03T10:00", "end": "2026-11-03T11:00" },
+                "e2": { "id": "e2", "title": "Team lunch", "start": "2026-11-06T12:30", "end": "2026-11-06T13:30" },
+                "e3": { "id": "e3", "title": "Release 0.2", "start": "2026-11-12", "end": "2026-11-12" },
+                "e4": { "id": "e4", "title": "Workshop", "start": "2026-11-17", "end": "2026-11-19" },
+                "e5": { "id": "e5", "title": "Retrospective", "start": "2026-11-26T15:00", "end": "2026-11-26T16:00" }
+            }
+        },
+        "folders": {
+            "model": "folder",
+            "records": {
+                "src": { "id": "src", "label": "src", "hasChildren": true },
+                "components": { "id": "components", "label": "components", "parentId": "src", "hasChildren": true },
+                "button": { "id": "button", "label": "button.ts", "parentId": "components" },
+                "table": { "id": "table", "label": "table.ts", "parentId": "components" },
+                "app": { "id": "app", "label": "app.ts", "parentId": "src" },
+                "docs": { "id": "docs", "label": "docs", "hasChildren": true },
+                "readme": { "id": "readme", "label": "README.md", "parentId": "docs" }
+            }
+        },
+        "messages": {
+            "model": "message",
+            "records": {
+                "c1": { "id": "c1", "author": "Grace Hopper", "text": "Did the new **table** make it into the build?", "time": "09:12" },
+                "c2": { "id": "c2", "author": "Ada Lovelace", "text": "It did. Sorting and selection work, and the header stays put while you scroll.", "time": "09:14" },
+                "c3": { "id": "c3", "author": "Grace Hopper", "text": "Lovely. I will try it on the sales data this afternoon.", "time": "09:15" },
+                "c4": { "id": "c4", "author": "Ada Lovelace", "text": "Tell me how it goes!", "time": "09:16" }
+            }
+        },
+        "markers": {
+            "model": "marker",
+            "records": {
+                "s1": { "id": "s1", "x": 24, "y": 18, "r": 1.6, "fill": "#fff7d6" },
+                "s2": { "id": "s2", "x": 58, "y": 30, "r": 1.2, "fill": "#ffffff" },
+                "s3": { "id": "s3", "x": 92, "y": 12, "r": 2, "fill": "#fff7d6" },
+                "s4": { "id": "s4", "x": 140, "y": 26, "r": 1.3, "fill": "#ffffff" },
+                "s5": { "id": "s5", "x": 176, "y": 14, "r": 1.7, "fill": "#fff7d6" },
+                "s6": { "id": "s6", "x": 214, "y": 34, "r": 1.1, "fill": "#ffffff" },
+                "s7": { "id": "s7", "x": 262, "y": 20, "r": 1.5, "fill": "#fff7d6" }
+            }
+        },
+        "bars": {
+            "model": "bar",
+            "records": {
+                "b1": { "id": "b1", "at": [-1.2, 0.3, -1.6], "size": [1, 0.6, 1], "paint": { "color": "#4f7cff" } },
+                "b2": { "id": "b2", "at": [-0.4, 0.5, -1.6], "size": [1, 1, 1], "paint": { "color": "#22b3a6" } },
+                "b3": { "id": "b3", "at": [0.4, 0.7, -1.6], "size": [1, 1.4, 1], "paint": { "color": "#f2a93b" } },
+                "b4": { "id": "b4", "at": [1.2, 0.9, -1.6], "size": [1, 1.8, 1], "paint": { "color": "#e2556f" } }
+            }
+        }
+    }
+}

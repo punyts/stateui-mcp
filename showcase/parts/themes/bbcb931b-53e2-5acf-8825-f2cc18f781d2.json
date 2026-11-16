@@ -1,0 +1,87 @@
+{
+  "id": "bbcb931b-53e2-5acf-8825-f2cc18f781d2",
+  "kind": "themes",
+  "name": "showcase-professional",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "tokens": {
+      "text": {
+        "display": {
+          "size": "1.875rem",
+          "family": "{font.family.sans}"
+        },
+        "title": {
+          "size": "1.25rem",
+          "family": "{font.family.sans}"
+        },
+        "heading": {
+          "size": "1rem",
+          "family": "{font.family.sans}"
+        },
+        "body": {
+          "size": "0.875rem",
+          "family": "{font.family.sans}"
+        },
+        "label": {
+          "size": "0.75rem",
+          "family": "{font.family.sans}"
+        },
+        "caption": {
+          "size": "0.625rem",
+          "family": "{font.family.sans}"
+        }
+      },
+      "radius": {
+        "sm": "2px",
+        "md": "3px",
+        "lg": "6px"
+      },
+      "density": {
+        "factor": "0.75"
+      },
+      "motion": {
+        "duration": {
+          "fast": "80ms",
+          "base": "150ms",
+          "slow": "250ms"
+        }
+      }
+    },
+    "overlays": {
+      "light": {
+        "kind": "mode",
+        "tokens": {
+          "color": {
+            "accent": {
+              "base": "{palette.blue.700}",
+              "on": "{palette.white}"
+            },
+            "surface": {
+              "base": "{palette.neutral.50}",
+              "raised": "{palette.white}"
+            },
+            "text": {
+              "base": "{palette.neutral.900}"
+            }
+          }
+        }
+      },
+      "dark": {
+        "kind": "mode",
+        "tokens": {
+          "color": {
+            "accent": {
+              "base": "{palette.blue.300}",
+              "on": "{palette.neutral.950}"
+            },
+            "text": {
+              "base": "{palette.neutral.50}"
+            }
+          }
+        }
+      }
+    }
+  }
+}

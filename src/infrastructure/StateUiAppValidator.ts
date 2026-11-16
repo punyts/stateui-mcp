@@ -1,35 +1,41 @@
 import {
+    assembleApp,
     buildAppOverlay,
-    extractBaseOverlay,
+    entryShape,
     extractLinks,
-    findUntranslated,
     libraryFromCatalog,
     resolveNode,
-    validateDocument,
+    screenPath,
+    themeTokenLookup,
+    validateAppLocale,
     validateNode
 } from '@punyts/stateui-app/core';
 import type {
+    AppBlueprint,
     CatalogSource,
     ComponentLibrary,
     ComponentOverlays,
     DocumentComposed,
     JsonObject as LibraryJsonObject,
-    Node
+    Node,
+    PartSource
 } from '@punyts/stateui-app/core';
-import type { PropertyCheck, UiAppValidator } from '../application/ports/UiAppValidator.js';
+import type { ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
 import { checkDocumentLimits } from '../domain/limits.js';
+import type { PartKind } from '../domain/partName.js';
 import type { UiDocument } from '../domain/UiApp.js';
+import type { UiPartBodies } from '../domain/UiPart.js';
 import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
-import { nearestNames } from '../domain/nearestNames.js';
+import { themeContrast } from './contrast.js';
+import { assembledErrors, partErrors } from './partChecks.js';
 import { loadComponentOverlay } from './stateUiLibrary.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 
 const UNKNOWN_COMPONENT = 'SUI-NODE-UNKNOWN';
-const NO_COMPONENT = '(none)';
 
 /** The resolved application without linked properties, the paths of those properties and where composed names were expanded */
 interface AssembledApp {
@@ -50,11 +56,12 @@ function composedOf(document: UiDocument): Record<string, Node> {
     return entries;
 }
 
-/** Removes the properties at the linked paths: a linked property is data, not content */
-function withoutLinked(tree: JsonObject, linkedPaths: readonly string[]): JsonObject {
+/** Removes the properties at the linked paths: a linked property is data, not content. `root` is the tree's state path */
+function withoutLinked(tree: JsonObject, linkedPaths: readonly string[], root = '$.app'): JsonObject {
     const copy = structuredClone(tree) as Record<string, JsonValue>;
+    const depth = root.split('.').length;
     for (const path of linkedPaths) {
-        const segments = path.split('.').slice(2);
+        const segments = path.split('.').slice(depth);
         const last = segments.pop();
         let holder: unknown = copy;
         for (const segment of segments) {
@@ -68,13 +75,16 @@ function withoutLinked(tree: JsonObject, linkedPaths: readonly string[]): JsonOb
 /**
  * `UiAppValidator` over `validateDocument` of `@punyts/stateui-app/core`. The library's pure part needs no DOM and
  * no worker. A document over the size or node limit is rejected before validation. `icon`-typed properties are
- * checked against `isIconName`. The library also checks `<-` targets: `$.data` paths that exist, `$row` only inside
+ * checked against `isIconName`, and a `{token}` colour of a shape against the theme's token names (`themeTokenLookup`,
+ * `SUI-STATE-TOKEN`). The library also checks `<-` targets: `$.data` paths that exist, `$row` only inside
  * a row template, and node references only to `exposed` properties. A document that is otherwise valid also gets
  * a `SUI-LOCALE-MISSING` warning for each content path that a language in its `locales` does not translate; the
  * component overlays come from the files the library ships
  */
 export class StateUiAppValidator implements UiAppValidator {
     private readonly library: ComponentLibrary;
+    /** The token names of the default theme and the library's component tokens, for `{token}` colours of shapes */
+    private readonly hasToken: (name: string) => boolean;
     private readonly overlaysByCode = new Map<string, ComponentOverlays>();
 
     constructor(
@@ -83,17 +93,7 @@ export class StateUiAppValidator implements UiAppValidator {
     ) {
         // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
         this.library = libraryFromCatalog(catalog as unknown as CatalogSource);
-    }
-
-    validate(document: UiDocument): readonly UiBuildError[] {
-        const limitErrors = checkDocumentLimits(document);
-        if (limitErrors.length > 0) return limitErrors;
-
-        const { errors } = validateDocument(document, this.library, { isIconName: this.isIconName });
-        const known = [...Object.keys(this.library), ...Object.keys(composedOf(document))];
-        const reported = errors.map((error) => withNearestNames(error, known));
-        if (reported.some(isBlockingError)) return reported;
-        return [...reported, ...this.untranslated(document)];
+        this.hasToken = themeTokenLookup(this.library);
     }
 
     resolveNode(document: UiDocument, path: readonly string[]): JsonObject | undefined {
@@ -108,6 +108,36 @@ export class StateUiAppValidator implements UiAppValidator {
         return unknown ? undefined : (this.withoutRuntime(result.node as unknown as JsonValue) as JsonObject);
     }
 
+    validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
+        const errors = assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
+        if (errors.some(isBlockingError)) return errors;
+
+        const document = this.assembleApp(blueprint, parts);
+        const own = { kind: 'apps', name } as UiPartError['part'];
+        const limits = checkDocumentLimits(document).map((error) => ({ ...error, part: own }));
+        if (limits.length > 0) return [...errors, ...limits];
+        return [...errors, ...this.untranslated(document, own)];
+    }
+
+    assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument {
+        return JSON.parse(JSON.stringify(assembleApp(blueprint, parts).document)) as UiDocument;
+    }
+
+    validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
+        return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
+    }
+
+    /** `SUI-LOCALE-MISSING` warnings (and the errors of an overlay) for each language the app or a screen of the assembled app declares in `locales` */
+    private untranslated(document: UiDocument, part: UiPartError['part']): UiPartError[] {
+        const declared = (owner: unknown): string[] => (isJsonObject(owner) && isJsonObject(owner['locales']) ? Object.keys(owner['locales']) : []);
+        const screens = isJsonObject(document['screens']) ? document['screens'] : {};
+        const found = [
+            ...declared(document).flatMap((code) => this.validateLocale(document, code)),
+            ...Object.keys(screens).flatMap((screen) => declared(screens[screen]).flatMap((code) => this.validateLocale(document, code, screen)))
+        ];
+        return found.map((error) => ({ ...error, part }));
+    }
+
     /** Controllers own runtime properties (`current`, `status`, `slots`); a read of the resolved node leaves them out */
     private withoutRuntime(value: JsonValue): JsonValue {
         if (Array.isArray(value)) return (value as readonly JsonValue[]).map((item) => this.withoutRuntime(item));
@@ -115,12 +145,40 @@ export class StateUiAppValidator implements UiAppValidator {
         const component = value['component'];
         const entry =
             typeof component === 'string' && Object.hasOwn(this.library, component) ? this.library[component] : undefined;
-        const properties = entry?.tier === 'root' ? entry.shape.properties : undefined;
+        const properties = entryShape(entry)?.properties;
         const kept = Object.entries(value).filter(([key]) => {
             const declared = properties !== undefined && Object.hasOwn(properties, key) ? properties[key] : undefined;
             return declared?.runtime !== true;
         });
         return Object.fromEntries(kept.map(([key, item]): [string, JsonValue] => [key, this.withoutRuntime(item)]));
+    }
+
+    validateLocale(document: UiDocument, code: string, screen?: string): readonly UiBuildError[] {
+        const screens = document['screens'];
+        const entry = screen === undefined || !isJsonObject(screens) || !Object.hasOwn(screens, screen) ? undefined : screens[screen];
+        if (screen !== undefined && !isJsonObject(entry)) return [];
+        const owner = screen === undefined ? document : (entry as JsonObject);
+        const node = screen === undefined ? document['app'] : owner['root'];
+        if (!isJsonObject(node) || typeof node['component'] !== 'string') return [];
+        const path = screen === undefined ? '$.app' : screenPath(screen);
+        const composed = composedOf(document) as DocumentComposed;
+        const resolved = resolveNode(node as unknown as Node, this.library, composed, { path });
+        if (resolved.errors.length > 0) return [];
+        const extracted = extractLinks(resolved.node, { library: this.library, instances: resolved.instances, path });
+        const tree = withoutLinked(extracted.tree as unknown as JsonObject, extracted.linkedPaths, path);
+        const locales = owner['locales'];
+        const own = isJsonObject(locales) && Object.hasOwn(locales, code) && isJsonObject(locales[code]) ? locales[code] : {};
+        return validateAppLocale(code, tree as unknown as LibraryJsonObject, this.componentOverlays(code), own as unknown as LibraryJsonObject, {
+            library: this.library,
+            composed,
+            instances: resolved.instances,
+            linkedPaths: extracted.linkedPaths,
+            path
+        });
+    }
+
+    themeContrast(theme: UiPartBodies['themes']): readonly ContrastPair[] {
+        return themeContrast(theme);
     }
 
     localeOverlay(document: UiDocument, code: string): JsonObject | undefined {
@@ -130,10 +188,11 @@ export class StateUiAppValidator implements UiAppValidator {
         return Object.keys(overlay).length === 0 ? undefined : overlay;
     }
 
-    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string): PropertyCheck {
+    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string, ownIcons: ReadonlySet<string> = new Set()): PropertyCheck {
         const entry = Object.hasOwn(this.library, component) ? this.library[component] : undefined;
-        if (entry?.tier !== 'root') return { kind: 'unknown-component' };
-        const shape = entry.shape;
+        // A root or a shape component (graphics) holds its own properties; a composed one has none until expanded
+        const shape = entryShape(entry);
+        if (shape === undefined) return { kind: 'unknown-component' };
         const declared = Object.hasOwn(shape.properties, property) ? shape.properties[property] : undefined;
         if (declared === undefined) return { kind: 'unknown-property' };
         if (declared.exposed) return { kind: 'exposed' };
@@ -141,7 +200,7 @@ export class StateUiAppValidator implements UiAppValidator {
 
         const node = { component, [property]: value } as unknown as Node;
         const prefix = `${nodeStatePath}.${property}`;
-        const errors = validateNode(shape, node, nodeStatePath, { isIconName: this.isIconName }).filter(
+        const errors = validateNode(shape, node, nodeStatePath, { isIconName: (name) => ownIcons.has(name) || this.isIconName(name) }).filter(
             (error) => error.statePath === prefix || error.statePath?.startsWith(`${prefix}.`) === true
         );
         if (errors.length > 0) return { kind: 'invalid', errors };
@@ -194,24 +253,4 @@ export class StateUiAppValidator implements UiAppValidator {
             }
         ) as unknown as JsonObject;
     }
-
-    /** `SUI-LOCALE-MISSING` warnings for each language the document declares in `locales` */
-    private untranslated(document: UiDocument): UiBuildError[] {
-        const locales = document['locales'];
-        if (!isJsonObject(locales)) return [];
-        const assembled = this.assemble(document);
-        if (assembled === undefined) return [];
-        const base = extractBaseOverlay(assembled.tree as unknown as LibraryJsonObject, assembled.linkedPaths);
-        return Object.keys(locales).flatMap((code) =>
-            findUntranslated(code, base, this.overlayOf(document, code, assembled) as unknown as LibraryJsonObject)
-        );
-    }
-}
-
-/** An unknown component name gets the nearest known names appended, so a typo is a one-step fix */
-function withNearestNames(error: UiBuildError, known: readonly string[]): UiBuildError {
-    if (error.code !== UNKNOWN_COMPONENT || error.component === undefined || error.component === NO_COMPONENT) return error;
-    const nearest = nearestNames(error.component, known);
-    if (nearest.length === 0) return error;
-    return { ...error, message: `${error.message}. Nearest names: ${nearest.join(', ')}` };
 }

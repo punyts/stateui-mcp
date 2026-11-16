@@ -1,0 +1,49 @@
+{
+  "id": "2f1d289a-24e3-5690-adac-29894c3b708d",
+  "kind": "data",
+  "name": "showcase-folders",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-folder",
+    "records": {
+      "src": {
+        "id": "src",
+        "label": "src",
+        "hasChildren": true
+      },
+      "components": {
+        "id": "components",
+        "label": "components",
+        "parentId": "src",
+        "hasChildren": true
+      },
+      "button": {
+        "id": "button",
+        "label": "button.ts",
+        "parentId": "components"
+      },
+      "table": {
+        "id": "table",
+        "label": "table.ts",
+        "parentId": "components"
+      },
+      "app": {
+        "id": "app",
+        "label": "app.ts",
+        "parentId": "src"
+      },
+      "docs": {
+        "id": "docs",
+        "label": "docs",
+        "hasChildren": true
+      },
+      "readme": {
+        "id": "readme",
+        "label": "README.md",
+        "parentId": "docs"
+      }
+    }
+  }
+}

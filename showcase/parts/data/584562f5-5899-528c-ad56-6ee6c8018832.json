@@ -1,0 +1,37 @@
+{
+  "id": "584562f5-5899-528c-ad56-6ee6c8018832",
+  "kind": "data",
+  "name": "showcase-messages",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "showcase-message",
+    "records": {
+      "c1": {
+        "id": "c1",
+        "author": "Grace Hopper",
+        "text": "Did the new **table** make it into the build?",
+        "time": "09:12"
+      },
+      "c2": {
+        "id": "c2",
+        "author": "Ada Lovelace",
+        "text": "It did. Sorting and selection work, and the header stays put while you scroll.",
+        "time": "09:14"
+      },
+      "c3": {
+        "id": "c3",
+        "author": "Grace Hopper",
+        "text": "Lovely. I will try it on the sales data this afternoon.",
+        "time": "09:15"
+      },
+      "c4": {
+        "id": "c4",
+        "author": "Ada Lovelace",
+        "text": "Tell me how it goes!",
+        "time": "09:16"
+      }
+    }
+  }
+}

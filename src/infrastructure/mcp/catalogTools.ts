@@ -1,22 +1,32 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { DEFAULT_ICON_LIST_LIMIT, MAX_ICON_LIST_LIMIT } from '../../application/use-cases/ListIcons.js';
+import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT } from '../StateUiComponentCatalog.js';
 import { READ_ONLY, defineInput, fail, succeed } from './toolKit.js';
 import type { UiToolDefinition } from './toolKit.js';
 
-const COMPONENTS_LIST = defineInput({
-    query: { type: 'string', description: 'Words that must each appear in the component name or summary' },
-    tier: { type: 'string', enum: ['root', 'composed'], description: 'root: components that draw themselves; composed: ready-made trees of other components' }
+const COMPONENTS_SEARCH = defineInput({
+    need: { type: 'string', required: true, allowEmpty: true, description: 'What the component is for, in plain words, such as "pick a date range" or "show totals by month"' },
+    category: { type: 'string', description: 'Only components of this category (the index in the server instructions lists them)' },
+    tier: { type: 'string', description: 'Only components of this tier: root (draws itself), composed (a ready-made tree of other components) or shape (a mark a chart or diagram draws, such as a bar or a node)' },
+    limit: { type: 'integer', minimum: 1, description: `How many results (default ${DEFAULT_SEARCH_LIMIT}, at most ${MAX_SEARCH_LIMIT})` }
+});
+
+const PATTERNS_SEARCH = defineInput({
+    need: { type: 'string', required: true, description: 'What the screen is for, in plain words, such as "online store product page" or "sign in"' },
+    kind: { type: 'string', description: 'Only patterns of this kind: screen, the one kind' },
+    limit: { type: 'integer', minimum: 1, description: `How many results (default ${DEFAULT_SEARCH_LIMIT}, at most ${MAX_SEARCH_LIMIT})` }
 });
 
 const COMPONENT_GET = defineInput({
-    name: { type: 'string', required: true, description: 'The component name from ui_components_list, such as "button"' }
+    name: { type: 'string', required: true, description: 'The component name from ui_components_search, such as "button"' }
 });
 
 const ICONS_LIST = defineInput({
     query: { type: 'string', description: 'Words that must each match an icon name, alias or tag' },
     category: { type: 'string', description: 'Only icons of this category' },
     filled: { type: 'boolean', description: 'true: only icons that have a filled variant' },
-    limit: { type: 'integer', minimum: 1, maximum: MAX_ICON_LIST_LIMIT, description: `How many icons to return (default ${DEFAULT_ICON_LIST_LIMIT})` }
+    limit: { type: 'integer', minimum: 1, maximum: MAX_ICON_LIST_LIMIT, description: `How many icons to return (default ${DEFAULT_ICON_LIST_LIMIT})` },
+    app: { type: 'string', description: 'An app name from ui_list (kind "apps"): its own icons (ui_icons_write) are listed first, with source "app" and category "app"' }
 });
 
 const TOKENS_LIST = defineInput({
@@ -27,29 +37,53 @@ const TOKENS_LIST = defineInput({
 
 /** The catalog tools: discover the components, icons and theme tokens an application can use */
 export function createCatalogTools(
-    useCases: Pick<UiBuilderUseCases, 'listComponents' | 'getComponent' | 'listIcons' | 'listTokens'>
+    useCases: Pick<UiBuilderUseCases, 'searchComponents' | 'searchPatterns' | 'getComponent' | 'listIcons' | 'listTokens'>
 ): readonly UiToolDefinition[] {
     return [
         {
-            name: 'ui_components_list',
+            name: 'ui_components_search',
             description:
-                'List the components an application can use, one line each: name, tier, size and summary. Filter with query words or tier. Call ui_component_get for the full shape of one component.',
-            inputSchema: COMPONENTS_LIST.schema,
+                'Find the components for a need, described in plain words ("pick a date range", "step through checkout"), library and owner (ui_composed_write) components, best first: name, category, tier, source (library or owner), summary, the purpose phrases that matched and an example node. Search once per part of your plan; ui_component_get gives the full shape of the one you choose. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing returns the category index and the components of the nearest category. On a server with embeddings, byMeaning: true marks a component found by what the need means rather than by its words.',
+            inputSchema: COMPONENTS_SEARCH.schema,
             annotations: READ_ONLY,
-            run: (args) => {
-                const parsed = COMPONENTS_LIST.parse(args);
+            run: async (args) => {
+                const parsed = COMPONENTS_SEARCH.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
-                const components = useCases.listComponents.execute({
-                    ...(parsed.value.query !== undefined && { query: parsed.value.query }),
-                    ...(parsed.value.tier !== undefined && { tier: parsed.value.tier })
+                const { need, category, tier, limit } = parsed.value;
+                const outcome = await useCases.searchComponents.execute({
+                    need,
+                    ...(category !== undefined && { category }),
+                    ...(tier !== undefined && { tier }),
+                    ...(limit !== undefined && { limit })
                 });
-                return succeed({ count: components.length, components });
+                if (outcome.kind === 'invalid-argument') {
+                    return fail('invalid-argument', `Unknown ${outcome.argument}; use one of: ${outcome.allowed.join(', ')}`, { argument: outcome.argument, allowed: outcome.allowed });
+                }
+                return succeed(outcome.result);
+            }
+        },
+        {
+            name: 'ui_patterns_search',
+            description:
+                'Find a ready screen for a need, described in plain words ("online store product page", "sign in"), library and owner (ui_pattern_write) patterns, best first: name, kind, source (library or owner), summary, the purpose phrases that matched, its slots (where your content goes), its params (a title and the dataset paths, with defaults) and the components it uses. Start a screen from the one that fits (ui_app_create home or ui_screen_create pattern), then fill its slots. Frame screens such as side-navigation, top-navigation and marketing bring a header, a menu, a content slot and a footer. The result is never empty: weak: true means nothing fitted well, and a need that matches nothing lists the patterns. On a server with embeddings, byMeaning: true marks a pattern found by what the need means rather than by its words.',
+            inputSchema: PATTERNS_SEARCH.schema,
+            annotations: READ_ONLY,
+            run: async (args) => {
+                const parsed = PATTERNS_SEARCH.parse(args);
+                if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
+                const { need, kind, limit } = parsed.value;
+                if (need.trim() === '') return fail('invalid-argument', 'need must say what the screen is for', { argument: 'need' });
+                const outcome = await useCases.searchPatterns.execute({ need, ...(kind !== undefined && { kind }), ...(limit !== undefined && { limit }) });
+                if (outcome.kind === 'invalid-argument') {
+                    return fail('invalid-argument', `Unknown ${outcome.argument}; use one of: ${outcome.allowed.join(', ')}`, { argument: outcome.argument, allowed: outcome.allowed });
+                }
+                return succeed(outcome.result);
             }
         },
         {
             name: 'ui_component_get',
             description:
-                'Get the full catalog entry of one component: shape (properties and defaults), slots, events, commands, an example node and the languages it ships. An unknown name returns the nearest names.',
+                'Get what you need to use one component: its properties (type, and default, allowed values, validators and required only where they apply; runtime: true marks a value the component sets while the app runs, kind: "content" a translatable text), shared and layout settings, slots, events, commands, tokens (the component tokens its look reads, with type and default, such as image.fill; set them in a node "theme" to change that node and its subtree), an example node and the languages it ships. A composed component gives its tree and the paths it exposes instead of properties. An unknown name returns the nearest names.',
             inputSchema: COMPONENT_GET.schema,
             annotations: READ_ONLY,
             run: (args) => {
@@ -63,19 +97,24 @@ export function createCatalogTools(
         {
             name: 'ui_icons_list',
             description:
-                'Search the icon set by words, tag or category. Returns icon names with category, tags and whether a filled variant exists, best matches first, and how many more matched. Icon names in an application must come from this list.',
+                "Search the icon set by words, tag or category. Returns icon names with category, tags, whether a filled variant exists and source (set, or app for an app's own icon), best matches first, and how many more matched. Given app, the app's own icons (ui_icons_write) come first and win over a set icon of the same name. Icon names in an application must come from this list.",
             inputSchema: ICONS_LIST.schema,
             annotations: READ_ONLY,
-            run: (args) => {
+            run: async (args) => {
                 const parsed = ICONS_LIST.parse(args);
                 if (!parsed.ok) return fail('invalid-argument', parsed.message, { argument: parsed.argument });
-                const result = useCases.listIcons.execute({
+                const outcome = await useCases.listIcons.execute({
                     ...(parsed.value.query !== undefined && { query: parsed.value.query }),
                     ...(parsed.value.category !== undefined && { category: parsed.value.category }),
                     ...(parsed.value.filled !== undefined && { filled: parsed.value.filled }),
-                    ...(parsed.value.limit !== undefined && { limit: parsed.value.limit })
+                    ...(parsed.value.limit !== undefined && { limit: parsed.value.limit }),
+                    ...(parsed.value.app !== undefined && { app: parsed.value.app })
                 });
-                return succeed(result);
+                if (outcome.kind === 'app-not-found') {
+                    const near = outcome.nearest.length > 0 ? `; nearest: ${outcome.nearest.join(', ')}` : '; ui_list lists the apps';
+                    return fail('not-found', `No app named "${parsed.value.app ?? ''}"${near}`, { argument: 'app', nearest: outcome.nearest });
+                }
+                return succeed(outcome.result);
             }
         },
         {

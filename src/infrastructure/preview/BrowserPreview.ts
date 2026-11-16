@@ -2,6 +2,9 @@ import type { Browser, ElementHandle, Frame, Page } from 'playwright';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
 import type { PreviewHub, UiEvent } from './PreviewHub.js';
+import { DRAG_OFFSET_FORM, dragTargetOf, formatDragOffset } from './dragTarget.js';
+import type { DragOffset } from './dragTarget.js';
+import { DRAGGABLE_ATTRIBUTE, INTERACTIVE_SHAPE_SELECTOR, isAtOrBelow, notDraggableError, shapeActionError, shapeSelector } from './shapeTargets.js';
 
 /** Chromium could not be started: not installed, or the sandbox refused. The message says what to run */
 export class BrowserUnavailableError extends Error {
@@ -21,21 +24,27 @@ export class InteractionError extends Error {
     }
 }
 
-export const INTERACT_ACTIONS = ['click', 'fill', 'press', 'hover', 'select'] as const;
+export const INTERACT_ACTIONS = ['click', 'fill', 'press', 'hover', 'select', 'choose', 'focus', 'key', 'drag'] as const;
+
+/** The actions that need no path: `key` presses on whatever has focus */
+export const PATHLESS_ACTIONS: readonly InteractAction[] = ['key'];
 export type InteractAction = (typeof INTERACT_ACTIONS)[number];
 
 export interface InteractStep {
     readonly action: InteractAction;
-    /** The state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional) */
-    readonly path: string;
-    /** The text for `fill`, the key for `press` (`Enter`), the option value or label for `select` */
+    /** The state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional); `key` takes none */
+    readonly path?: string;
+    /**
+     * The text for `fill`, the key for `press` and `key` (`Enter`, `Space`), the option value or label for `select`
+     * and `choose`, the state path of the drop target for `drag` or an offset `+dx,+dy` in page pixels (`dragTarget.ts`)
+     */
     readonly value?: string;
 }
 
 export interface InteractStepResult {
     readonly index: number;
     readonly action: InteractAction;
-    readonly path: string;
+    readonly path?: string;
     readonly ok: boolean;
     readonly error?: string;
 }
@@ -45,6 +54,8 @@ export interface InteractResult {
     readonly errors: readonly UiBuildError[];
     readonly events: readonly UiEvent[];
     readonly cursor: number;
+    /** The drawings and scenes (by state path) still marked `data-render="pending"` when the wait for them ran out */
+    readonly pending?: readonly string[];
 }
 
 export interface ScreenshotOptions {
@@ -53,6 +64,8 @@ export interface ScreenshotOptions {
     readonly height?: number;
     /** A `mode` overlay name from `ui_tokens_list`, such as `dark` */
     readonly mode?: string;
+    /** Grow the viewport to the height of the content, up to `MAX_FULL_PAGE_HEIGHT`; page captures only */
+    readonly fullPage?: boolean;
 }
 
 export interface ScreenshotResult {
@@ -60,15 +73,36 @@ export interface ScreenshotResult {
     readonly width: number;
     readonly height: number;
     readonly target: string;
+    /** The drawings and scenes (by state path) still marked `data-render="pending"` when the wait for them ran out; the capture was taken anyway */
+    readonly pending?: readonly string[];
 }
 
 export interface PreviewOpenResult {
     readonly rendered: boolean;
 }
 
+/** A screen of an app with screens, and its params, that `open` shows instead of the one the instance is on */
+export interface PreviewScreen {
+    readonly screen: string;
+    readonly params?: Readonly<Record<string, unknown>>;
+}
+
+/** The query of a view URL that opens a screen: `?screen=<name>&params=<json>` */
+export function screenQuery(at: PreviewScreen | undefined): string {
+    if (at === undefined) return '';
+    const query = new URLSearchParams({ screen: at.screen });
+    if (at.params !== undefined) query.set('params', JSON.stringify(at.params));
+    return `?${query.toString()}`;
+}
+
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 } as const;
 const RENDER_TIMEOUT_MS = 10_000;
 const SETTLE_MS = 300;
+/** A visible element is captured at once; this bounds the wait for one that never becomes stable */
+const ELEMENT_SHOT_TIMEOUT_MS = 5_000;
+/** The tallest viewport a full-page capture grows to, and how often it measures again while the content grows (a virtual list drawing more rows) */
+export const MAX_FULL_PAGE_HEIGHT = 16_000;
+const FULL_PAGE_PASSES = 3;
 
 /** Where the controls of a component are: the first native control in its shadow root, else the element */
 const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
@@ -76,8 +110,17 @@ const CONTROL_SELECTORS: Readonly<Record<InteractAction, string>> = {
     hover: 'button, [role="menuitem"], [role="button"], a',
     fill: 'input, textarea',
     press: 'input, textarea, select, button, [role="button"], [role="menuitem"], [tabindex]',
-    select: 'select'
+    select: 'select',
+    choose: 'input[type="radio"], [role="radio"], .segment, select',
+    focus: '',
+    key: '',
+    drag: ''
 };
+
+/** How often an action is tried again when its element was replaced while it ran (a tab switch re-rendering) */
+const DETACHED_RETRIES = 3;
+const DETACHED_WAIT_MS = 150;
+const DETACHED = /not attached to the DOM|Element is detached|Execution context was destroyed|JSHandle is disposed/;
 
 /** The element a root component renders: its `scope` knows the state path of its node. Declared for the type checker; the code runs in the page */
 interface ScopedElement extends HTMLElement {
@@ -85,11 +128,32 @@ interface ScopedElement extends HTMLElement {
 }
 
 /** What the tools and the live views need of the headless browser. `BrowserPreview` is the Playwright implementation */
-export type PreviewBrowser = Pick<BrowserPreview, 'open' | 'screenshot' | 'interact' | 'closePage' | 'close'>;
+export type PreviewBrowser = Pick<BrowserPreview, 'open' | 'screenshot' | 'interact' | 'rendered' | 'closePage' | 'close'>;
+
+/** A node the headless page draws: one per state path, in page order */
+export interface RenderedNode {
+    /** The state path of the node, such as `$.app.children.board.cols.k_open.body.main.slots.0` */
+    readonly path: string;
+    /** The component, from the element name: `ui-record-list` is `recordList` */
+    readonly component: string;
+    /** False when the node is drawn but has no box on screen (an inactive tab, a closed drawer) */
+    readonly visible: boolean;
+}
+
+/** What the page code reports of an element it found: a node's host, or the element or proxy of an interactive shape */
+export interface FoundNode extends RenderedNode {
+    readonly shape: boolean;
+}
+
+/**
+ * How a shape is reached: `svg` for an SVG element (clicked with a real pointer, so hit testing runs), `proxy` for the
+ * hidden button of a canvas shape (`pointer-events: none`, so clicked at element level)
+ */
+type ShapeTarget = { readonly kind: string; readonly via: 'svg' | 'proxy' };
 
 /**
  * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
- * for. A page loads the same `/apps/:appId` URL a human opens, so what it renders and reports is what a person
+ * for. A page loads the same view page a human opens, so what it renders and reports is what a person
  * sees. Tool calls on one app run one at a time
  */
 export class BrowserPreview {
@@ -100,8 +164,17 @@ export class BrowserPreview {
 
     constructor(
         private readonly hub: PreviewHub,
-        /** The origin the server listens on, such as `http://127.0.0.1:4100`. Read on each call, because the port may be chosen at listen time */
-        private readonly baseUrl: () => string
+        /**
+         * The page of an app's live view, such as `http://127.0.0.1:4100/apps/<id>` (a page its server serves) or
+         * `http://127.0.0.1:5180/?app=<id>&statenet=…` (the statenet view page). Called on each open, because the
+         * port may be chosen at listen time
+         */
+        private readonly pageUrl: (appId: string) => string,
+        /**
+         * Extra Chromium arguments, for tests (such as `--disable-3d-apis` for a browser without WebGL). The server
+         * passes none: G3.1 found that headless Chromium draws WebGL2 on SwiftShader without any (G3.10)
+         */
+        private readonly launchArgs: readonly string[] = []
     ) {}
 
     /** True when a Chromium build is installed for Playwright. It does not start one */
@@ -115,10 +188,21 @@ export class BrowserPreview {
         }
     }
 
-    /** Opens the headless page of the app, or reuses it, and waits until it has rendered `revision` */
-    async open(appId: string, revision: number): Promise<PreviewOpenResult> {
+    /**
+     * Opens the headless page of the app and waits until it has rendered `revision`. A page that is already open is
+     * loaded again, so it shows the current document and state and not what it held since the last write. An app with
+     * screens opens on the screen its instance is on (its `start` screen at first), or on `at` when given
+     */
+    async open(appId: string, revision: number, at?: PreviewScreen): Promise<PreviewOpenResult> {
         return this.lock.run(appId, async () => {
-            await this.pageFor(appId);
+            const existing = this.pages.get(appId);
+            if (existing !== undefined && !existing.isClosed()) {
+                this.hub.markStale(appId, 'headless');
+                if (at === undefined) await existing.reload({ waitUntil: 'domcontentloaded' });
+                else await existing.goto(this.viewUrl(appId, at), { waitUntil: 'domcontentloaded' });
+            } else {
+                await this.pageFor(appId, at);
+            }
             const rendered = await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             return { rendered };
         });
@@ -134,17 +218,31 @@ export class BrowserPreview {
                 if (options.mode !== undefined) {
                     this.hub.publish(appId, { type: 'theme', kind: 'mode', name: options.mode }, 'headless');
                 }
-                await this.settle(page);
+                // The resize and the mode switch both start a redraw of every drawing: wait for them, then settle
+                let pending = await this.waitSettled(page);
                 if (options.path === undefined) {
+                    if (options.fullPage === true) pending = await this.growToContent(page, viewport, pending);
                     const png = await page.screenshot({ type: 'png' });
-                    return { png, ...viewport, target: 'page' };
+                    return { png, ...viewport, target: 'page', ...pendingOf(pending) };
                 }
                 const statePath = toStatePath(options.path);
-                const handle = await this.elementAt(page, statePath);
+                const handle = await this.boxOf(await this.elementAt(page, statePath));
                 try {
-                    const png = await handle.screenshot({ type: 'png' });
+                    //Playwright waits for an element to become visible, so a hidden one (such as the body of a closed
+                    //modal) would hold the call until its timeout: refuse it at once instead
                     const box = await handle.boundingBox();
-                    return { png, width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0), target: statePath };
+                    if (box === null || box.width === 0 || box.height === 0) {
+                        throw new InteractionError(
+                            `${statePath} is rendered but not visible (hidden, closed or zero size), so it has no image. Show it first, or take a screenshot of the page`
+                        );
+                    }
+                    const png = await handle.screenshot({ type: 'png', timeout: ELEMENT_SHOT_TIMEOUT_MS }).catch((error: unknown) => {
+                        if (error instanceof Error && error.name === 'TimeoutError') {
+                            throw new InteractionError(`${statePath} did not settle for a screenshot within ${ELEMENT_SHOT_TIMEOUT_MS / 1000} s`);
+                        }
+                        throw error;
+                    });
+                    return { png, width: Math.round(box.width), height: Math.round(box.height), target: statePath, ...pendingOf(pending) };
                 } finally {
                     await handle.dispose();
                 }
@@ -154,26 +252,76 @@ export class BrowserPreview {
         });
     }
 
+    /**
+     * The nodes the headless page draws at or below `under` (a state path), in page order: the nodes of the document,
+     * the ones a component renders from a template (the rows of a list, the cards of a board), whose state paths
+     * exist only while the app runs, and the interactive shapes of drawings (`component` from `data-shape-kind`,
+     * `…rows.<recordKey>` for a repeat copy)
+     */
+    async rendered(appId: string, revision: number, under: string): Promise<RenderedNode[]> {
+        return this.lock.run(appId, async () => {
+            const page = await this.pageFor(appId);
+            await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            await this.waitDrawn(page);
+            await this.settle(page);
+            const frame = this.runtimeFrame(page);
+            const all = await frame.evaluate((shapes: string) => {
+                const found: FoundNode[] = [];
+                const hasBox = (element: Element): boolean => {
+                    if (element.getClientRects().length > 0 && (element as HTMLElement).offsetParent !== null) return true;
+                    // A host drawn with display: contents (a modal, a drawer) has its box in its shadow root
+                    const shadow = (element as HTMLElement).shadowRoot;
+                    return shadow !== null && Array.from(shadow.children).some((child) => child.getClientRects().length > 0 && (child as HTMLElement).offsetParent !== null);
+                };
+                // An SVG element has no offsetParent: a shape is visible when its box has an extent (a level line has no height)
+                const shapeHasBox = (element: Element): boolean => {
+                    const box = element.getBoundingClientRect();
+                    return element.getClientRects().length > 0 && (box.width > 0 || box.height > 0);
+                };
+                const walk = (scope: ParentNode): void => {
+                    for (const element of Array.from(scope.querySelectorAll('*')) as ScopedElement[]) {
+                        const path = element.scope?.basePath;
+                        if (element.localName.startsWith('ui-') && typeof path === 'string') {
+                            const component = element.localName.slice(3).replace(/-([a-z])/g, (_match: string, letter: string) => letter.toUpperCase());
+                            found.push({ path, component, visible: hasBox(element), shape: false });
+                        } else if (element.matches(shapes) && element.closest('defs') === null) {
+                            const component = element.getAttribute('data-shape-kind') ?? 'shape';
+                            found.push({ path: element.getAttribute('data-shape-path') ?? '', component, visible: shapeHasBox(element), shape: true });
+                        }
+                        if (element.shadowRoot) walk(element.shadowRoot);
+                    }
+                };
+                walk(document);
+                return found;
+            }, INTERACTIVE_SHAPE_SELECTOR);
+            return renderedUnder(all, under);
+        });
+    }
+
     async interact(appId: string, revision: number, steps: readonly InteractStep[]): Promise<InteractResult> {
         return this.lock.run(appId, async () => {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            await this.waitDrawn(page);
             const errorCursor = this.hub.errorCursor(appId);
             const eventCursor = this.hub.readEvents(appId, undefined).cursor;
             const results: InteractStepResult[] = [];
             for (const [index, step] of steps.entries()) {
+                const where = step.path === undefined ? {} : { path: step.path };
                 try {
-                    await this.perform(page, step);
-                    results.push({ index, action: step.action, path: step.path, ok: true });
+                    await this.performSettled(page, step);
+                    results.push({ index, action: step.action, ...where, ok: true });
                 } catch (error) {
                     const message = error instanceof Error ? error.message.split('\n')[0] ?? error.message : String(error);
-                    results.push({ index, action: step.action, path: step.path, ok: false, error: message });
+                    results.push({ index, action: step.action, ...where, ok: false, error: message });
                     break;
                 }
             }
+            // An action may change what a drawing shows (a press that moves a shape): wait for it to draw, then settle
+            const pending = await this.waitDrawn(page);
             await this.settle(page);
             const { events, cursor } = this.hub.readEvents(appId, eventCursor);
-            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor };
+            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor, ...pendingOf(pending) };
         });
     }
 
@@ -204,7 +352,7 @@ export class BrowserPreview {
             this.browser = (async () => {
                 try {
                     const { chromium } = await import('playwright');
-                    return await chromium.launch({ headless: true });
+                    return await chromium.launch({ headless: true, ...(this.launchArgs.length > 0 && { args: [...this.launchArgs] }) });
                 } catch (error) {
                     this.browser = undefined;
                     throw new BrowserUnavailableError(error instanceof Error ? (error.message.split('\n')[0] ?? 'launch failed') : 'launch failed');
@@ -214,7 +362,13 @@ export class BrowserPreview {
         return this.browser;
     }
 
-    private async pageFor(appId: string): Promise<Page> {
+    private viewUrl(appId: string, at?: PreviewScreen): string {
+        const page = this.pageUrl(appId);
+        const query = screenQuery(at);
+        return query === '' ? page : `${page}${page.includes('?') ? '&' : '?'}${query.slice(1)}`;
+    }
+
+    private async pageFor(appId: string, at?: PreviewScreen): Promise<Page> {
         const existing = this.pages.get(appId);
         if (existing !== undefined && !existing.isClosed()) return existing;
         const browser = await this.launch();
@@ -223,7 +377,7 @@ export class BrowserPreview {
         page.on('close', () => {
             if (this.pages.get(appId) === page) this.pages.delete(appId);
         });
-        await page.goto(`${this.baseUrl()}/apps/${appId}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(this.viewUrl(appId, at), { waitUntil: 'domcontentloaded' });
         return page;
     }
 
@@ -233,28 +387,95 @@ export class BrowserPreview {
         return frame;
     }
 
-    /** The element a root component rendered for the node at `statePath`, searching open shadow roots */
+    /**
+     * The element a root component rendered for the node at `statePath`, searching open shadow roots. When no `ui-*`
+     * element has that scope, the element that draws the shape at that path (`data-shape-path`): an SVG shape, or the
+     * proxy button of a canvas shape (a clip shape in `defs` is not it)
+     */
     private async elementAt(page: Page, statePath: string): Promise<ElementHandle<HTMLElement>> {
         const frame = this.runtimeFrame(page);
-        const handle = await frame.evaluateHandle((wanted: string) => {
-            const find = (root: ParentNode): HTMLElement | undefined => {
-                for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
-                    if (element.scope?.basePath === wanted && element.localName.startsWith('ui-')) return element;
-                    if (element.shadowRoot) {
-                        const inner = find(element.shadowRoot);
+        const handle = await frame.evaluateHandle(
+            ({ wanted, shape }: { wanted: string; shape: string }) => {
+                const find = (root: ParentNode): HTMLElement | undefined => {
+                    for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
+                        if (element.scope?.basePath === wanted && element.localName.startsWith('ui-')) return element;
+                        if (element.shadowRoot) {
+                            const inner = find(element.shadowRoot);
+                            if (inner) return inner;
+                        }
+                    }
+                    return undefined;
+                };
+                const findShape = (root: ParentNode): HTMLElement | undefined => {
+                    const own = Array.from(root.querySelectorAll<HTMLElement>(shape)).find((element) => element.closest('defs') === null);
+                    if (own) return own;
+                    for (const element of Array.from(root.querySelectorAll('*'))) {
+                        if (!element.shadowRoot) continue;
+                        const inner = findShape(element.shadowRoot);
                         if (inner) return inner;
                     }
-                }
-                return undefined;
-            };
-            return find(document) ?? null;
-        }, statePath);
+                    return undefined;
+                };
+                return find(document) ?? findShape(document) ?? null;
+            },
+            { wanted: statePath, shape: shapeSelector(statePath) }
+        );
         const element = handle.asElement() as ElementHandle<HTMLElement> | null;
         if (element === null) {
             await handle.dispose();
-            throw new InteractionError(`Nothing is rendered at ${statePath}. Check the path with ui_outline; a hidden or closed node has no element`);
+            throw new InteractionError(`Nothing is rendered at ${statePath}. Check the path with ui_tree; a hidden or closed node has no element`);
         }
         return element;
+    }
+
+    /**
+     * The element that draws a node: the host itself, or for a host with no box of its own (`display: contents`, such
+     * as a modal or drawer, whose dialog is in its shadow root) the first element of its shadow root that has one
+     */
+    private async boxOf(element: ElementHandle<HTMLElement>): Promise<ElementHandle<HTMLElement>> {
+        const found = await element.evaluateHandle((host: HTMLElement) => {
+            if (host.getClientRects().length > 0 || host.shadowRoot === null) return null;
+            return Array.from(host.shadowRoot.children).find((child): child is HTMLElement => child instanceof HTMLElement && child.getClientRects().length > 0) ?? null;
+        });
+        const drawn = found.asElement() as ElementHandle<HTMLElement> | null;
+        if (drawn === null) {
+            await found.dispose();
+            return element;
+        }
+        await element.dispose();
+        return drawn;
+    }
+
+    /** True when an open modal dialog that does not hold `control` covers the page, so a press cannot reach it */
+    private async behindModal(page: Page, control: ElementHandle<HTMLElement>): Promise<boolean> {
+        const frame = this.runtimeFrame(page);
+        const modals = await frame.evaluateHandle(() => {
+            const found: HTMLDialogElement[] = [];
+            const walk = (root: ParentNode): void => {
+                for (const element of Array.from(root.querySelectorAll('*'))) {
+                    if (element instanceof HTMLDialogElement && element.matches(':modal')) found.push(element);
+                    if (element.shadowRoot) walk(element.shadowRoot);
+                }
+            };
+            walk(document);
+            return found;
+        });
+        try {
+            return await control.evaluate((node: HTMLElement, open: HTMLDialogElement[]) => {
+                if (open.length === 0) return false;
+                const top = open[open.length - 1] as HTMLDialogElement;
+                // The control is inside the dialog, or it is the host that draws the dialog in its shadow root
+                for (let current: Node | null = node; current !== null; current = current.parentNode ?? (current as ShadowRoot).host ?? null) {
+                    if (current === top) return false;
+                }
+                for (let current: Node | null = top; current !== null; current = current.parentNode ?? (current as ShadowRoot).host ?? null) {
+                    if (current === node) return false;
+                }
+                return true;
+            }, modals);
+        } finally {
+            await modals.dispose();
+        }
     }
 
     private async controlOf(element: ElementHandle<HTMLElement>, action: InteractAction): Promise<ElementHandle<HTMLElement>> {
@@ -271,12 +492,226 @@ export class BrowserPreview {
         return control;
     }
 
-    private async perform(page: Page, step: InteractStep): Promise<void> {
-        const statePath = toStatePath(step.path);
+    /** Runs an action, and runs it again when the element it found was replaced meanwhile (a re-render after a tab switch) */
+    private async performSettled(page: Page, step: InteractStep): Promise<void> {
+        for (let attempt = 0; ; attempt += 1) {
+            try {
+                await this.perform(page, step);
+                return;
+            } catch (error) {
+                if (attempt >= DETACHED_RETRIES || !(error instanceof Error) || !DETACHED.test(error.message)) throw error;
+                await page.waitForTimeout(DETACHED_WAIT_MS);
+            }
+        }
+    }
+
+    /** The middle of the element that draws a node, in page coordinates */
+    private async centerOf(page: Page, statePath: string, scroll = true): Promise<{ x: number; y: number }> {
+        const handle = await this.boxOf(await this.elementAt(page, statePath));
+        try {
+            if (scroll) await handle.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+            const box = await handle.boundingBox();
+            if (box === null || box.width === 0 || box.height === 0) throw new InteractionError(`${statePath} is rendered but not visible, so it cannot be dragged or dropped on`);
+            return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        } finally {
+            await handle.dispose();
+        }
+    }
+
+    /**
+     * Drags with the mouse from the middle of one node to the middle of another, in steps, as a user does. Both ends are
+     * scrolled into view and measured before the button goes down: a board reads its column boxes when the drag starts, so
+     * scrolling during the drag would drop on the wrong column
+     */
+    private async drag(page: Page, from: string, to: string): Promise<void> {
+        await this.centerOf(page, to);
+        await this.centerOf(page, from);
+        const start = await this.centerOf(page, from, false);
+        const end = await this.centerOf(page, to, false);
+        const viewport = page.viewportSize();
+        if (viewport !== null && (end.x < 0 || end.y < 0 || end.x > viewport.width || end.y > viewport.height)) {
+            throw new InteractionError(`${from} and ${to} do not fit on the screen together, so one cannot be dragged onto the other; try a wider viewport or a nearer target`);
+        }
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(start.x + 6, start.y + 6, { steps: 3 });
+        await page.mouse.move(end.x, end.y, { steps: 12 });
+        await page.waitForTimeout(100);
+        await page.mouse.up();
+    }
+
+    /**
+     * Drags with the mouse from the middle of a node's box by an offset in page pixels, in steps, as a user does
+     * (G1.10b). A shape on canvas is pressed through its proxy's box: the proxy takes no pointer events, so the press
+     * lands on the canvas beneath it, where the drawing starts its drag
+     */
+    private async dragBy(page: Page, from: string, offset: DragOffset): Promise<void> {
+        await this.centerOf(page, from);
+        const start = await this.centerOf(page, from, false);
+        const end = { x: start.x + offset.dx, y: start.y + offset.dy };
+        const viewport = page.viewportSize();
+        if (viewport !== null && (end.x < 0 || end.y < 0 || end.x > viewport.width || end.y > viewport.height)) {
+            throw new InteractionError(`${from} dragged by ${formatDragOffset(offset)} would end off the screen, so it was not dragged; try a smaller offset or a larger viewport`);
+        }
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps: 12 });
+        await page.waitForTimeout(100);
+        await page.mouse.up();
+    }
+
+    /**
+     * Refuses the drag of a shape that is not draggable, before the mouse goes down, so its position stays as it was.
+     * An SVG shape that can be dragged carries `data-draggable`; on canvas the mouse is moved onto the proxy's box,
+     * and the canvas beneath shows the `move` cursor over a draggable shape. A node that is not a shape passes
+     */
+    private async ensureDraggable(page: Page, statePath: string): Promise<void> {
         const element = await this.elementAt(page, statePath);
+        try {
+            const shape = await this.shapeOf(element);
+            if (shape === undefined) return;
+            if (shape.via === 'svg') {
+                const draggable = await element.evaluate((node: HTMLElement, attribute: string) => node.hasAttribute(attribute), DRAGGABLE_ATTRIBUTE);
+                if (!draggable) throw new InteractionError(notDraggableError(statePath, shape.kind));
+                return;
+            }
+            await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => undefined);
+            const box = await element.boundingBox();
+            if (box === null || box.width === 0 || box.height === 0) throw new InteractionError(`${statePath} is drawn but has no box on screen, so it cannot be dragged`);
+            const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+            // From a point beside the centre, so the canvas sees a move even when the mouse was there already
+            await page.mouse.move(center.x - 1, center.y - 1);
+            await page.mouse.move(center.x, center.y);
+            const cursor = await element.evaluate((proxy: HTMLElement) => {
+                const beside = proxy.parentElement?.nextElementSibling;
+                const canvas = beside instanceof HTMLCanvasElement ? beside : (proxy.getRootNode() as ParentNode).querySelector('canvas');
+                return canvas?.style.cursor ?? '';
+            });
+            if (cursor !== 'move') throw new InteractionError(notDraggableError(statePath, shape.kind));
+        } finally {
+            await element.dispose();
+        }
+    }
+
+    /** How the element is reached when it draws a shape; undefined for the host of a node */
+    private async shapeOf(element: ElementHandle<HTMLElement>): Promise<ShapeTarget | undefined> {
+        return element.evaluate((node: HTMLElement) => {
+            const kind = node.getAttribute('data-shape-path') === null ? null : (node.getAttribute('data-shape-kind') ?? 'shape');
+            if (kind === null || node.localName.startsWith('ui-')) return undefined;
+            return { kind, via: node instanceof SVGElement ? ('svg' as const) : ('proxy' as const) };
+        });
+    }
+
+    /**
+     * Runs an action on the element of a shape. An SVG shape is clicked with a real pointer click, so the drawing's hit
+     * testing runs; the proxy button of a canvas shape has `pointer-events: none` and is clicked at element level.
+     * `hover` moves the mouse to the middle of the element's or proxy's box, `focus` focuses it, `press` and `key`
+     * focus it and press the key
+     */
+    private async performOnShape(page: Page, step: InteractStep, statePath: string, element: ElementHandle<HTMLElement>, shape: ShapeTarget): Promise<void> {
+        const refused = shapeActionError(statePath, shape.kind, step.action);
+        if (refused !== undefined) throw new InteractionError(refused);
+        if (await this.behindModal(page, element)) throw new InteractionError(behindModalMessage(statePath));
+        const timeout = 5000;
+        const focus = async (): Promise<void> => {
+            const focused = await element.evaluate((node: HTMLElement) => {
+                node.focus();
+                return node.matches(':focus');
+            });
+            if (!focused) throw new InteractionError(`${statePath} takes no focus: only an interactive shape does (interactive: true)`);
+        };
+        switch (step.action) {
+            case 'click':
+                if (shape.via === 'svg') await element.click({ timeout });
+                else await element.evaluate((node: HTMLElement) => node.click());
+                return;
+            case 'hover': {
+                await element.scrollIntoViewIfNeeded({ timeout }).catch(() => undefined);
+                const box = await element.boundingBox();
+                if (box === null || (box.width === 0 && box.height === 0)) throw new InteractionError(`${statePath} is drawn but has no box on screen, so it cannot be hovered`);
+                await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+                return;
+            }
+            case 'focus':
+                await focus();
+                return;
+            case 'press':
+            case 'key':
+                if (step.value === undefined) throw new InteractionError(`${step.action} needs a key, such as Enter or Space`);
+                await focus();
+                await page.keyboard.press(step.value);
+                return;
+            default:
+                throw new InteractionError(`${step.action} is not done on a shape`);
+        }
+    }
+
+    private async perform(page: Page, step: InteractStep): Promise<void> {
+        if (step.action === 'key' && step.path === undefined) {
+            if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
+            // The key goes to whatever has focus: a focus action, or the control an earlier action left focused
+            await page.keyboard.press(step.value);
+            return;
+        }
+        if (step.path === undefined) throw new InteractionError(`${step.action} needs a path`);
+        const statePath = toStatePath(step.path);
+        if (step.action === 'drag') {
+            if (step.value === undefined) throw new InteractionError(`drag needs a value: the state path of the drop target, or an offset ${DRAG_OFFSET_FORM} in page pixels`);
+            const target = dragTargetOf(step.value);
+            if ('error' in target) throw new InteractionError(target.error);
+            await this.ensureDraggable(page, statePath);
+            if ('offset' in target) await this.dragBy(page, statePath, target.offset);
+            else await this.drag(page, statePath, toStatePath(target.path));
+            return;
+        }
+        const element = await this.elementAt(page, statePath);
+        const shape = await this.shapeOf(element);
+        if (shape !== undefined) {
+            try {
+                await this.performOnShape(page, step, statePath, element, shape);
+            } finally {
+                await element.dispose();
+            }
+            return;
+        }
+        if (step.action === 'key') {
+            // A key with the path of a node that is not a shape goes to whatever has focus, as without a path
+            await element.dispose();
+            if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
+            await page.keyboard.press(step.value);
+            return;
+        }
+        if (step.action === 'focus') {
+            try {
+                if (await this.behindModal(page, element)) throw new InteractionError(behindModalMessage(statePath));
+                // The control the node draws (the input of a searchBox), else the node's element or its nearest
+                // focusable ancestor: a board card's slot, a list row
+                const focused = await element.evaluate((host: HTMLElement) => {
+                    const FOCUSABLE = 'input:not([type="hidden"]), textarea, select, button, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+                    const own = host.tabIndex >= 0 ? null : (host.shadowRoot ?? host).querySelector<HTMLElement>(FOCUSABLE);
+                    if (own !== null) {
+                        own.focus();
+                        return true;
+                    }
+                    let current: HTMLElement | null = host;
+                    while (current !== null && current.tabIndex < 0) {
+                        current = current.parentElement ?? ((current.getRootNode() as ShadowRoot).host as HTMLElement | undefined) ?? null;
+                    }
+                    const target = current ?? host;
+                    target.focus();
+                    return target.matches(':focus') || target.getRootNode() !== document;
+                });
+                if (!focused) throw new InteractionError(`${statePath} and its ancestors take no focus`);
+            } finally {
+                await element.dispose();
+            }
+            return;
+        }
         const control = await this.controlOf(element, step.action);
         const timeout = 5000;
         try {
+            // A modal dialog covers the page: an action on anything outside it would do nothing, so say so
+            if (await this.behindModal(page, control)) throw new InteractionError(behindModalMessage(statePath));
             switch (step.action) {
                 case 'click':
                     await control.click({ timeout });
@@ -298,6 +733,38 @@ export class BrowserPreview {
                     if (step.value === undefined) throw new InteractionError('select needs an option value or label');
                     await control.selectOption(step.value, { timeout });
                     break;
+                case 'choose': {
+                    if (step.value === undefined) throw new InteractionError('choose needs an option value or label');
+                    // The option whose value or label is the value: a radio, a segment or an option of a native select
+                    const option = await element.evaluateHandle((host: HTMLElement, wanted: string) => {
+                        const root: ParentNode = host.shadowRoot ?? host;
+                        const choices = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"], .segment, select option'));
+                        const valueOf = (choice: HTMLElement): string =>
+                            choice.dataset['key'] ?? choice.dataset['value'] ?? (choice as HTMLInputElement | HTMLOptionElement).value ?? '';
+                        const labelOf = (choice: HTMLElement): string =>
+                            (choice.closest('label')?.textContent ?? choice.querySelector('.label')?.textContent ?? choice.getAttribute('aria-label') ?? choice.textContent ?? '').trim();
+                        return choices.find((choice) => valueOf(choice) === wanted) ?? choices.find((choice) => labelOf(choice) === wanted.trim()) ?? null;
+                    }, step.value);
+                    const chosen = option.asElement() as ElementHandle<HTMLElement> | null;
+                    if (chosen === null) {
+                        await option.dispose();
+                        throw new InteractionError(await this.noOptionMessage(element, statePath, step.value));
+                    }
+                    try {
+                        const listed = await chosen.evaluate((node: HTMLElement) => node instanceof HTMLOptionElement);
+                        if (listed) {
+                            const select = (await chosen.evaluateHandle((node: HTMLElement) => node.closest('select'))).asElement() as ElementHandle<HTMLSelectElement> | null;
+                            const value = await chosen.evaluate((node: HTMLElement) => (node as HTMLOptionElement).value);
+                            await select?.selectOption(value, { timeout });
+                            await select?.dispose();
+                        } else {
+                            await chosen.click({ timeout });
+                        }
+                    } finally {
+                        await chosen.dispose();
+                    }
+                    break;
+                }
             }
         } finally {
             if (control !== element) await control.dispose();
@@ -305,9 +772,123 @@ export class BrowserPreview {
         }
     }
 
+    /** Says which options a choice component has, by value and by label, when none matched */
+    private async noOptionMessage(element: ElementHandle<HTMLElement>, statePath: string, wanted: string): Promise<string> {
+        const listed = await element.evaluate((host: HTMLElement) => {
+            const root: ParentNode = host.shadowRoot ?? host;
+            const choices = Array.from(root.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"], .segment, select option'));
+            return choices.map((choice) => ({
+                value: choice.dataset['key'] ?? choice.dataset['value'] ?? (choice as HTMLInputElement | HTMLOptionElement).value ?? '',
+                label: (choice.closest('label')?.textContent ?? choice.querySelector('.label')?.textContent ?? choice.getAttribute('aria-label') ?? choice.textContent ?? '').trim()
+            }));
+        });
+        if (listed.length === 0) return `${statePath} has no options to choose from`;
+        const quote = (items: readonly string[]): string => items.map((item) => `"${item}"`).join(', ');
+        return `${statePath} has no option "${wanted}". Values: ${quote(listed.map((item) => item.value))}. Labels: ${quote(listed.map((item) => item.label))}`;
+    }
+
+    /**
+     * Grows the viewport (in place) to the height the app's content needs: the app may scroll its document or a
+     * scrolling element of a component (the main area of a page), so the height is the viewport plus the most any of
+     * them can still scroll. Measures again after each growth, since a taller view can draw more (virtual rows)
+     */
+    private async growToContent(page: Page, viewport: { width: number; height: number }, pending: readonly string[]): Promise<readonly string[]> {
+        let stillPending = pending;
+        for (let pass = 0; pass < FULL_PAGE_PASSES && viewport.height < MAX_FULL_PAGE_HEIGHT; pass += 1) {
+            const extra = await this.runtimeFrame(page).evaluate(() => {
+                let most = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                const walk = (root: ParentNode): void => {
+                    for (const element of Array.from(root.querySelectorAll('*'))) {
+                        const overflow = getComputedStyle(element).overflowY;
+                        if ((overflow === 'auto' || overflow === 'scroll') && element.clientHeight > 0) {
+                            most = Math.max(most, element.scrollHeight - element.clientHeight);
+                        }
+                        if (element.shadowRoot) walk(element.shadowRoot);
+                    }
+                };
+                walk(document);
+                return Math.ceil(most);
+            });
+            if (extra <= 1) return stillPending;
+            viewport.height = Math.min(MAX_FULL_PAGE_HEIGHT, viewport.height + extra);
+            await page.setViewportSize(viewport);
+            // A resize redraws every drawing
+            stillPending = await this.waitSettled(page);
+        }
+        return stillPending;
+    }
+
+    /**
+     * Waits until no drawing or scene in the runtime frame is marked `data-render="pending"`, up to `RENDER_TIMEOUT_MS`,
+     * and gives the state paths of those still pending then (none when all drew). Two frames pass first, so a redraw
+     * that a resize or a theme message just started has marked itself
+     */
+    private async waitDrawn(page: Page): Promise<readonly string[]> {
+        const frame = page.frames().find((candidate) => candidate !== page.mainFrame());
+        if (frame === undefined) return [];
+        const pendingPaths = (): string[] => {
+            const found: string[] = [];
+            const walk = (root: ParentNode): void => {
+                for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
+                    if (element.getAttribute('data-render') === 'pending') found.push(element.scope?.basePath ?? element.localName);
+                    if (element.shadowRoot) walk(element.shadowRoot);
+                }
+            };
+            walk(document);
+            return found;
+        };
+        try {
+            await frame.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+            await frame.waitForFunction(`(${pendingPaths.toString()})().length === 0`, undefined, { timeout: RENDER_TIMEOUT_MS, polling: 'raf' });
+            return [];
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TimeoutError') return frame.evaluate(`(${pendingPaths.toString()})()`) as Promise<string[]>;
+            // The frame was replaced meanwhile (a reload): the next wait sees the new one
+            if (error instanceof Error && DETACHED.test(error.message)) return [];
+            throw error;
+        }
+    }
+
+    /**
+     * Waits for the drawings (`waitDrawn`), lets the page settle, and looks again: a drawing can turn pending while
+     * the page settles. A scene whose WebGL context is lost is pending until it has drawn again after the restore
+     * (G3.10), and Chromium loses the contexts made early in the first page after it starts (G3.1), so a capture taken
+     * then would show the broken canvas. Gives the state paths still pending when a wait ran out
+     */
+    private async waitSettled(page: Page): Promise<readonly string[]> {
+        const pending = await this.waitDrawn(page);
+        await this.settle(page);
+        if (pending.length > 0) return pending;
+        return this.waitDrawn(page);
+    }
+
     private async settle(page: Page): Promise<void> {
         await page.waitForTimeout(SETTLE_MS);
     }
+}
+
+function behindModalMessage(statePath: string): string {
+    return `${statePath} is behind an open modal dialog: act inside the modal, or close it first`;
+}
+
+/** The `pending` field of a result: the drawings still pending, or nothing when all drew */
+function pendingOf(pending: readonly string[]): { pending?: readonly string[] } {
+    return pending.length === 0 ? {} : { pending };
+}
+
+/**
+ * The nodes and interactive shapes the page code found that are at or below `under`, in page order, each path once
+ * (the first element that draws it)
+ */
+export function renderedUnder(found: readonly FoundNode[], under: string): RenderedNode[] {
+    const seen = new Set<string>();
+    const nodes: RenderedNode[] = [];
+    for (const { path, component, visible } of found) {
+        if (seen.has(path) || !isAtOrBelow(path, under)) continue;
+        seen.add(path);
+        nodes.push({ path, component, visible });
+    }
+    return nodes;
 }
 
 /** Accepts `$.app.children.x` and `app.children.x` */

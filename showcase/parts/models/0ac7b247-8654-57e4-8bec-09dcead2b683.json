@@ -1,0 +1,27 @@
+{
+  "id": "0ac7b247-8654-57e4-8bec-09dcead2b683",
+  "kind": "models",
+  "name": "showcase-message",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "author": {
+        "type": "string",
+        "required": true
+      },
+      "text": {
+        "type": "string",
+        "required": true
+      },
+      "time": {
+        "type": "string"
+      }
+    }
+  }
+}

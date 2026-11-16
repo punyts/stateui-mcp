@@ -1,10 +1,9 @@
 /**
  * The stored expectation of the outline of `SAMPLE_FORM_AND_LIST_APP` (E6.7): the resolved document without a
- * snapshot, in the base language. `toastRegion` is the default `toasts` slot of `page`
+ * snapshot, in the base language
  */
 export const SAMPLE_FORM_AND_LIST_OUTLINE: string = [
-    'page "Customers"',
-    '  toastRegion toasts "Notifications"',
+    'panel "Customers"',
     '  panel main "Customer list"',
     '    form',
     '      textField name "Name"',

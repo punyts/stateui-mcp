@@ -1,0 +1,21 @@
+{
+    "title": "Conversation",
+    "icon": "message-circle",
+    "description": "Chat screens and message lists that stay at the newest message.",
+    "components": {
+        "messageList": {
+            "wide": true,
+            "example": { "component": "messageList", "<-records": "$.data.messages" }
+        },
+        "chatView": {
+            "wide": true,
+            "example": {
+                "component": "chatView",
+                "children": {
+                    "messages": { "<-records": "$.data.messages" },
+                    "composer": { "children": { "input": { "_placeholder": "Reply to Grace" } } }
+                }
+            }
+        }
+    }
+}

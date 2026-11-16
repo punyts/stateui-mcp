@@ -1,6 +1,14 @@
+import type { AppBlueprint, PartRef, PartSource } from '@punyts/stateui-app/core';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
+import type { PartKind } from '../../domain/partName.js';
+import type { UiPartBodies } from '../../domain/UiPart.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
+
+/** One text-on-surface pair of a theme in one mode; `unresolved` when either side is not an opaque colour */
+export type ContrastPair =
+    | { readonly mode: string; readonly text: string; readonly surface: string; readonly ratio: number; readonly passesAA: boolean }
+    | { readonly mode: string; readonly text: string; readonly surface: string; readonly ratio: 'unresolved' };
 
 /**
  * Whether a value may be written to one property of a component through `ui_state_set`. `exposed` and `runtime`
@@ -14,13 +22,13 @@ export type PropertyCheck =
     | { readonly kind: 'exposed' }
     | { readonly kind: 'invalid'; readonly errors: readonly UiBuildError[] };
 
+/** An error of an assembled app, with the part that holds its path: the app, a component, the theme, a dataset or a module */
+export interface UiPartError extends UiBuildError {
+    readonly part: PartRef;
+}
+
 /** Checks documents against the component library. Errors and warnings share one list; see `isValid` */
 export interface UiAppValidator {
-    /**
-     * Every error and warning of the document, each with its state path. Warnings include `SUI-LOCALE-MISSING`
-     * for each content path a language of the document's `locales` does not translate
-     */
-    validate(document: UiDocument): readonly UiBuildError[];
     /**
      * The node at a document path merged with its component defaults, or `undefined` when there is none.
      * Runtime properties (the shape's `runtime` flag: `current`, `status`, `slots`) are left out: controllers own them
@@ -33,7 +41,33 @@ export interface UiAppValidator {
     localeOverlay(document: UiDocument, code: string): JsonObject | undefined;
     /**
      * Checks `value` against the shape of `property` on `component` (a root component name). Errors carry state
-     * paths below `nodeStatePath`, the state path of the node
+     * paths below `nodeStatePath`, the state path of the node. An icon name is checked against the icon set, after the
+     * app's own icon names in `ownIcons`
      */
-    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string): PropertyCheck;
+    checkProperty(component: string, property: string, value: JsonValue, nodeStatePath: string, ownIcons?: ReadonlySet<string>): PropertyCheck;
+    /**
+     * Assembles an app from its blueprint and the parts it uses (`parts`: what the app reaches, loaded by the caller) and
+     * checks the result; each error names the part that holds it. `name` is the app's part name
+     */
+    validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[];
+    /**
+     * The document the runtime mounts for an app: its blueprint assembled with the parts it uses (`parts`, loaded by
+     * the caller). What assembles is returned; the errors are `validateAssembled`'s
+     */
+    assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument;
+    /**
+     * `validateAppLocale` for one language of one tree of an assembled app (from `assembleApp`): the app node with the
+     * app's `locales[code]`, or the screen `screen` with its own `locales[code]`. The overlay's errors, then a
+     * `SUI-LOCALE-MISSING` warning for each content path the language does not translate. Empty when the tree does not resolve
+     */
+    validateLocale(document: UiDocument, code: string, screen?: string): readonly UiBuildError[];
+    /** The contrast of each text token on its surface in each mode of a theme (the shipped modes and its own) */
+    themeContrast(theme: UiPartBodies['themes']): readonly ContrastPair[];
+    /**
+     * The errors and warnings of one part on its own, by the reader of its kind: an app's blueprint and the errors of
+     * the assembled app that the app itself holds, a theme's tokens and overlays, a module, a model, a dataset's shape and
+     * records against its model, a component's tree, a pattern's shape. `parts` holds what the part names (an app's
+     * parts, a component's nested components, a dataset's model)
+     */
+    validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[];
 }

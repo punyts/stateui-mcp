@@ -3,36 +3,34 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MAX_PREVIEW_ERRORS } from '../../domain/limits.js';
-import type { UiDocument } from '../../domain/UiApp.js';
-import { AppFolders } from './AppFolders.js';
+import type { UiPartBodies } from '../../domain/UiPart.js';
+import { PartFolders } from './PartFolders.js';
 import { writeFileAtomic } from './atomicFile.js';
-import { FileUiAppRepository } from './FileUiAppRepository.js';
+import { FilePartRepository } from './FilePartRepository.js';
 import { FileUiErrorLog } from './FileUiErrorLog.js';
 import { FileUiFileRepository } from './FileUiFileRepository.js';
 import { FsUiFileStore } from './FsUiFileStore.js';
 import { KeyedLock } from './KeyedLock.js';
 
 let dir: string;
-let folders: AppFolders;
+let folders: PartFolders;
 let lock: KeyedLock;
-let apps: FileUiAppRepository;
+let parts: FilePartRepository;
 
-const ORDERED: UiDocument = {
-    app: { component: 'page', children: { zeta: { component: 'text' }, a: { component: 'text' }, mm: { component: 'text' } } },
-    data: { rows: { zz: { n: 1 }, aa: { n: 2 } } }
-};
+const APP_BODY = Object.freeze({ shell: { component: 'page' }, start: 'home', screens: { home: { root: { component: 'panel' } } } }) as unknown as UiPartBodies['apps'];
 
-async function createApp(name = 'one', document: UiDocument = ORDERED): Promise<string> {
-    const created = await apps.create({ name, document });
+/** Stores an app part and returns its id, which names the side folder of its files and errors */
+async function createApp(name = 'one'): Promise<string> {
+    const created = await parts.create({ kind: 'apps', name, body: APP_BODY });
     if (created.kind !== 'created') throw new Error('not created');
-    return created.app.id;
+    return created.part.id;
 }
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-mcp-'));
-    folders = new AppFolders(dir);
+    folders = new PartFolders(dir);
     lock = new KeyedLock();
-    apps = new FileUiAppRepository(folders, lock);
+    parts = new FilePartRepository(folders, lock);
 });
 
 afterEach(async () => {
@@ -65,119 +63,10 @@ describe('writeFileAtomic', () => {
     });
 });
 
-describe('AppFolders', () => {
+describe('PartFolders', () => {
     it('should refuse an id that is not a UUID', () => {
         expect(() => folders.dir('../escape')).toThrow('UUID');
         expect(() => folders.fileBytes('11111111-1111-4111-8111-111111111111', '..')).toThrow('UUID');
-    });
-});
-
-describe('FileUiAppRepository', () => {
-    it('should keep the key order of children and keyed data maps on disk and after a read', async () => {
-        const id = await createApp();
-
-        const text = await readFile(folders.appFile(id), 'utf8');
-        const found = await apps.findById(id);
-
-        expect(text.indexOf('"zeta"')).toBeLessThan(text.indexOf('"a"'));
-        expect(Object.keys((found?.document['app'] as { children: object }).children)).toEqual(['zeta', 'a', 'mm']);
-        expect(Object.keys((found?.document['data'] as { rows: object }).rows)).toEqual(['zz', 'aa']);
-    });
-
-    it('should keep the order through a document write and a state write', async () => {
-        const id = await createApp();
-        const next: UiDocument = { app: { component: 'page', children: { y: { component: 'text' }, b: { component: 'text' } } } };
-
-        await apps.writeDocument(id, next, 1);
-        await apps.writeStateSnapshot(id, { data: { z: 1, a: 2 } }, 2);
-        const found = await apps.findById(id);
-
-        expect(Object.keys((found?.document['app'] as { children: object }).children)).toEqual(['y', 'b']);
-        expect(Object.keys(found?.stateSnapshot['data'] as object)).toEqual(['z', 'a']);
-    });
-
-    it('should start at revision 1 and raise it by one per committed write', async () => {
-        const id = await createApp();
-
-        const first = await apps.writeDocument(id, ORDERED, 1);
-        const second = await apps.writeStateSnapshot(id, { data: {} }, 2);
-
-        expect(first).toEqual({ kind: 'written', revision: 2 });
-        expect(second).toEqual({ kind: 'written', revision: 3 });
-        expect((await apps.findById(id))?.revision).toBe(3);
-    });
-
-    it('should return a conflict with the current revision for a stale write and change nothing', async () => {
-        const id = await createApp();
-        await apps.writeDocument(id, ORDERED, 1);
-
-        const stale = await apps.writeDocument(id, { app: { component: 'page' } }, 1);
-
-        expect(stale).toEqual({ kind: 'conflict', currentRevision: 2 });
-        expect((await apps.findById(id))?.document).toEqual(ORDERED);
-    });
-
-    it('should let only one of two racing writes with the same expected revision commit', async () => {
-        const id = await createApp();
-
-        const results = await Promise.all([apps.writeDocument(id, ORDERED, 1), apps.writeDocument(id, ORDERED, 1)]);
-
-        expect(results.map((result) => result.kind).sort()).toEqual(['conflict', 'written']);
-    });
-
-    it('should store a preview snapshot without raising the revision and refuse a stale one', async () => {
-        const id = await createApp();
-        await apps.writeDocument(id, ORDERED, 1);
-
-        const saved = await apps.savePreviewSnapshot(id, { data: { typed: 'x' } }, 2);
-        const stale = await apps.savePreviewSnapshot(id, { data: { typed: 'old' } }, 1);
-
-        expect(saved).toEqual({ kind: 'written', revision: 2 });
-        expect(stale).toEqual({ kind: 'conflict', currentRevision: 2 });
-        const found = await apps.findById(id);
-        expect(found?.revision).toBe(2);
-        expect(found?.stateSnapshot).toEqual({ data: { typed: 'x' } });
-    });
-
-    it('should read the higher revision when a crash left state.json ahead of app.json', async () => {
-        const id = await createApp();
-        await writeFile(folders.stateFile(id), JSON.stringify({ revision: 5, snapshot: { data: {} } }));
-
-        expect((await apps.findById(id))?.revision).toBe(5);
-        expect(await apps.writeDocument(id, ORDERED, 5)).toEqual({ kind: 'written', revision: 6 });
-    });
-
-    it('should refuse a duplicate name', async () => {
-        await createApp('same');
-
-        expect(await apps.create({ name: 'same', document: ORDERED })).toEqual({ kind: 'duplicate-name' });
-    });
-
-    it('should list the apps newest first and skip folders that are not apps', async () => {
-        const early = await createApp('early');
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        const late = await createApp('late');
-        await writeFile(join(dir, 'notes.txt'), 'x');
-
-        const list = await apps.list();
-
-        expect(list.map((app) => app.id)).toEqual([late, early]);
-    });
-
-    it('should delete only at the expected revision and remove the folder', async () => {
-        const id = await createApp();
-
-        expect(await apps.delete(id, 9)).toEqual({ kind: 'conflict', currentRevision: 1 });
-        expect(await apps.delete(id, 1)).toEqual({ kind: 'deleted' });
-
-        expect(await apps.findById(id)).toBeUndefined();
-        expect(await apps.delete(id, 1)).toEqual({ kind: 'not-found' });
-        expect(await readdir(dir)).toEqual([]);
-    });
-
-    it('should report a missing app and a malformed id as not found', async () => {
-        expect(await apps.findById('nope')).toBeUndefined();
-        expect(await apps.writeDocument('11111111-1111-4111-8111-111111111111', ORDERED, 1)).toEqual({ kind: 'not-found' });
     });
 });
 
@@ -192,6 +81,33 @@ describe('FileUiErrorLog', () => {
         expect(kept).toHaveLength(MAX_PREVIEW_ERRORS);
         expect(kept[0]?.message).toBe('e5');
         expect(kept.at(-1)?.message).toBe(`e${MAX_PREVIEW_ERRORS + 4}`);
+    });
+
+    it('should keep only the errors of the view load a view rendered from', async () => {
+        // Arrange
+        const id = await createApp();
+        const log = new FileUiErrorLog(folders, lock);
+        await log.append(id, { code: 'A', message: 'no source' });
+        await log.append(id, { code: 'B', message: 'other view' }, { viewId: 'v2', load: 5 });
+        await log.append(id, { code: 'C', message: 'first load' }, { viewId: 'v1', load: 1 });
+        await log.append(id, { code: 'D', message: 'second load' }, { viewId: 'v1', load: 2 });
+
+        // Act
+        const kept = await log.keepFrom(id, { viewId: 'v1', load: 2 });
+
+        // Assert
+        expect(kept).toBe(true);
+        expect((await log.list(id)).map((error) => error.code)).toEqual(['D']);
+    });
+
+    it('should read a log written before errors kept their source', async () => {
+        const id = await createApp();
+        await writeFileAtomic(folders.errorsFile(id), JSON.stringify([{ code: 'OLD', message: 'm' }]));
+        const log = new FileUiErrorLog(folders, lock);
+
+        expect(await log.list(id)).toEqual([{ code: 'OLD', message: 'm' }]);
+        await log.keepFrom(id, { viewId: 'v1', load: 1 });
+        expect(await log.list(id)).toEqual([]);
     });
 
     it('should not create a folder for an app that does not exist', async () => {
@@ -249,17 +165,46 @@ describe('files', () => {
         });
     });
 
-    it('should keep a file whose id is in the document and drop one that is referenced nowhere', async () => {
+    it('should list the files uploaded before a time, referenced or not', async () => {
         const id = await createApp();
         const files = new FileUiFileRepository(folders, lock);
-        const kept = '55555555-5555-4555-8555-555555555555';
-        const dropped = '66666666-6666-4666-8666-666666666666';
+        const first = '55555555-5555-4555-8555-555555555555';
+        const second = '66666666-6666-4666-8666-666666666666';
+        await files.add({ id: first, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
+        await files.add({ id: second, appId: id, name: 'd', size: 1, type: 'text/plain', sha256: 'h' });
+
+        const old = await files.findOlderThan(id, new Date(Date.now() + 60_000));
+        const none = await files.findOlderThan(id, new Date(Date.now() - 60_000));
+
+        expect(old.map((file) => file.id).sort()).toEqual([first, second]);
+        expect(none).toEqual([]);
+    });
+
+    it('should delete one file unless the check says it is referenced, and run the check under the per-app lock', async () => {
+        const id = await createApp();
+        const files = new FileUiFileRepository(folders, lock);
+        const kept = '77777777-7777-4777-8777-777777777777';
+        const released = '88888888-8888-4888-8888-888888888888';
         await files.add({ id: kept, appId: id, name: 'k', size: 1, type: 'text/plain', sha256: 'h' });
-        await files.add({ id: dropped, appId: id, name: 'd', size: 1, type: 'text/plain', sha256: 'h' });
-        await apps.writeStateSnapshot(id, { data: { file: { id: kept } } }, 1);
+        await files.add({ id: released, appId: id, name: 'r', size: 1, type: 'text/plain', sha256: 'h' });
+        let addedDuringCheck: Promise<unknown> | undefined;
+        let countSeenByCheck = -1;
 
-        const unreferenced = await files.findUnreferenced(id, new Date(Date.now() + 60_000));
+        const referenced = await files.deleteUnlessReferenced(id, kept, async () => true);
+        const deleted = await files.deleteUnlessReferenced(id, released, async () => {
+            // An add asked for while the check runs waits for the release to finish
+            addedDuringCheck = files.add({ id: '99999999-9999-4999-8999-999999999999', appId: id, name: 'n', size: 1, type: 'text/plain', sha256: 'h' });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            countSeenByCheck = (await files.usage(id)).count;
+            return false;
+        });
+        await addedDuringCheck;
+        const missing = await files.deleteUnlessReferenced(id, released, async () => {
+            throw new Error('the check must not run for a missing file');
+        });
 
-        expect(unreferenced.map((file) => file.id)).toEqual([dropped]);
+        expect([referenced, deleted, missing]).toEqual(['referenced', 'deleted', 'not-found']);
+        expect(countSeenByCheck).toBe(2);
+        expect((await files.list(id)).map((file) => file.id).sort()).toEqual([kept, '99999999-9999-4999-8999-999999999999']);
     });
 });

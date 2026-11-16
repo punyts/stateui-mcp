@@ -1,7 +1,7 @@
 {
     "name": "@punyts/stateui-mcp",
     "version": "0.1.0",
-    "description": "A standalone MCP server for building StateUI apps, with a live browser view of each app rendered and inspected with Playwright",
+    "description": "A standalone MCP server for building StateUI apps: its tools write the live state to a statenet, and a static view page (Vite locally, a CDN in production) shows each app, rendered and inspected with Playwright",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -10,6 +10,8 @@
     },
     "files": [
         "dist",
+        "view",
+        "showcase",
         "LICENSE",
         "README.md",
         "CHANGELOG.md"
@@ -18,10 +20,15 @@
         "node": ">=22"
     },
     "scripts": {
-        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.json",
+        "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.json --noEmit && node scripts/build-host.mjs",
         "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
         "test": "vitest run",
-        "start": "node dist/cli.js"
+        "showcase:build": "node scripts/buildShowcase.mjs",
+        "start": "node dist/cli.js",
+        "statenet": "statenet --data-dir ./statenet-data --allow-origin http://127.0.0.1:5180 --allow-origin http://localhost:5180",
+        "view": "vite --config view/vite.config.ts",
+        "view:build": "vite build --config view/vite.config.ts",
+        "dev": "node scripts/dev.mjs"
     },
     "keywords": [
         "stateui",
@@ -34,14 +41,34 @@
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@punyts/core": "^1.0.0",
+        "@punyts/state-sync": "^0.8.0",
         "@punyts/stateui-app": "^0.1.0",
         "@punyts/stateui-components": "^0.1.0",
         "busboy": "^1.6.0",
-        "playwright": "^1.61.1"
+        "playwright": "^1.61.1",
+        "ws": "^8.21.1"
+    },
+    "optionalDependencies": {
+        "@punyts/stateui-3d": "^0.1.0"
     },
     "devDependencies": {
+        "@punyts/statenet": "^0.1.0",
         "@types/node": "^26.1.1",
+        "@types/ws": "^8.18.1",
+        "esbuild": "^0.28.1",
         "typescript": "^5.9.3",
+        "vite": "^8.1.5",
         "vitest": "^4.1.10"
+    },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./vite": {
+            "types": "./dist/vite.d.ts",
+            "default": "./dist/vite.js"
+        },
+        "./package.json": "./package.json"
     }
 }

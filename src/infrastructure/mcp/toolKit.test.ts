@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defineInput } from './toolKit.js';
+import { defineInput, documentPath, statePath } from './toolKit.js';
 
 const INPUT = defineInput({
     value: { type: 'json', required: true, description: 'Any JSON value' },
@@ -41,5 +41,26 @@ describe('defineInput json and list fields', () => {
         expect(properties['value']).toEqual({ description: 'Any JSON value' });
         expect(properties['items']).toMatchObject({ type: 'array', maxItems: 2, items: { type: 'object', additionalProperties: false, required: ['name'] } });
         expect(required).toEqual(['value']);
+    });
+
+    it('should describe a json field with a schema by that schema, so a model sends a list and not a string', () => {
+        const names = defineInput({ names: { type: 'json', schema: { type: 'array', items: { type: 'string' } }, description: 'Names' } });
+
+        expect(names.schema.properties['names']).toEqual({ type: 'array', items: { type: 'string' }, description: 'Names' });
+    });
+});
+
+describe('documentPath and statePath', () => {
+    it('should turn a path given either way into a document path and a state path', () => {
+        // Arrange
+        const paths = Object.freeze(['$.app.children.main', 'app.children.main', '$', '']);
+
+        // Act
+        const documents = paths.map(documentPath);
+        const states = paths.map(statePath);
+
+        // Assert
+        expect(documents).toEqual(['app.children.main', 'app.children.main', '', '']);
+        expect(states).toEqual(['$.app.children.main', '$.app.children.main', '$', '$']);
     });
 });

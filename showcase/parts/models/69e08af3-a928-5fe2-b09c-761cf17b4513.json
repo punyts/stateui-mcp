@@ -1,0 +1,28 @@
+{
+  "id": "69e08af3-a928-5fe2-b09c-761cf17b4513",
+  "kind": "models",
+  "name": "showcase-sale",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "month": {
+        "type": "string",
+        "required": true
+      },
+      "revenue": {
+        "type": "number",
+        "default": 0
+      },
+      "costs": {
+        "type": "number",
+        "default": 0
+      }
+    }
+  }
+}

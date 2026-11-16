@@ -1,11 +1,11 @@
-import { readFile } from 'node:fs/promises';
-import type { AddUiFileInput, AddUiFileResult, UiFileRepository, UiFileUsage } from '../../application/ports/UiFileRepository.js';
+import type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from '../../application/ports/UiFileRepository.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_BYTES_PER_APP, MAX_FILES_PER_APP } from '../../domain/UiFile.js';
 import type { UiFile } from '../../domain/UiFile.js';
-import type { AppFolders } from './AppFolders.js';
-import { isAppId } from './AppFolders.js';
-import { isMissing, readJson, writeJsonAtomic } from './atomicFile.js';
+import type { PartFolders } from './PartFolders.js';
+import { appStored } from './appStored.js';
+import { isAppId } from './PartFolders.js';
+import { readJson, writeJsonAtomic } from './atomicFile.js';
 import type { KeyedLock } from './KeyedLock.js';
 
 /** One entry of `files.json`. Dates are ISO strings on disk */
@@ -30,26 +30,17 @@ function isFileEntry(value: unknown): value is FileEntry {
     );
 }
 
-async function readText(path: string): Promise<string> {
-    try {
-        return await readFile(path, 'utf8');
-    } catch (error) {
-        if (isMissing(error)) return '';
-        throw error;
-    }
-}
-
-/** The metadata of the files of an app, in `files.json` of the app folder. It shares the lock of the app with the app repository */
+/** The metadata of the files of an app part, in `files.json` of the app's side folder */
 export class FileUiFileRepository implements UiFileRepository {
     constructor(
-        private readonly folders: AppFolders,
+        private readonly folders: PartFolders,
         private readonly lock: KeyedLock,
         private readonly now: () => Date = () => new Date()
     ) {}
 
-    async appExists(appId: string): Promise<boolean> {
-        if (!isAppId(appId)) return false;
-        return (await readJson(this.folders.appFile(appId))) !== undefined;
+    /** True when an app part with this id is stored; its files live in the app's side folder */
+    appExists(appId: string): Promise<boolean> {
+        return appStored(this.folders, appId);
     }
 
     async usage(appId: string): Promise<UiFileUsage> {
@@ -86,12 +77,9 @@ export class FileUiFileRepository implements UiFileRepository {
         return entries.map((entry) => this.toFile(appId, entry)).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
 
-    async findUnreferenced(appId: string, olderThan: Date): Promise<readonly UiFile[]> {
+    async findOlderThan(appId: string, olderThan: Date): Promise<readonly UiFile[]> {
         const entries = (await this.readEntries(appId)).filter((entry) => new Date(entry.createdAt) < olderThan);
-        if (entries.length === 0) return [];
-        // The documents are searched as text: an id anywhere in the document or the snapshot keeps its file
-        const text = `${await readText(this.folders.appFile(appId))}${await readText(this.folders.stateFile(appId))}`;
-        return entries.filter((entry) => !text.includes(entry.id)).map((entry) => this.toFile(appId, entry));
+        return entries.map((entry) => this.toFile(appId, entry));
     }
 
     async deleteByIds(appId: string, fileIds: readonly string[]): Promise<void> {
@@ -101,6 +89,19 @@ export class FileUiFileRepository implements UiFileRepository {
                 this.folders.filesIndex(appId),
                 entries.filter((entry) => !fileIds.includes(entry.id))
             );
+        });
+    }
+
+    async deleteUnlessReferenced(appId: string, fileId: string, isReferenced: () => Promise<boolean>): Promise<ReleaseUiFileOutcome> {
+        return this.lock.run(`files:${appId}`, async (): Promise<ReleaseUiFileOutcome> => {
+            const entries = await this.readEntries(appId);
+            if (!entries.some((entry) => entry.id === fileId)) return 'not-found';
+            if (await isReferenced()) return 'referenced';
+            await writeJsonAtomic(
+                this.folders.filesIndex(appId),
+                entries.filter((entry) => entry.id !== fileId)
+            );
+            return 'deleted';
         });
     }
 

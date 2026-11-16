@@ -1,20 +1,48 @@
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
-import type { ComponentCatalog, UiAppValidator } from '../application/ports/index.js';
+import { libraryFromCatalog } from '@punyts/stateui-app/core';
+import type { CatalogSource, ComponentLibrary } from '@punyts/stateui-app/core';
+import type { ComponentCatalog, PatternCatalog, ToolCallLog, UiAppValidator, UseCaseReport } from '../application/ports/index.js';
+import { FileToolCallLog } from '../infrastructure/storage/FileToolCallLog.js';
 import { StateUiAppValidator } from '../infrastructure/StateUiAppValidator.js';
 import { StateUiComponentCatalog } from '../infrastructure/StateUiComponentCatalog.js';
+import { StateUiPatternCatalog } from '../infrastructure/StateUiPatternCatalog.js';
 import { loadCatalogFile, loadIconsFile } from '../infrastructure/stateUiLibrary.js';
 
 /** The validator and the catalog, both over the files of `@punyts/stateui-components`, read once per process */
 export interface StateUiAdapters {
     readonly validator: UiAppValidator;
     readonly catalog: ComponentCatalog;
+    /** The library's patterns and theme presets */
+    readonly patterns: PatternCatalog;
     /** The icons the runtime page ships, so an app response leaves their path data out */
     readonly coreIconNames: readonly string[];
+    /** The component library, for running app logic on the server */
+    readonly library: ComponentLibrary;
+    /** The tool-call log, when a file is configured */
+    readonly toolCallLog?: ToolCallLog;
 }
 
-export function createStateUiAdapters(): StateUiAdapters {
+export interface StateUiAdapterOptions {
+    /** The file of the tool-call log; absent: no log */
+    readonly toolLog?: string;
+    /** Where a failed log write is reported */
+    readonly report?: UseCaseReport;
+}
+
+export function createStateUiAdapters(options: StateUiAdapterOptions = {}): StateUiAdapters {
     const catalogFile = loadCatalogFile();
     const catalog = new StateUiComponentCatalog(catalogFile, loadIconsFile());
     const validator = new StateUiAppValidator(catalogFile, (name) => catalog.isIconName(name));
-    return { validator, catalog, coreIconNames: CORE_ICON_NAMES };
+    // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
+    const report = options.report ?? { info: (): void => undefined };
+    const toolCallLog = options.toolLog === undefined ? undefined : new FileToolCallLog(options.toolLog, report);
+    const library = libraryFromCatalog(catalogFile as unknown as CatalogSource);
+    return {
+        validator,
+        catalog,
+        patterns: new StateUiPatternCatalog(catalogFile, library),
+        coreIconNames: CORE_ICON_NAMES,
+        library,
+        ...(toolCallLog !== undefined && { toolCallLog })
+    };
 }
