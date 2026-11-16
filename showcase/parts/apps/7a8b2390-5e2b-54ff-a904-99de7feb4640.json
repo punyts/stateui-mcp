@@ -2906,7 +2906,7 @@
                 "card": {
                   "component": "card",
                   "_title": "card",
-                  "_subtitle": "A surface with media, header, body and footer slots; interactive raises press; loading shows skeletons",
+                  "_subtitle": "A surface with media, header, body and footer slots; interactive raises press; draggable is a drag source",
                   "children": {
                     "example": {
                       "component": "card",

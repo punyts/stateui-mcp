@@ -37,6 +37,10 @@
  * `window.stateuiHost` serves an editor laid over the page:
  * - `inspect({ at: { x, y } } | { paths })` asks the app frame about its nodes (the `inspect` message of the runtime)
  *   and resolves with its `inspected` answer, or undefined when the frame does not answer within `INSPECT_TIMEOUT_MS`.
+ * - `navigate(screen, params?)` moves the app frame to a screen, as `?screen=` does (once it is ready, if it is not yet).
+ * - `snapshot()` is a copy of what the app frame shows: the document and its icons and revision, and the synced
+ *   `data` and `route` (undefined before the server sent a document). An editor draws its other screens with it, each
+ *   a panel of its own (`mount`), and keeps their data in step from `stateui:change`.
  * - `mount(element, { document, icons?, keys? })` puts a second runtime frame in `element`, driven by the page alone: it
  *   is loaded in `standalone` mode with the document given, gets the page's language and mode (`data-locale`,
  *   `data-mode` on the body) when it is ready, takes the page's writes and commands, and raises its emits on `element`
@@ -662,6 +666,26 @@ export class LiveView {
         }
     }
 
+    /** Moves the frame to a screen: at once when the app is ready, else once it is (as `?screen=` does) */
+    navigate(screen: string, params?: Json): void {
+        if (this.ready) this.post({ type: 'command', target: screen, command: 'navigate', ...(params !== undefined && { value: params }) });
+        else this.openAt = { screen, ...(params !== undefined && { params }) };
+    }
+
+    /** A copy of what the frame shows: the document, and the synced data and route; undefined before there is a document */
+    snapshot(): { document: JsonRecord; icons?: Record<string, string>; revision: number; data: JsonRecord; route?: Json } | undefined {
+        const app = this.app;
+        if (app === undefined) return undefined;
+        const state = this.synced ?? this.shown;
+        return {
+            document: copy(app.document),
+            ...(app.icons !== undefined && { icons: copy(app.icons) }),
+            revision: app.revision,
+            data: copy(state.data),
+            ...(state.route !== undefined && { route: copy(state.route) })
+        };
+    }
+
     private onReady(): void {
         this.ready = true;
         this.body.dataset['revision'] = String(this.revision);
@@ -914,6 +938,8 @@ class PageView {
 export function installHostApi(live: LiveView | undefined): void {
     (window as unknown as { stateuiHost: unknown }).stateuiHost = {
         inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
+        navigate: (screen: string, params?: Json) => live?.navigate(screen, params),
+        snapshot: () => live?.snapshot(),
         mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] }, title = 'Panel') => {
             const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
             const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
