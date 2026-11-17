@@ -59,23 +59,37 @@ export class DeletePart {
         if (part.revision !== expectedRevision) return { kind: 'conflict', currentRevision: part.revision };
         const ruling = deleteRule(await this.usage.usage(), { kind, name });
         if (ruling.kind === 'refused') return { kind: 'in-use', reason: ruling.reason, users: ruling.users };
+        if (kind === 'apps') return this.deleteApp(part as UiPart<'apps'>, expectedRevision);
         const deleted = await this.parts.delete(kind, name, expectedRevision);
         if (deleted.kind === 'conflict') return deleted;
         if (deleted.kind === 'not-found') return { kind: 'not-found', nearest: [] };
-        if (kind === 'apps') await this.removeAppData(part as UiPart<'apps'>);
         return { kind: 'deleted', id: part.id, revision: part.revision };
     }
 
-    /** The part is gone, so nothing can start its instance or add to its folder again: stop it, then remove what it kept */
-    private async removeAppData(part: UiPart<'apps'>): Promise<void> {
+    /**
+     * Deletes an app with its instance stopped. The instance is stopped first, while the app is there: one running at
+     * another server is handed over, which starts it from the app. The part is deleted and what the app kept removed
+     * while it stays stopped, so nothing can start it or save its state again
+     */
+    private async deleteApp(part: UiPart<'apps'>, expectedRevision: number): Promise<DeletePartResult> {
         const cleanup = this.cleanup;
-        if (cleanup === undefined) return;
+        let result: DeletePartResult = { kind: 'not-found', nearest: [] };
         const remove = async (): Promise<void> => {
-            await cleanup.instances.reset(part.id);
-            await cleanup.folder.remove(part.id);
+            const deleted = await this.parts.delete('apps', part.name, expectedRevision);
+            if (deleted.kind === 'conflict') {
+                result = deleted;
+                return;
+            }
+            if (deleted.kind === 'not-found') return;
+            if (cleanup !== undefined) {
+                await cleanup.instances.reset(part.id);
+                await cleanup.folder.remove(part.id);
+            }
+            result = { kind: 'deleted', id: part.id, revision: part.revision };
         };
-        if (cleanup.states === undefined) await remove();
+        if (cleanup?.states === undefined) await remove();
         else await cleanup.states.stop(part, remove);
+        return result;
     }
 
     private async deleteScreen(input: { readonly app: string; readonly name: string; readonly expectedRevision: number }): Promise<DeletePartResult> {
