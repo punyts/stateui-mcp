@@ -60,9 +60,10 @@ const DESCRIPTION = [
     'Computes: { inputs, run, outputs } run a host function on the inputs and write its answer to the outputs. Effects: { request, run, status, records?: { into, key }, window?, value?, cache? } run an async host function when the request changes (token, abort, records by key, window by position, status); see the effects guide topic.',
     'Timers: "debounce": ms waits for a path to be quiet; "after": ms on a machine transition with "from" fires that long after the machine entered the state.',
     'call (machines only) asks a server procedure and the machine gets the answer as its "as" result.',
+    'Every unit takes runs: "server" (the default) or "browser": in a Full-mode app a browser unit runs in the person\'s page on their changes, and its writes reach the server as theirs do; outside Full mode every unit runs in the browser. A guard, an effect, a call and any $.server path stay on the server (SUI-LOGIC-RUNS).',
     'A module names no node or screen and touches only the data in its needs (SUI-MODULE-NODE, SUI-MODULE-NEEDS); it reads its params as $params.<name>. Create it with needs and params on its first write (no expectedRevision); an app uses it through ui_app_configure.',
     'The app is checked as a whole, the module by the module rules; nothing is written when anything blocks.',
-    'Returns { app | module, revision, created, units: [{ group, kind, name, position, reads, writes }], warnings }: position is the unit\'s place in the run order (a unit runs after the units that write under its trigger path; an app\'s order includes its modules), absent for a guard.'
+    'Returns { app | module, revision, created, units: [{ group, kind, name, position, reads, writes, runs }], warnings }: position is the unit\'s place in the run order (a unit runs after the units that write under its trigger path; an app\'s order includes its modules), absent for a guard; runs is "server" or "browser".'
 ].join(' ');
 
 /** `ui_logic_write`, when the server has parts */

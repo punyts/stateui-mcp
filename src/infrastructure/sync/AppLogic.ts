@@ -1,4 +1,4 @@
-import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, ROUTE_PATH, cloneJson, createLogicEngine, createLogicIndex, readLogic, resolveNode } from '@punyts/stateui-app/core';
+import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, ROUTE_PATH, cloneJson, createLogicEngine, createLogicIndex, logicFor, readLogic, resolveNode } from '@punyts/stateui-app/core';
 import type {
     ComponentLibrary,
     JsonValue as AppValue,
@@ -117,7 +117,7 @@ export class AppLogic {
     }
 
     /**
-     * Builds the engine from the document's `logic` (only its valid machines and rules), writes missing initial states
+     * Builds the engine from the document's `logic` (only its valid units that run on the server, `logicFor`), writes missing initial states
      * and runs the rules that only derive values; with `derive` false that pass waits for `derive()` (an instance runs it
      * once it is attached to its shared datasets, so the derived writes reach them)
      */
@@ -142,7 +142,8 @@ export class AppLogic {
                 return typeof screen === 'string' ? screen : undefined;
             }
         });
-        const { logic: valid } = readLogic(logic, { resolve: index.resolve, ...(this.functions === undefined ? {} : { functions: this.functions }) });
+        // the units with `runs: "browser"` run in the person's page (mountApp), not here
+        const valid = logicFor(readLogic(logic, { resolve: index.resolve, ...(this.functions === undefined ? {} : { functions: this.functions }) }).logic, 'server');
         const read = (path: string): AppValue | undefined => {
             const stored = this.authority.get(path) as AppValue | undefined;
             return covers(APP_ROOT, path) ? overlay(index.initial(path), stored) : stored;

@@ -68,9 +68,36 @@ describe('ui_logic_write', () => {
         expect(result.isError).toBe(false);
         expect(result.body).toMatchObject({ app: 'shop', revision: 2, created: false });
         expect(result.body['units']).toEqual([
-            { group: 'rules', kind: 'rule', name: 'totals', position: 2, reads: ['$.data.bag'], writes: ['$.data.totals.net'] },
-            { group: 'tables', kind: 'table', name: 'lines', position: 1, reads: ['$.data.bag.{id}.qty'], writes: ['$.data.bag.{id}.lineTotal'] }
+            { group: 'rules', kind: 'rule', name: 'totals', position: 2, reads: ['$.data.bag'], writes: ['$.data.totals.net'], runs: 'server' },
+            { group: 'tables', kind: 'table', name: 'lines', position: 1, reads: ['$.data.bag.{id}.qty'], writes: ['$.data.bag.{id}.lineTotal'], runs: 'server' }
         ]);
+    });
+
+    it('should answer with where each unit runs, and refuse a guard that runs in the browser with SUI-LOGIC-RUNS', async () => {
+        // Arrange
+        const browserRule = { ...TOTALS_RULE, runs: 'browser' };
+        const browserGuard = { runs: 'browser', when: { path: '$.data.bag.{id}' }, do: [{ command: 'reject', reason: 'No' }] };
+
+        // Act
+        const written = await call(harness.client, 'ui_logic_write', {
+            app: 'shop',
+            expectedRevision: 1,
+            operations: [
+                { op: 'set', unit: 'rules.totals', value: browserRule },
+                { op: 'set', unit: 'tables.lines', value: LINES_TABLE }
+            ]
+        });
+        const guard = await call(harness.client, 'ui_logic_write', { app: 'shop', expectedRevision: 2, operations: [{ op: 'set', unit: 'rules.guard', value: browserGuard }] });
+
+        // Assert
+        expect(written.isError).toBe(false);
+        expect((written.body['units'] as { name: string; runs: string }[]).map((unit) => [unit.name, unit.runs])).toEqual([
+            ['totals', 'browser'],
+            ['lines', 'server']
+        ]);
+        expect(guard.body['error']).toBe('invalid-app');
+        expect((guard.body['errors'] as { code: string }[]).map((error) => error.code)).toContain('SUI-LOGIC-RUNS');
+        expect(await revisionOf('apps', 'shop')).toBe(2);
     });
 
     it('should remove a unit and refuse removing one that is not there', async () => {
@@ -139,7 +166,7 @@ describe('ui_logic_write', () => {
 
         // Assert
         expect(result.isError).toBe(false);
-        expect(result.body['units']).toEqual([{ group: 'tables', kind: 'table', name: 'lines', position: 1, reads: ['$.data.bag.{id}.qty'], writes: ['$.data.bag.{id}.lineTotal'] }]);
+        expect(result.body['units']).toEqual([{ group: 'tables', kind: 'table', name: 'lines', position: 1, reads: ['$.data.bag.{id}.qty'], writes: ['$.data.bag.{id}.lineTotal'], runs: 'server' }]);
     });
 
     it('should conflict on a stale expectedRevision and write nothing', async () => {

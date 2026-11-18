@@ -370,6 +370,29 @@ describe('AppLogic', () => {
         expect(authority.get('$.data.phase')).toBe('idle');
     });
 
+    it('should run the server units and skip a unit that runs in the browser', async () => {
+        // Arrange
+        const document = {
+            ...DOCUMENT,
+            logic: {
+                rules: {
+                    count: { runs: 'server', when: { path: '$.data.contacts' }, do: [{ command: 'set', target: '$.data.stats.contacts', value: '{{ size($.data.contacts) }}' }] },
+                    local: { runs: 'browser', when: { path: '$.data.contacts' }, do: [{ command: 'set', target: '$.data.local', value: true }] },
+                    plain: { when: { path: '$.data.contacts' }, do: [{ command: 'set', target: '$.data.plain', value: true }] }
+                }
+            }
+        } as unknown as UiDocument;
+        const { authority, session } = await setup(document);
+
+        // Act
+        session.receive(change('$.data.contacts.c1', { name: 'Bo' }));
+
+        // Assert
+        expect(authority.get('$.data.stats.contacts')).toBe(1);
+        expect(authority.get('$.data.plain')).toBe(true);
+        expect(authority.get('$.data.local')).toBeUndefined();
+    });
+
     it('should stop running when the document has no logic', async () => {
         const { authority, logic } = await setup();
         const { logic: _removed, ...rest } = DOCUMENT as Record<string, JsonValue>;

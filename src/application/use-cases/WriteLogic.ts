@@ -1,5 +1,5 @@
 import { logicRunOrder } from '@punyts/stateui-app/core';
-import type { LogicDocument, LogicUnitPlace } from '@punyts/stateui-app/core';
+import type { LogicDocument, LogicSide, LogicUnitPlace } from '@punyts/stateui-app/core';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { checkOperationLimit } from '../../domain/limits.js';
@@ -36,8 +36,11 @@ export interface WriteLogicInput {
     readonly params?: JsonObject;
 }
 
-/** A written unit's place in the run order of its app (assembled with its modules) or module, with what it reads and writes */
-export type WrittenUnit = LogicUnitPlace & { readonly group: LogicGroup };
+/**
+ * A written unit's place in the run order of its app (assembled with its modules) or module, with what it reads and
+ * writes, and where it runs in a Full-mode app (`runs`, `server` when the unit does not say)
+ */
+export type WrittenUnit = LogicUnitPlace & { readonly group: LogicGroup; readonly runs: LogicSide };
 
 export type WriteLogicResult =
     | {
@@ -102,7 +105,8 @@ function writtenUnits(order: readonly LogicUnitPlace[], operations: readonly Log
         const { group, name } = operation;
         // A rule whose only command is reject is a guard
         const place = order.find((unit) => unit.name === name && (unit.kind === kinds[group] || (group === 'rules' && unit.kind === 'guard')));
-        if (place !== undefined) units.push({ ...place, group });
+        const runs: LogicSide = isJsonObject(operation.value) && operation.value['runs'] === 'browser' ? 'browser' : 'server';
+        if (place !== undefined) units.push({ ...place, group, runs });
     }
     return units;
 }
