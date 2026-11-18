@@ -50,7 +50,7 @@
  *   `data-mode` on the body), takes the page's writes and commands, and raises its emits on `element`
  *   (not on `window`) as `stateui:emit`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
  *   The panel it returns also has `inspect` (as above, of its own frame), `watch(paths, listener)` (where those nodes
- *   are, now and whenever they move), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
+ *   are, now and whenever they move, and the popovers open in the frame), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
  *   its sign-in and link pages, with it.
  *
  * A page with no `data-app-id` has no app of its own: it only mounts panels.
@@ -831,7 +831,7 @@ class PageView {
     private readonly listener = (event: MessageEvent<unknown>): void => this.onMessage(event);
     private readonly inspections = new Map<number, (answer: JsonRecord | undefined) => void>();
     private inspection = 0;
-    private watcher: ((nodes: { path: string; rect: JsonRecord }[]) => void) | undefined;
+    private watcher: ((nodes: { path: string; rect: JsonRecord }[], floating: JsonRecord[]) => void) | undefined;
 
     constructor(
         private readonly element: HTMLElement,
@@ -894,9 +894,10 @@ class PageView {
 
     /**
      * Follows where some nodes of the frame are: the listener gets their boxes now and each time they move or change
-     * size. A new watch replaces the last; an empty list stops
+     * size, with the boxes of the popovers open in the frame (tips, menus, option lists; empty when none is). A new watch
+     * replaces the last; an empty list stops
      */
-    watch(paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[]) => void): void {
+    watch(paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[], floating: JsonRecord[]) => void): void {
         this.watcher = listener;
         this.later({ type: 'watch', paths });
     }
@@ -942,7 +943,7 @@ class PageView {
         } else if (message['type'] === 'inspected' && typeof message['id'] === 'number') {
             this.inspections.get(message['id'])?.({ ...message } as JsonRecord);
         } else if (message['type'] === 'watched' && Array.isArray(message['nodes'])) {
-            this.watcher?.(message['nodes'] as { path: string; rect: JsonRecord }[]);
+            this.watcher?.(message['nodes'] as { path: string; rect: JsonRecord }[], Array.isArray(message['floating']) ? (message['floating'] as JsonRecord[]) : []);
         } else if (message['type'] === 'key' && typeof message['key'] === 'string') {
             window.dispatchEvent(new CustomEvent('stateui:key', { detail: { key: message['key'] } }));
         }
@@ -962,7 +963,7 @@ export function installHostApi(live: LiveView | undefined): void {
                 write: (writes: PathWrite[]) => view.write(writes),
                 command: (target: string, command: string, value?: Json) => view.command(target, command, value),
                 inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => view.inspect(query),
-                watch: (paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[]) => void) => view.watch(paths, listener),
+                watch: (paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[], floating: JsonRecord[]) => void) => view.watch(paths, listener),
                 view: (change: { locale?: string; mode?: string }) => view.view(change),
                 frame: () => view.frameElement(),
                 dispose: () => view.dispose()
