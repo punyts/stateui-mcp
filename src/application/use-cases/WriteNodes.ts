@@ -5,6 +5,7 @@ import { nearestNames } from '../../domain/nearestNames.js';
 import { TREE_ROOT, applyNodeOperation, treeStatePath, withTreeStatePath } from '../../domain/nodeOperations.js';
 import type { NodeOperation, TreeTarget } from '../../domain/nodeOperations.js';
 import { orderedMapKeyErrors } from '../../domain/orderedMap.js';
+import { carryOverlays } from '../../domain/overlayCarry.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { PART_SHAPE_CODE } from '../../domain/UiPart.js';
 import type { UiPart, UiPartBodies } from '../../domain/UiPart.js';
@@ -42,11 +43,15 @@ export function targetTree(body: UiPartBodies['apps'], target: TreeTarget): Json
     return isJsonObject(screen) ? (screen['root'] as JsonObject) : undefined;
 }
 
-/** The app body with the target's tree replaced */
-function withTree(body: UiPartBodies['apps'], target: TreeTarget, tree: JsonObject | undefined): UiPartBodies['apps'] {
+/**
+ * The app body with the target's tree replaced. A screen's locale overlays follow the write (`carryOverlays`): a
+ * moved node keeps its translations, and those of a removed node go with it
+ */
+function withTree(body: UiPartBodies['apps'], target: TreeTarget, tree: JsonObject | undefined, operations: readonly NodeOperation[]): UiPartBodies['apps'] {
     if (target.kind === 'app') return { ...body, app: tree } as unknown as UiPartBodies['apps'];
-    const screen = body.screens[target.screen];
-    return { ...body, screens: { ...body.screens, [target.screen]: { ...screen, root: tree } } } as unknown as UiPartBodies['apps'];
+    const { locales, ...screen } = body.screens[target.screen] as unknown as JsonObject;
+    const carried = isJsonObject(locales) ? carryOverlays(locales, operations, tree ?? null) : {};
+    return { ...body, screens: { ...body.screens, [target.screen]: { ...screen, root: tree, ...(Object.keys(carried).length > 0 && { locales: carried }) } } } as unknown as UiPartBodies['apps'];
 }
 
 /**
@@ -92,7 +97,7 @@ export class WriteNodes {
             ...(error.statePath !== undefined && { statePath: treeStatePath(target) + error.statePath.slice('$.app'.length) })
         }));
         if (keyErrors.length > 0) return { kind: 'invalid', errors: keyErrors };
-        return this.store(app, target, isJsonObject(root) ? root : undefined, input.expectedRevision, applied.added);
+        return this.store(app, target, isJsonObject(root) ? root : undefined, operations, input.expectedRevision, applied.added);
     }
 
     private apply(
@@ -115,10 +120,11 @@ export class WriteNodes {
         app: UiPart<'apps'>,
         target: TreeTarget,
         tree: JsonObject | undefined,
+        operations: readonly NodeOperation[],
         expectedRevision: number,
         added: readonly { index: number; path: string }[]
     ): Promise<WriteNodesResult> {
-        const body = withTree(app.body, target, tree);
+        const body = withTree(app.body, target, tree, operations);
         const check = await checkPartApp(this.parts, this.validator, app.name, body);
         if (check.kind !== 'checked') return check;
         const written = await this.parts.write('apps', app.name, body, expectedRevision);

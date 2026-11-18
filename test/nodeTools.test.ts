@@ -176,6 +176,29 @@ describe('ui_locale_write', () => {
         expect((body['screens'] as Record<string, Record<string, unknown>>)['home']).not.toHaveProperty('locales');
     });
 
+    it("should move a node's translations with it and drop those of a removed node", async () => {
+        // Arrange
+        await locale([
+            { op: 'set', path: 'root.children.title._text', value: 'Willkommen' },
+            { op: 'set', path: 'root.children.intro._text', value: 'Lampen und mehr' }
+        ]);
+        await nodes([{ op: 'add', path: 'root.children.box', key: 'note', value: { component: 'text', _text: 'Note' } }], 'home', 3);
+
+        // Act
+        const moved = await nodes([{ op: 'move', path: 'root.children.intro', to: 'root.children.box.children' }], 'home', 4);
+        const removed = await nodes([{ op: 'remove', path: 'root.children.title' }], 'home', 5);
+        const body = await appBody();
+        const gone = await nodes([{ op: 'remove', path: 'root.children.box' }], 'home', 6);
+        const after = await appBody();
+
+        // Assert
+        expect(moved.isError).toBe(false);
+        expect(removed.isError).toBe(false);
+        expect((body['screens'] as Record<string, Record<string, unknown>>)['home']!['locales']).toEqual({ de: { children: { box: { children: { intro: { _text: 'Lampen und mehr' } } } } } });
+        expect(gone.isError).toBe(false);
+        expect((after['screens'] as Record<string, Record<string, unknown>>)['home']).not.toHaveProperty('locales');
+    });
+
     it('should write the app node overlay into the app locales', async () => {
         // Act
         const result = await locale([{ op: 'set', path: '$.app._title', value: 'Laden' }], 2, 'app');
