@@ -4,16 +4,15 @@ A standalone MCP server for building StateUI apps. An agent creates and edits an
 
 The server serves no HTTP. It speaks MCP on stdio, and its tools write each app's live state to a [statenet](../statenet) (`@punyts/statenet`). The view page that shows the apps is static: the Vite dev server of `view/` serves it locally, a CDN in production, and it reads the state from that statenet (see [Live views](#live-views)).
 
-It is the single-user, local version of the `ui-builder` bounded context of AI Minion: same tools, arguments, results and error codes, with no workspaces, users, approval policy or Postgres. Apps are JSON files on disk.
+It is the single-user, local version of the `ui-builder` bounded context of AI Minion: same tools, arguments, results and error codes, with no workspaces, users or approval policy. The server stores the owner's parts, the instances and the uploaded files as JSON files in its data directory (see [Data directory](#data-directory)). `createServices` takes a `storage` (`ServicesStorage`) in place of `dataDir`: `@punyts/stateui-pg` provides Postgres adapters for those ports, which Magnetic uses.
 
 ## Install
 
-Node 22 or newer. The `@punyts/*` packages are not on npm; this repository resolves them from a checkout of the monorepo (like `libraries/example`), so it runs from a clone of it.
+Node 22 or newer. The `@punyts/*` packages are not on npm; it is developed in the punyts workspace, where each library is an npm workspace and `npm run setup` at the workspace root clones, installs and builds them, so it runs from there.
 
 ```sh
-cd libraries/stateui-mcp
-npm run build
-npx playwright install chromium   # once, for ui_preview, ui_screenshot and ui_interact
+npm run mcp:build                 # at the workspace root: this server, the libraries it uses and the runtime bundle
+npx playwright install chromium   # once (setup does it), for ui_preview, ui_screenshot and ui_interact
 ```
 
 Without Chromium everything else works. `ui_preview` still returns the address a person can open (with `rendered: false` and a note), and `ui_screenshot` and `ui_interact` answer `browser-unavailable`.
@@ -89,7 +88,7 @@ The server instructions are short (K1.2 of the guide-tool epic): they hold what 
 
 ## Tools
 
-Thirty-six tools: the guide, then three groups: build time, the owner's data and run time. Build time tools change definitions (parts) and never touch an instance; run time tools act on the default persona's instance of an app part and never change a definition. `ui_guide` is neither: its description starts with `Guide:`.
+Thirty-eight tools: the guide, then three groups: build time, the owner's data and run time. Build time tools change definitions (parts) and never touch an instance; run time tools act on the default persona's instance of an app part and never change a definition. `ui_guide` is neither: its description starts with `Guide:`.
 
 **The guide's topics.** `ui_guide` answers one topic by name, and the server instructions name the topic to read before each step ("Before <when>, read ui_guide topic <name>."); the topics marked always on are in the instructions in full. `start` (always on): the whole server instructions, for a client that does not show them; `sections` (always on): the later build steps, the theme presets and the component categories; `parts`: before planning the parts of an app; `paths`: before writing a node, screen or route path, or looking at a running app with `ui_tree`; `revisions`: before changing a part that exists; `keys` (always on): before naming an icon or token, giving a record key or setting a value under a path; `modules`: a logic module or the params of a screen; `logic`: a machine or rule; `tables`: a lookup table; `effects`: a compute unit, an effect, a request token or paged records; `live-view`: before previewing, testing or watching a running app; `files`: before reading a file a user uploaded; `drawing`: a drawing and its shapes; `paint-field`: a paintField; `scene3d`: a scene3d, its node values and its camera; `scene3d-models`: a 3D model file, a texture or a `repeat3d`; `scene3d-behavior`: a pressable 3D node, a `label3d`, 3D motion or the check of a scene; `safety`: before deleting or renaming a part. A client that drops the server instructions still has them: `ui_guide` with `{ topic: 'start' }` answers the same text. A failed call whose code has a topic carries `guide: '<topic>'` in its body, and so does each validation error or warning (see below), so the agent reads the rule the call broke.
 
