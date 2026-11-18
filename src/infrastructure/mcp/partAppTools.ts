@@ -1,6 +1,7 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { MissingPart, TreeChoice } from '../../application/partAppCheck.js';
 import type { CreatePartApp, CreatePartAppResult } from '../../application/use-cases/CreateApp.js';
+import type { ScreenEntry } from '../../application/use-cases/ConfigureApp.js';
 import type { CreateScreenResult } from '../../application/use-cases/CreateScreen.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -57,6 +58,11 @@ const CONFIGURE = defineInput({
         type: 'json',
         schema: { type: 'array', items: { type: 'string' }, maxItems: 50 },
         description: 'The state paths, whole list, whose changes reach everyone using the app but are never stored and never hold up a save, such as a pointer or presence ("$.data.presence.*", * for any one segment); [] for none'
+    },
+    screens: {
+        type: 'json',
+        schema: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, title: { type: 'string' } }, required: ['name'] }, maxItems: 200 },
+        description: 'Every screen once, in the new order, as { name, title? }; a title retitles that screen ("" removes it)'
     }
 });
 
@@ -186,6 +192,12 @@ export async function runPartAppCreate(createPartApp: CreatePartApp, args: PartA
     return sharedOutcome(result, 'home', 'created');
 }
 
+function isScreenEntry(value: unknown): value is ScreenEntry {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+    const entry = value as Record<string, unknown>;
+    return typeof entry['name'] === 'string' && (entry['title'] === undefined || typeof entry['title'] === 'string');
+}
+
 /** `ui_app_configure` and `ui_screen_create`, when the server has parts */
 export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureApp' | 'createScreen'>): readonly UiToolDefinition[] {
     const { configureApp, createScreen } = useCases;
@@ -193,18 +205,22 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
     return [
         {
             name: 'ui_app_configure',
-            description: `Build time: change an app's title, uses, start screen or ephemeral paths (state shared but never stored, such as a pointer); every other field stays as it is. ${USES_TEXT}. A new uses replaces the old one whole and is checked with every binding and module together: a part that does not exist comes back with the nearest names, an error (such as a module need left unbound) with its part. Returns { name, revision, warnings }.`,
+            description: `Build time: change an app's title, uses, start screen, ephemeral paths, or the order and titles of its screens (state shared but never stored, such as a pointer); every other field stays as it is. ${USES_TEXT}. A new uses replaces the old one whole and is checked with every binding and module together: a part that does not exist comes back with the nearest names, an error (such as a module need left unbound) with its part. Returns { name, revision, warnings }.`,
             inputSchema: CONFIGURE.schema,
             annotations: WRITES,
             run: async (args) => {
                 const parsed = CONFIGURE.parse(args);
                 if (!parsed.ok) return invalidArgument(parsed);
-                const { name, expectedRevision, title, uses, start, ephemeral } = parsed.value;
+                const { name, expectedRevision, title, uses, start, ephemeral, screens } = parsed.value;
                 if (ephemeral !== undefined && (!Array.isArray(ephemeral) || !ephemeral.every((item) => typeof item === 'string'))) {
                     return fail('invalid-argument', 'ephemeral is a list of state paths', { argument: 'ephemeral' });
                 }
+                if (screens !== undefined && (!Array.isArray(screens) || !screens.every(isScreenEntry))) {
+                    return fail('invalid-argument', 'screens is a list of { name, title? }', { argument: 'screens' });
+                }
                 const result = await configureApp.execute({
                     ...(ephemeral !== undefined && { ephemeral: ephemeral as string[] }),
+                    ...(screens !== undefined && { screens: screens as ScreenEntry[] }),
                     name,
                     expectedRevision,
                     ...(title !== undefined && { title }),
@@ -215,7 +231,7 @@ export function createPartAppTools(useCases: Pick<UiBuilderUseCases, 'configureA
                     case 'configured':
                         return succeed({ name, revision: result.revision, warnings: withGuides(result.warnings) });
                     case 'nothing-to-change':
-                        return fail('invalid-argument', 'Give title, uses, start or ephemeral', { argument: 'title' });
+                        return fail('invalid-argument', 'Give title, uses, start, ephemeral or screens', { argument: 'title' });
                     case 'not-found':
                         return sharedOutcome(result, 'name', 'changed');
                     case 'conflict':

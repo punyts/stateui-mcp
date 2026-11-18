@@ -34,6 +34,10 @@
  * `detail.value`, undefined for a delete, and `detail.origin`, `user` for the person's own change in this view, else
  * `server`; a whole state the sync client loads comes as one change of `$.data`).
  *
+ * A frame stays hidden (`visibility: hidden`) until its runtime says `ready`. Its `load` carries the mode, the language and
+ * the screen to open, which the runtime applies in the same task as the mount, so the first frame painted is the app
+ * as the person chose it: no blank page, and no light theme before a dark one.
+ *
  * `window.stateuiHost` serves an editor laid over the page:
  * - `inspect({ at: { x, y } } | { paths })` asks the app frame about its nodes (the `inspect` message of the runtime)
  *   and resolves with its `inspected` answer, or undefined when the frame does not answer within `INSPECT_TIMEOUT_MS`.
@@ -42,8 +46,8 @@
  *   `data` and `route` (undefined before the server sent a document). An editor draws its other screens with it, each
  *   a panel of its own (`mount`), and keeps their data in step from `stateui:change`.
  * - `mount(element, { document, icons?, keys? })` puts a second runtime frame in `element`, driven by the page alone: it
- *   is loaded in `standalone` mode with the document given, gets the page's language and mode (`data-locale`,
- *   `data-mode` on the body) when it is ready, takes the page's writes and commands, and raises its emits on `element`
+ *   is loaded in `standalone` mode with the document given and the page's language and mode (`data-locale`,
+ *   `data-mode` on the body), takes the page's writes and commands, and raises its emits on `element`
  *   (not on `window`) as `stateui:emit`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
  *   The panel it returns also has `inspect` (as above, of its own frame), `watch(paths, listener)` (where those nodes
  *   are, now and whenever they move), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
@@ -493,6 +497,8 @@ export class LiveView {
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.title = 'App';
+        // Nothing shows until the app is mounted with its theme and language: no blank page, no light flash before dark
+        frame.style.visibility = 'hidden';
         frame.addEventListener('load', () => {
             this.frameLoaded = true;
             if (this.app !== undefined) this.sendLoad();
@@ -574,6 +580,9 @@ export class LiveView {
         this.ready = false;
         this.load++;
         this.setStatus('loading');
+        // The mode, the language and the screen to open go with the document, so the first frame painted shows them
+        const at = this.openAt;
+        this.openAt = undefined;
         this.post({
             type: 'load',
             document: app.document,
@@ -581,7 +590,10 @@ export class LiveView {
             ...(this.synced !== undefined && (this.instance ? { instance: this.instanceOf(this.synced) } : { state: { data: this.synced.data, app: this.synced.app } })),
             ...(icons !== undefined && { icons }),
             ...(this.chunk3d !== undefined && { chunks: { '3d': this.chunk3d } }),
-            ...(this.hostKeys.length > 0 && { keys: this.hostKeys })
+            ...(this.hostKeys.length > 0 && { keys: this.hostKeys }),
+            ...(this.mode !== undefined && { active: { mode: this.mode } }),
+            ...(this.locale !== undefined && { locale: this.locale }),
+            ...(at !== undefined && { open: at })
         });
         this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
         this.loaded = true;
@@ -690,15 +702,10 @@ export class LiveView {
         this.ready = true;
         this.body.dataset['revision'] = String(this.revision);
         this.setStatus('ready');
-        // A load mounts the app again from the document, so the language and the theme are sent again after it
-        if (this.mode !== undefined) this.postViewTheme('mode', this.mode);
-        if (this.locale !== undefined) this.post({ type: 'locale', locale: this.locale });
+        if (this.frame !== undefined) this.frame.style.visibility = '';
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
         }
-        const at = this.openAt;
-        this.openAt = undefined;
-        if (at !== undefined) this.post({ type: 'command', target: at.screen, command: 'navigate', ...(at.params !== undefined && { value: at.params }) });
         this.report({ type: 'ready', revision: this.revision, load: this.load });
     }
 
@@ -836,10 +843,21 @@ class PageView {
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.title = title;
+        frame.style.visibility = 'hidden';
         frame.addEventListener('load', () => {
             const icons = iconsMessage(app.icons ?? {}, new Set());
             const keys = (app.keys ?? []).filter((key) => HOST_KEY.test(key)).slice(0, 16);
-            this.send({ type: 'load', document: app.document, mode: 'standalone', ...(icons !== undefined && { icons }), ...(keys.length > 0 && { keys }) });
+            // The page's language and mode (`data-locale`, `data-mode`), as the app frame of the page gets them
+            const { locale, mode } = document.body.dataset;
+            this.send({
+                type: 'load',
+                document: app.document,
+                mode: 'standalone',
+                ...(icons !== undefined && { icons }),
+                ...(keys.length > 0 && { keys }),
+                ...(mode && { active: { mode } }),
+                ...(locale && { locale })
+            });
         });
         frame.src = `${this.runtimeUrl}#${this.nonce}`;
         window.addEventListener('message', this.listener);
@@ -914,10 +932,7 @@ class PageView {
         if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
         if (message['type'] === 'ready') {
             this.ready = true;
-            // The page's language and mode (`data-locale`, `data-mode`), as the app frame of the page gets them
-            const { locale, mode } = document.body.dataset;
-            if (mode) this.send({ type: 'theme', kind: 'mode', name: mode });
-            if (locale) this.send({ type: 'locale', locale });
+            this.frame.style.visibility = '';
             for (const queued of this.queued.splice(0)) this.send(queued);
             this.element.dispatchEvent(new CustomEvent('stateui:ready'));
         } else if (message['type'] === 'emit' && typeof message['name'] === 'string') {

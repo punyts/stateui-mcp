@@ -232,6 +232,25 @@ describe('ui_app_configure', () => {
         expect(empty.body['error']).toBe('invalid-argument');
         expect((await appBody('shop'))['title']).toBe('Corner shop');
     });
+
+    it('should reorder and retitle the screens, and refuse a list that does not name each screen once', async () => {
+        // Arrange: home, then about
+        await call(harness.client, 'ui_screen_create', { app: 'shop', name: 'about', expectedRevision: 1, title: 'About', root: HOME_ROOT });
+
+        // Act
+        const missing = await call(harness.client, 'ui_app_configure', { name: 'shop', expectedRevision: 2, screens: [{ name: 'about' }] });
+        const twice = await call(harness.client, 'ui_app_configure', { name: 'shop', expectedRevision: 2, screens: [{ name: 'about' }, { name: 'about' }, { name: 'home' }] });
+        const unknown = await call(harness.client, 'ui_app_configure', { name: 'shop', expectedRevision: 2, screens: [{ name: 'about' }, { name: 'cart' }] });
+        const ordered = await call(harness.client, 'ui_app_configure', { name: 'shop', expectedRevision: 2, screens: [{ name: 'about', title: 'Our story' }, { name: 'home' }] });
+        const after = await appBody('shop');
+
+        // Assert
+        for (const refused of [missing, twice, unknown]) expect(refused.body).toMatchObject({ error: 'invalid-app' });
+        expect(ordered.body).toMatchObject({ revision: 3 });
+        const screens = after['screens'] as Record<string, Record<string, unknown>>;
+        expect(Object.keys(screens)).toEqual(['about', 'home']);
+        expect(screens['about']?.['title']).toBe('Our story');
+    });
 });
 
 describe('ui_screen_create', () => {
