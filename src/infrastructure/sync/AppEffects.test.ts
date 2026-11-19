@@ -10,7 +10,7 @@ function setup() {
     return { effects, queued };
 }
 
-const REQUEST: LogicEffectRequest = { name: 'fetchOrders', run: 'orders.fetch', token: 't1', request: { page: 1 } };
+const REQUEST: LogicEffectRequest = { name: 'fetchOrders', run: '$.functions.host.ordersFetch', token: 't1', request: { page: 1 } };
 
 describe('AppEffects', () => {
     it('should queue an effect for the agent and resolve it with the answer', async () => {

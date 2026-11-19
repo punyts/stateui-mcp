@@ -203,3 +203,17 @@ describe('ui_logic_write', () => {
         for (const word of ['Triggers', 'Commands', 'Tables', '$previous', 'Timers', 'call', '$params']) expect(description).toContain(word);
     });
 });
+
+describe('the components functions', () => {
+    it('should install the component library\'s functions on every server and list them in the guide', async () => {
+        // Arrange
+        const path = '$.components.treeDiagram.functions.layoutTree';
+
+        // Act
+        const guide = await call(harness.client, 'ui_guide', { topic: 'functions' });
+
+        // Assert
+        expect(harness.services.functions.map((entry) => entry.path)).toContain(path);
+        expect(JSON.stringify(guide.body)).toContain(path);
+    });
+});

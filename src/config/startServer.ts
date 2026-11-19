@@ -41,10 +41,10 @@ export interface ServerOptions {
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent (`ui_call_answer`) */
     readonly procedures?: ServicesOptions['procedures'];
     /**
-     * The compute, expression and effect functions Full-mode logic runs by name: one module the browser host
-     * (`mountApp`'s `logicFunctions`) shares. API keys an effect needs stay on the server
+     * The catalogs of the functions Full-mode logic runs by path, which the browser host (`mountApp`'s `functions`)
+     * shares for those that run there. API keys an effect needs stay on the server
      */
-    readonly logicFunctions?: ServicesOptions['logicFunctions'];
+    readonly functions?: ServicesOptions['functions'];
     /** A file that gets one JSON line per tool call */
     readonly toolLog?: string;
     /** Install the component showcase when the data directory holds no parts at all (the CLI does, unless --no-showcase); default false */
@@ -97,7 +97,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
         ...(options.browserArgs !== undefined && { browserArgs: options.browserArgs }),
         ...(options.serverKey !== undefined && { serverKey: options.serverKey }),
         ...(options.procedures !== undefined && { procedures: options.procedures }),
-        ...(options.logicFunctions !== undefined && { logicFunctions: options.logicFunctions }),
+        ...(options.functions !== undefined && { functions: options.functions }),
         ...(options.toolLog !== undefined && { toolLog: options.toolLog })
     });
     // A rename stopped halfway by a crash is finished before anything reads a part

@@ -1,6 +1,6 @@
 import { CORE_ICON_NAMES } from '@punyts/stateui-components';
-import { libraryFromCatalog } from '@punyts/stateui-app/core';
-import type { CatalogSource, ComponentLibrary } from '@punyts/stateui-app/core';
+import { FunctionTable, libraryFromCatalog } from '@punyts/stateui-app/core';
+import type { CatalogSource, ComponentLibrary, FunctionCatalog } from '@punyts/stateui-app/core';
 import type { ComponentCatalog, PatternCatalog, ToolCallLog, UiAppValidator, UseCaseReport } from '../application/ports/index.js';
 import { FileToolCallLog } from '../infrastructure/storage/FileToolCallLog.js';
 import { StateUiAppValidator } from '../infrastructure/StateUiAppValidator.js';
@@ -20,6 +20,8 @@ export interface StateUiAdapters {
     readonly library: ComponentLibrary;
     /** The tool-call log, when a file is configured */
     readonly toolCallLog?: ToolCallLog;
+    /** The operator's functions on both sides, which the validator checks apps against and the guide lists */
+    readonly functions: FunctionTable;
 }
 
 export interface StateUiAdapterOptions {
@@ -27,12 +29,15 @@ export interface StateUiAdapterOptions {
     readonly toolLog?: string;
     /** Where a failed log write is reported */
     readonly report?: UseCaseReport;
+    /** The operator's function catalogs; a catalog that clashes with another throws here */
+    readonly functions?: readonly FunctionCatalog[];
 }
 
 export function createStateUiAdapters(options: StateUiAdapterOptions = {}): StateUiAdapters {
     const catalogFile = loadCatalogFile();
     const catalog = new StateUiComponentCatalog(catalogFile, loadIconsFile());
-    const validator = new StateUiAppValidator(catalogFile, (name) => catalog.isIconName(name));
+    const functions = new FunctionTable(options.functions ?? []);
+    const validator = new StateUiAppValidator(catalogFile, (name) => catalog.isIconName(name), functions);
     // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
     const report = options.report ?? { info: (): void => undefined };
     const toolCallLog = options.toolLog === undefined ? undefined : new FileToolCallLog(options.toolLog, report);
@@ -43,6 +48,7 @@ export function createStateUiAdapters(options: StateUiAdapterOptions = {}): Stat
         patterns: new StateUiPatternCatalog(catalogFile, library),
         coreIconNames: CORE_ICON_NAMES,
         library,
+        functions,
         ...(toolCallLog !== undefined && { toolCallLog })
     };
 }

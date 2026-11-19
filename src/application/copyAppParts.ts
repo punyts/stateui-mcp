@@ -1,4 +1,5 @@
-import type { PartRef } from '@punyts/stateui-app/core';
+import { functionPaths } from '@punyts/stateui-app/core';
+import type { FunctionTable, PartRef } from '@punyts/stateui-app/core';
 import { partReferences } from '../domain/partReferences.js';
 import { bodyWithRenamedPart } from '../domain/renameReferences.js';
 import type { PartKind } from '../domain/partName.js';
@@ -18,6 +19,11 @@ export type CopyAppResult =
           readonly app: UiPart<'apps'>;
           /** The parts made in the target besides the app; a part the target already had with the same body is reused */
           readonly parts: readonly CopiedPart[];
+          /**
+           * The function paths the app and its parts name that the target server does not run, so they can be shown before
+           * the app is used; present when `functions` was given
+           */
+          readonly missingFunctions?: readonly string[];
       }
     | { readonly kind: 'not-found' }
     | { readonly kind: 'failed'; readonly reason: string };
@@ -27,6 +33,8 @@ export interface CopyAppOptions {
     readonly name?: string;
     /** Keeps the app's id in the target, for a move rather than a copy; the target must not have an app with that id */
     readonly keepId?: boolean;
+    /** The functions the target server runs; the result then lists those the app names that it lacks */
+    readonly functions?: Pick<FunctionTable, 'entry'>;
 }
 
 const MAX_NAME = 63;
@@ -121,5 +129,7 @@ export async function copyAppParts(
     }
     const created = await to.create({ kind: 'apps', name, body: renamed('apps', app.body), ...(options.keepId === true && { id: app.id }) });
     if (created.kind !== 'created') return { kind: 'failed', reason: created.kind === 'invalid' ? created.reason : `The app "${name}" could not be made` };
-    return { kind: 'copied', app: created.part, parts: made.reverse() };
+    const { functions } = options;
+    const missingFunctions = functions === undefined ? undefined : functionPaths([app.body, ...reached.map((part) => part.body)]).filter((path) => functions.entry(path) === undefined);
+    return { kind: 'copied', app: created.part, parts: made.reverse(), ...(missingFunctions !== undefined && { missingFunctions }) };
 }

@@ -1,5 +1,5 @@
 import { APP_COMPONENT, checkPattern, checkRecord, nearestNames, readBlueprint, readModel, readModule, readPattern, validateApp } from '@punyts/stateui-app/core';
-import type { AppBlueprint, ComponentLibrary, JsonValue as LibraryJsonValue, LibraryEntry, Node, PartSource, PatternKind } from '@punyts/stateui-app/core';
+import type { AppBlueprint, ComponentLibrary, FunctionLookup, JsonValue as LibraryJsonValue, LibraryEntry, Node, PartSource, PatternKind } from '@punyts/stateui-app/core';
 import type { UiPartError } from '../application/ports/UiAppValidator.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { PartKind } from '../domain/partName.js';
@@ -11,6 +11,8 @@ import type { UiPartBodies } from '../domain/UiPart.js';
 
 export interface PartCheckContext {
     readonly library: ComponentLibrary;
+    /** The operator's functions, which logic and expressions name by path (`SUI-LOGIC-FUNCTION`, `SUI-LOGIC-FUNCTION-FIT`) */
+    readonly functions?: FunctionLookup;
     readonly isIconName: (name: string) => boolean;
     /** True for a token name the theme has; the `paint` validator reports an unknown `{token}` colour (`SUI-STATE-TOKEN`) */
     readonly hasToken?: (name: string) => boolean;
@@ -26,7 +28,12 @@ function isNode(value: unknown): boolean {
 
 /** `validateApp` of the library, each error with the part that holds it */
 export function assembledErrors(blueprint: AppBlueprint, parts: PartSource, name: string, context: PartCheckContext): UiPartError[] {
-    return validateApp(blueprint, parts, context.library, { name, isIconName: context.isIconName, ...(context.hasToken !== undefined && { hasToken: context.hasToken }) }).errors.map((error) => ({ ...error }));
+    return validateApp(blueprint, parts, context.library, {
+        name,
+        isIconName: context.isIconName,
+        ...(context.hasToken !== undefined && { hasToken: context.hasToken }),
+        ...(context.functions !== undefined && { functions: context.functions })
+    }).errors.map((error) => ({ ...error }));
 }
 
 /** The errors one part holds when a probe app uses it: a bare app node with one screen of `root` */

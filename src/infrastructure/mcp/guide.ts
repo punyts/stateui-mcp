@@ -2,15 +2,19 @@
  * The guide: one table of topics, each a short text of how-to guidance with the step it is read before. It is the one
  * source of the guidance: the server instructions are built from it (`instructions.ts`) and `ui_guide` answers one
  * topic of it (`guideTools.ts`), so no rule is written twice. A topic text may depend on the catalog's category index
- * and theme presets, which are fixed for one server build, so the same topic always gives the same text
+ * and theme presets and on the operator's functions, which are fixed for one server build, so the same topic always
+ * gives the same text
  */
 
+import type { FunctionEntry } from '@punyts/stateui-app/core';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 
 /** What a topic text may depend on: the catalog's category index and the library's theme preset names */
 export interface GuideContext {
     readonly index: readonly CategoryIndexEntry[];
     readonly presets: readonly string[];
+    /** The functions the operator installed, which the topic functions lists; none when absent */
+    readonly functions?: readonly FunctionEntry[];
 }
 
 /** One topic of the guide */
@@ -83,7 +87,7 @@ const MODULES = 'Modules and params: a logic module names no node or screen and 
 
 const TABLES = 'A table (logic.tables.<name>: { inputs, outputs, rows }) is a lookup table that only writes values: an input is a path (read in output values as $name) or { path or value (one {{ }} expression), values (a list, "*" for any other, or { keys: a data map }) or breaks (ascending numbers that split it into buckets) }; outputs name the paths they write; a row gives conditions for inputs (a value, a list, "*", ">=50" or "<100" with a break) and values for outputs, and the first matching row wins. A change to an input runs the table (per record when its paths capture {id}), and only outputs that change are written. Every combination needs a row (SUI-LOGIC-GAP names the missing ones; a last row with no conditions is the default), a row that never wins is a warning, and tables that feed each other are SUI-LOGIC-CYCLE. rows: { from: a data map } keeps the rows in data that users edit. lookup(\'name\', inputs...) in an expression gives the outputs of the winning row. Side effects (notify, save-data) go in rules that listen to the outputs of a table. Example: { "inputs": { "country": { "path": "$.data.order.country", "values": ["NL", "*"] }, "total": { "path": "$.data.order.total", "breaks": [50] } }, "outputs": { "fee": "$.data.order.shipping" }, "rows": [{ "country": "NL", "total": ">=50", "fee": 0 }, { "fee": 5 }] }.';
 
-const EFFECTS = 'Three tiers of logic: tables for quick lookups, expressions ({{ }}) for small scripts, and code for the rest. Code is a function the host registers (mountApp logicFunctions, or the MCP server functions in Full mode). A compute (logic.computes.<name>: { inputs, run, outputs }) runs a sync function: inputs are paths or { path | value }, the function gets them by name and returns an object whose fields go to the outputs; a missing input skips the unit, and it runs in the chain like a table. An effect (logic.effects.<name>: { request, run, status, records?: { into, key }, window?, value?, cache? }) does async work with a request token. A cell sets the request (a value at the request path, such as { page, size, filter }); the token is a hash of that value. A new token aborts the call that runs and drops its answer when it comes; the status path holds { token, state: loading | ready | error, total?, reason?, at }. The answer { records, first, total, value } commits at once: records merge into the data map records.into by their key (the primary key, under $.data or $.server), the window node (a ^name or path) shows rows first+i keyed by that key, and a later change to a record rewrites the rows that show it. cache: n keeps the last n answers by token, so going back to a page shows it with no call. Removing the request makes the status idle. A run the host did not register is a warning (SUI-LOGIC-FUNCTION) and fails when it runs; in Full mode the server asks the agent instead: a logic.effect event { id, name, token, request } in ui_events_read, answered with ui_effect_answer. ui_logic_trace lists each effect with its token, running and cache size.';
+const EFFECTS = 'Three tiers of logic: tables for quick lookups, expressions ({{ }}) for small scripts, and code for the rest. Code is a function the operator of the server installs, named by its path: $.functions.<group>.<name>, the host functions under $.functions.host, or $.components.<component>.functions.<name> for a function of a component. A document never holds code. A compute (logic.computes.<name>: { inputs, run, outputs }, run a function path) runs a sync function: inputs are paths or { path | value }, the function gets them by name and returns an object whose fields go to the outputs; a missing input skips the unit, and it runs in the chain like a table. An effect (logic.effects.<name>: { request, run, status, records?: { into, key }, window?, value?, cache? }) does async work with a request token. A cell sets the request (a value at the request path, such as { page, size, filter }); the token is a hash of that value. A new token aborts the call that runs and drops its answer when it comes; the status path holds { token, state: loading | ready | error, total?, reason?, at }. The answer { records, first, total, value } commits at once: records merge into the data map records.into by their key (the primary key, under $.data or $.server), the window node (a ^name or path) shows rows first+i keyed by that key, and a later change to a record rewrites the rows that show it. cache: n keeps the last n answers by token, so going back to a page shows it with no call. Removing the request makes the status idle. An expression calls a function by its path: {{ $.functions.text.upper($.data.name) }}. A run or call of a function this server does not run is a warning (SUI-LOGIC-FUNCTION) and fails when it runs; in Full mode the server asks the agent instead: a logic.effect event { id, name, token, request } in ui_events_read, answered with ui_effect_answer. ui_logic_trace lists each effect with its token, running and cache size.';
 
 const SAVING =
     'A save-data or delete-data with "as" gives its accepted result once the write is durable: stored where it survives the server, the shared dataset record included. So a machine that moves to "saved" on that result shows Saved only when it is, and a write that could not be stored comes back rejected with the reason. "await": "applied" gives the result as soon as the write is in the state, for steps nobody waits on. Some state is shared but never worth storing: a pointer, presence, who is typing, a drag in progress. List those paths in the ephemeral list of the app (ui_app_configure; "$.data.presence.*", * for any one segment): their changes reach everyone using the app at once, are never written to the database, and never hold up a save. Do not make a record or anything a person would miss ephemeral: it is gone when the server restarts.';
@@ -148,6 +152,39 @@ const SCENE3D_BEHAVIOR = [
 
 const SAFETY = 'ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.';
 
+const FUNCTIONS_INTRO = 'The functions this server runs, by path. An expression calls one ({{ $.functions.host.tax($.data.total) }}), a compute or an effect names one in run, by its kind. The operator installs them: a function that is not listed is one to ask the operator for, and an app that names it gets SUI-LOGIC-FUNCTION. A function a component brings sits at $.components.<component>.functions.<name>.';
+
+/** The names of a schema's properties, or none */
+function schemaNames(schema: FunctionEntry['inputs']): string {
+    const properties = (schema as { properties?: unknown }).properties;
+    return properties !== null && typeof properties === 'object' ? Object.keys(properties).join(', ') : '';
+}
+
+/** One line per function: path, kind, sides, summary and the names of its inputs and outputs */
+function functionLine(entry: FunctionEntry): string {
+    const inputs = schemaNames(entry.inputs);
+    const outputs = schemaNames(entry.outputs);
+    const shape = [inputs === '' ? '' : `inputs ${inputs}`, outputs === '' ? '' : `outputs ${outputs}`].filter((part) => part !== '').join('; ');
+    return `- ${entry.path} (${entry.kind}, ${entry.runs.join(' and ')}): ${entry.summary}${shape === '' ? '' : ` (${shape})`}`;
+}
+
+/** The operator's functions, as many as fit under the cap, then how many more there are */
+function functionsText({ functions = [] }: GuideContext): string {
+    if (functions.length === 0) return `${FUNCTIONS_INTRO}\n\nThis server runs no functions.`;
+    const lines: string[] = [];
+    let length = FUNCTIONS_INTRO.length + 2;
+    for (const [index, entry] of functions.entries()) {
+        const line = functionLine(entry);
+        if (length + line.length + 40 > MAX_TOPIC_CHARS) {
+            lines.push(`and ${functions.length - index} more`);
+            break;
+        }
+        lines.push(line);
+        length += line.length + 1;
+    }
+    return `${FUNCTIONS_INTRO}\n\n${lines.join('\n')}`;
+}
+
 /** A topic whose text depends on nothing */
 function fixed(text: string): (context: GuideContext) => string {
     return () => text;
@@ -172,6 +209,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
     { name: 'similar', when: 'records found by meaning (an embed field and the similar call)', text: fixed(SIMILAR), alwaysOn: false },
     { name: 'tables', when: 'a lookup table (its inputs, outputs and rows)', text: fixed(TABLES), alwaysOn: false },
     { name: 'effects', when: 'a compute unit, an effect, a request token or paged records', text: fixed(EFFECTS), alwaysOn: false },
+    { name: 'functions', when: 'a function you call from an expression or name in a compute or effect (what this server runs)', text: functionsText, alwaysOn: false },
     { name: 'live-view', when: 'you preview, test or watch a running app', text: fixed(LIVE_VIEW), alwaysOn: false },
     { name: 'files', when: 'you read a file a user uploaded', text: fixed(FILES), alwaysOn: false },
     { name: 'drawing', when: 'a drawing and its shapes', text: fixed(DRAWING), alwaysOn: false },
@@ -228,6 +266,7 @@ export const TOOL_CODE_TOPICS: Readonly<Record<string, string>> = Object.freeze(
  */
 export const VALIDATION_PREFIX_TOPICS: Readonly<Record<string, string>> = Object.freeze({
     'SUI-LOGIC': 'logic',
+    'SUI-LOGIC-FUNCTION': 'functions',
     'SUI-MODULE': 'modules',
     'SUI-USES': 'parts',
     'SUI-USES-NEEDS': 'modules',

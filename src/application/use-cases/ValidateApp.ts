@@ -2,7 +2,7 @@ import type { PartRef } from '@punyts/stateui-app/core';
 import { partReferences } from '../../domain/partReferences.js';
 import { isBlockingError } from '../../domain/UiBuildError.js';
 import { loadPartSource } from '../partSource.js';
-import type { UiPartError } from '../ports/UiAppValidator.js';
+import type { AppFunction, UiPartError } from '../ports/UiAppValidator.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
 import type { UsageSource } from '../UsageIndex.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
@@ -20,6 +20,8 @@ export type ValidatePartAppResult =
           readonly warnings: readonly UiPartError[];
           /** The owner parts the app reaches directly */
           readonly uses: readonly PartRef[];
+          /** Each function path the app names, with what this server runs at it or `missing` */
+          readonly functions: readonly AppFunction[];
       }
     | { readonly kind: 'not-found'; readonly app: string };
 
@@ -52,7 +54,8 @@ export class ValidatePartApp {
             valid: errors.length === 0,
             errors,
             warnings,
-            uses: (await this.usage.usage()).uses(app)
+            uses: (await this.usage.usage()).uses(app),
+            functions: this.validator.appFunctions(part.body, source)
         };
     }
 }

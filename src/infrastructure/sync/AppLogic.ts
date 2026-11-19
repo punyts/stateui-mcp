@@ -1,13 +1,13 @@
-import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, ROUTE_PATH, cloneJson, createLogicEngine, createLogicIndex, logicFor, readLogic, resolveNode } from '@punyts/stateui-app/core';
+import { LOGIC_FAILED_EVENT, NOTIFY_PREFIX, ROUTE_PATH, cloneJson, createLogicEngine, createLogicIndex, functionPaths, logicFor, readLogic, resolveNode } from '@punyts/stateui-app/core';
 import type {
     ComponentLibrary,
+    FunctionTable,
     JsonValue as AppValue,
     LogicAnswer,
     LogicChange,
     LogicEngine,
     LogicEffectInfo,
     LogicFailure,
-    LogicFunctions,
     LogicHost,
     LogicTraceRun,
     LogicWrite,
@@ -98,7 +98,7 @@ export class AppLogic {
         private readonly report: (message: string, failure: LogicFailure) => void,
         private readonly onCall?: AppLogicCall,
         private readonly gate?: DataGate,
-        private readonly functions?: LogicFunctions,
+        private readonly functions?: FunctionTable,
         private readonly onEffect?: AppLogicEffect,
         private readonly limits: AppLogicLimits = {}
     ) {
@@ -119,13 +119,32 @@ export class AppLogic {
     /**
      * Builds the engine from the document's `logic` (only its valid units that run on the server, `logicFor`), writes missing initial states
      * and runs the rules that only derive values; with `derive` false that pass waits for `derive()` (an instance runs it
-     * once it is attached to its shared datasets, so the derived writes reach them)
+     * once it is attached to its shared datasets, so the derived writes reach them). The engine starts once the
+     * functions the logic names are loaded: at once when their catalogs answer at once
      */
     setDocument(document: UiDocument, options: { derive?: boolean } = {}): void {
         this.engine?.stop();
         this.engine = undefined;
+        this.deriveWaits = false;
+        const generation = ++this.generation;
         const logic = document['logic'];
         if (!isJsonObject(logic)) return;
+        const loading = this.functions?.prepare(functionPaths(logic as AppValue));
+        if (loading === undefined) {
+            this.build(document, logic, options.derive !== false);
+            return;
+        }
+        void loading.then(() => {
+            if (generation === this.generation) this.build(document, logic, options.derive !== false || this.deriveWaits);
+        });
+    }
+
+    /** Which `setDocument` is current, so a load that settles late builds nothing for a replaced document */
+    private generation = 0;
+    /** Whether `derive()` was asked for while the engine waited for its functions */
+    private deriveWaits = false;
+
+    private build(document: UiDocument, logic: JsonObject, derive: boolean): void {
         const app = document['app'];
         const composed = isJsonObject(document['composed']) ? (document['composed'] as unknown as Record<string, Node>) : {};
         const resolved = resolveNode(cloneJson(app as AppValue) as unknown as Node, this.library, composed);
@@ -188,7 +207,7 @@ export class AppLogic {
             }
         };
         this.engine = createLogicEngine(valid, host);
-        this.engine.start({ derive: options.derive !== false });
+        this.engine.start({ derive });
     }
 
     /** When the timers that fired in the last second did, oldest first (`limits.timerRunsPerSecond`) */
@@ -212,7 +231,8 @@ export class AppLogic {
 
     /** Runs the rules that only derive values, once, as at start (`LogicEngine.derive`) */
     derive(): void {
-        this.engine?.derive();
+        if (this.engine === undefined) this.deriveWaits = true;
+        else this.engine.derive();
     }
 
     /**

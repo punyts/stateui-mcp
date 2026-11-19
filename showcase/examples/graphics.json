@@ -224,6 +224,30 @@
                 }
             }
         },
+        "treeDiagram": {
+            "wide": true,
+            "example": {
+                "component": "treeDiagram",
+                "_label": "An app and its parts",
+                "twoSided": true,
+                "addable": true,
+                "noteField": "note",
+                "nodes": {
+                    "shop": { "label": "Shop" },
+                    "data": { "label": "Data", "parent": "shop", "note": "2 datasets" },
+                    "orders": { "label": "Orders", "parent": "data" },
+                    "stock": { "label": "Stock", "parent": "data" },
+                    "screens": { "label": "Screens", "parent": "shop", "note": "3 screens" },
+                    "home": { "label": "Home", "parent": "screens" },
+                    "cart": { "label": "Cart", "parent": "screens" },
+                    "checkout": { "label": "Checkout", "parent": "screens" }
+                },
+                "links": [
+                    { "from": "cart", "to": "orders", "kind": "uses" },
+                    { "from": "home", "to": "stock", "kind": "uses" }
+                ]
+            }
+        },
         "mesh": {
             "wide": true,
             "example": {

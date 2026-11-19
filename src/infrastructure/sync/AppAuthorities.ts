@@ -1,5 +1,6 @@
 import type { Report } from '@punyts/core';
-import type { ComponentLibrary, LogicEffectInfo, LogicFunctions, LogicTraceRun } from '@punyts/stateui-app/core';
+import { FunctionTable } from '@punyts/stateui-app/core';
+import type { ComponentLibrary, FunctionCatalog, FunctionCode, LogicEffectInfo, LogicTraceRun } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import { createAuthority } from '@punyts/state-sync/authority';
 import type { Authority, NamespaceStorage, ServerWrite } from '@punyts/state-sync/authority';
@@ -35,7 +36,7 @@ function ephemeralOf(document: UiDocument): string[] {
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
-/** The running instance a host's logic functions are made for */
+/** The running instance a host's function catalogs are made for */
 export interface LogicInstance {
     readonly appId: string;
     /** The persona whose instance it is; undefined for the owner's own */
@@ -43,8 +44,20 @@ export interface LogicInstance {
     readonly namespace: string;
 }
 
-/** Logic functions, or a factory of them per running instance (an effect that must know whose app it runs for) */
-export type LogicFunctionsSource = LogicFunctions | ((instance: LogicInstance) => LogicFunctions);
+/**
+ * A function catalog of the operator. Its entries are the same for every app, so the validator and the guide list them;
+ * `loadFor`, when present, loads a function for one running instance (an effect that must know whose app it runs for)
+ * in place of `load`
+ */
+export interface InstanceCatalog extends FunctionCatalog {
+    loadFor?(id: string, instance: LogicInstance): FunctionCode | Promise<FunctionCode>;
+}
+
+/** The catalog one running instance loads from: `loadFor` bound to the instance, or the catalog as it is */
+export function catalogFor(catalog: InstanceCatalog, instance: LogicInstance): FunctionCatalog {
+    const { loadFor } = catalog;
+    return loadFor === undefined ? catalog : { name: catalog.name, entries: catalog.entries, load: (id) => loadFor(id, instance) };
+}
 
 /** What Full-mode apps need to run their `logic` on the server */
 export interface AppLogicOptions {
@@ -52,8 +65,8 @@ export interface AppLogicOptions {
     report: Pick<Report, 'info'>;
     /** The server procedures a `call` runs by name; a call to any other name waits for the agent (`ui_call_answer`) */
     procedures?: Readonly<Record<string, AppProcedure>>;
-    /** The compute, expression and effect functions the logic runs by name, or a factory of them per running instance */
-    functions?: LogicFunctionsSource;
+    /** The catalogs of the functions the logic runs by path */
+    functions?: readonly InstanceCatalog[];
     /**
      * Whether a `call` with no procedure and an effect with no function wait for the agent (`ui_call_answer`,
      * `ui_effect_answer`); false: they fail at once, as on a server where no agent answers them. Default true
@@ -163,6 +176,14 @@ export class AppAuthorities {
     private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true, persona?: string): void {
         if (this.logic === undefined) return;
         const { library, report, procedures, agentAnswers = true } = this.logic;
+        const instance: LogicInstance = { appId, namespace, ...(persona !== undefined && { persona }) };
+        const catalogs = this.logic.functions?.map((catalog) => catalogFor(catalog, instance));
+        let functions: FunctionTable | undefined;
+        try {
+            functions = catalogs === undefined ? undefined : new FunctionTable(catalogs, 'server');
+        } catch (error) {
+            report.info('App functions were refused', { app: appId, reason: error instanceof Error ? error.message : String(error) });
+        }
         const logic = new AppLogic(
             authority,
             library,
@@ -173,7 +194,7 @@ export class AppAuthorities {
                       agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload, persona) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
                 : undefined,
             this.gateOf(namespace),
-            typeof this.logic.functions === 'function' ? this.logic.functions({ appId, namespace, ...(persona !== undefined && { persona }) }) : this.logic.functions,
+            functions,
             agentAnswers ? (request, signal) => this.effects.ask(appId, request, signal) : undefined,
             this.logic.limits
         );

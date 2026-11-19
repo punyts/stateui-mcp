@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { AppBlueprint, PartSource } from '@punyts/stateui-app/core';
 import { createStateUiAdapters } from '../config/createStateUiAdapters.js';
-import { parseShape } from '@punyts/stateui-app/core';
+import { hostCatalog, parseShape } from '@punyts/stateui-app/core';
+import type { FunctionCode } from '@punyts/stateui-app/core';
 import { StateUiAppValidator } from './StateUiAppValidator.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 import { MAX_DOCUMENT_BYTES, documentBytes } from '../domain/limits.js';
@@ -31,6 +32,51 @@ function pair(error: { code: string; statePath?: string }): [string, string | un
 }
 
 describe('StateUiAppValidator', () => {
+    describe('functions', () => {
+        const taxId = crypto.randomUUID();
+        const { validator: withFunctions } = createStateUiAdapters({
+            functions: [
+                hostCatalog({
+                    tax: {
+                        id: taxId,
+                        kind: 'compute',
+                        code: (() => ({ tax: 0 })) as FunctionCode,
+                        summary: 'Works out the tax of a total',
+                        runs: ['server'],
+                        inputs: { type: 'object', properties: { total: { type: 'number' } }, required: ['total'] },
+                        outputs: { type: 'object', properties: { tax: { type: 'number' } } }
+                    }
+                })
+            ]
+        });
+        const taxApp = (inputs: object): AppBlueprint =>
+            ({
+                ...appWith({ total: { component: 'text', _text: '{{ $.functions.text.upper($.data.name) }}' } }),
+                logic: { computes: { tax: { inputs, run: '$.functions.host.tax', outputs: { tax: '$.data.tax' } } } }
+            }) as unknown as AppBlueprint;
+
+        it('should list each function the app names, with what the server runs or missing', () => {
+            // Act
+            const functions = withFunctions.appFunctions(taxApp({ total: '$.data.total' }), NO_PARTS);
+
+            // Assert
+            expect(functions).toEqual([
+                { path: '$.functions.text.upper', missing: true },
+                { path: '$.functions.host.tax', kind: 'compute', runs: ['server'], summary: 'Works out the tax of a total' }
+            ]);
+        });
+
+        it('should warn of a function the server does not run and refuse a compute that does not fit its function', () => {
+            // Act
+            const fits = withFunctions.validateAssembled(taxApp({ total: '$.data.total' }), NO_PARTS, 'shop').map(pair);
+            const misfit = withFunctions.validateAssembled(taxApp({ amount: '$.data.total' }), NO_PARTS, 'shop').map(pair);
+
+            // Assert
+            expect(fits).toEqual([['SUI-LOGIC-FUNCTION', '$.screens.home.root.children.total._text']]);
+            expect(misfit.map(([code]) => code)).toContain('SUI-LOGIC-FUNCTION-FIT');
+        });
+    });
+
     describe('validateAssembled', () => {
         it('should pass a plain app with no errors and no warnings', () => {
             expect(check(appWith({ title: { component: 'text', _text: 'Shop' } }))).toEqual([]);

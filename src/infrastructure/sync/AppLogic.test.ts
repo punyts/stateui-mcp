@@ -1,5 +1,5 @@
-import { libraryFromCatalog } from '@punyts/stateui-app/core';
-import type { CatalogSource } from '@punyts/stateui-app/core';
+import { FunctionTable, hostCatalog, libraryFromCatalog } from '@punyts/stateui-app/core';
+import type { CatalogSource, FunctionCatalog, FunctionCode, LogicComputeFunction, LogicEffectFunction } from '@punyts/stateui-app/core';
 import { createAuthority, createMemoryNamespaceStorage } from '@punyts/state-sync/authority';
 import type { Authority } from '@punyts/state-sync/authority';
 import { describe, expect, it, vi } from 'vitest';
@@ -265,19 +265,17 @@ describe('AppLogic', () => {
         }
     });
 
-    it('should run an effect the server registers, keeping its records in $.server', async () => {
+    it('should run an effect of the host catalog, keeping its records in $.server', async () => {
         // Arrange
         const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true, serverKey: new Uint8Array(32) });
         const requests: JsonValue[] = [];
         const failures: string[] = [];
-        const logic = new AppLogic(authority, library, () => undefined, (_message, failure) => failures.push(failure.reason), undefined, undefined, {
-            effects: {
-                'orders.fetch': async (request) => {
-                    requests.push(request as JsonValue);
-                    return { first: 0, total: 1, records: [{ id: 'o1', name: 'First' }] };
-                }
-            }
-        });
+        const ordersFetch: LogicEffectFunction = async (request) => {
+            requests.push(request as JsonValue);
+            return { first: 0, total: 1, records: [{ id: 'o1', name: 'First' }] };
+        };
+        const functions = new FunctionTable([hostCatalog({ ordersFetch: { id: crypto.randomUUID(), kind: 'effect', summary: 'Orders', code: ordersFetch } })], 'server');
+        const logic = new AppLogic(authority, library, () => undefined, (_message, failure) => failures.push(failure.reason), undefined, undefined, functions);
         logic.setDocument({
             data: {},
             app: { component: 'page' },
@@ -285,7 +283,7 @@ describe('AppLogic', () => {
                 effects: {
                     fetchOrders: {
                         request: '$.data.orders.request',
-                        run: 'orders.fetch',
+                        run: '$.functions.host.ordersFetch',
                         status: '$.data.orders.status',
                         records: { into: '$.server.orders', key: 'id' },
                         window: '$.data.orders.view'
@@ -306,6 +304,36 @@ describe('AppLogic', () => {
         expect(authority.get('$.data.orders.status.state')).toBe('ready');
     });
 
+    it('should start the logic once a lazy catalog has loaded the functions it names, and derive then if asked meanwhile', async () => {
+        // Arrange
+        const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: { net: 5 }, app: {} }, createParents: true });
+        const id = crypto.randomUUID();
+        const double: LogicComputeFunction = ({ net }) => ({ out: Number(net) * 2 });
+        let release: (code: FunctionCode) => void = () => undefined;
+        const lazy: FunctionCatalog = {
+            name: 'lazy',
+            entries: [{ id, path: '$.functions.lazy.double', kind: 'compute', runs: ['server'], summary: 'Doubles', inputs: {}, outputs: {} }],
+            load: () => new Promise<FunctionCode>((resolve) => (release = resolve))
+        };
+        const failures: string[] = [];
+        const logic = new AppLogic(authority, library, () => undefined, (_message, failure) => failures.push(failure.reason), undefined, undefined, new FunctionTable([lazy], 'server'));
+        logic.setDocument(
+            { data: {}, app: { component: 'page' }, logic: { computes: { double: { inputs: { net: '$.data.net' }, run: '$.functions.lazy.double', outputs: { out: '$.data.gross' } } } } } as unknown as UiDocument,
+            { derive: false }
+        );
+
+        // Act
+        logic.derive();
+        const before = authority.get('$.data.gross');
+        release(double);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Assert
+        expect(before).toBeUndefined();
+        expect(authority.get('$.data.gross')).toBe(10);
+        expect(failures).toEqual([]);
+    });
+
     it('should ask the agent for an effect the server does not have and commit the answer it gives', async () => {
         // Arrange
         const authority = await createAuthority({ namespace: NAMESPACE, storage: createMemoryNamespaceStorage(), initial: { data: {}, app: {} }, createParents: true });
@@ -315,7 +343,7 @@ describe('AppLogic', () => {
         logic.setDocument({
             data: {},
             app: { component: 'page' },
-            logic: { effects: { fetchOrders: { request: '$.data.orders.request', run: 'orders.fetch', status: '$.data.orders.status', records: { into: '$.data.orders.records', key: 'id' }, window: '$.data.orders.view' } } }
+            logic: { effects: { fetchOrders: { request: '$.data.orders.request', run: '$.functions.host.ordersFetch', status: '$.data.orders.status', records: { into: '$.data.orders.records', key: 'id' }, window: '$.data.orders.view' } } }
         } as unknown as UiDocument);
 
         // Act

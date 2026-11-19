@@ -293,14 +293,15 @@ describe('StateUiComponentCatalog categoryIndex', () => {
         expect(index.every((entry) => entry.typical.length === Math.min(3, entry.count))).toBe(true);
     });
 
-    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3), and scene3d and its seven 3D nodes (G3.4, repeat3d G3.6, label3d G3.6b)', () => {
+    it('should have a graphics entry with the drawing and the 2D shapes (graphics G1.3), scene3d and its seven 3D nodes (G3.4, repeat3d G3.6, label3d G3.6b), and treeDiagram (stateui-hard-ip.md)', () => {
         const graphics = catalog.categoryIndex().find((entry) => entry.category === 'graphics');
 
-        expect(graphics?.count).toBe(20);
+        expect(graphics?.count).toBe(21);
         expect(catalog.search({ need: 'label a part of a 3D model', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toContain('label3d');
         expect(catalog.search({ need: 'draw one 3D mesh per record', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toContain('repeat3d');
         expect(catalog.search({ need: 'show a 3D product model', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['scene3d', 'model']));
         expect(catalog.search({ need: 'draw a seat map', category: 'graphics', limit: 20 }).results.map((hit) => hit.name)).toEqual(expect.arrayContaining(['drawing', 'drawRepeat']));
+        expect(catalog.search({ need: 'show the parts of an app as a tree of cards', category: 'graphics', limit: 5 }).results.map((hit) => hit.name)).toContain('treeDiagram');
     });
 
     it('should pick the members with the most purposes, ties by name', () => {

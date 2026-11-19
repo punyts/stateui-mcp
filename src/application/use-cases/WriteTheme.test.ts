@@ -31,6 +31,7 @@ function fakeValidator(): UiAppValidator {
         themeContrast: () => [{ mode: 'light', text: 'color.text.base', surface: 'color.surface.base', ratio: 21, passesAA: true }],
         checkProperty: () => ({ kind: 'unknown-component' }),
         validatePart: (_kind: PartKind) => [],
+        appFunctions: () => [],
         validateAssembled: (_blueprint, parts, name): UiPartError[] => {
             const theme = parts.themes?.['store'] as { tokens: { button?: { fill?: string } } } | undefined;
             return theme?.tokens.button?.fill === undefined ? [{ code: 'SUI-THEME-TOKEN', message: 'button.fill is gone', part: { kind: 'apps', name } }] : [];

@@ -88,4 +88,25 @@ describe('copyAppParts', () => {
         expect(named.kind === 'copied' && named.app.name).toBe('my-shop');
         expect(missing).toEqual({ kind: 'not-found' });
     });
+
+    it('should list the functions the app and its parts name that the target server does not run', async () => {
+        // Arrange
+        const parts = new InMemoryUiPartRepository();
+        await parts.create({ kind: 'components', name: 'card', body: body<'components'>({ tree: { component: 'text', _text: '{{ $.functions.text.upper($.data.name) }}' } }) });
+        const app = await parts.create({
+            kind: 'apps',
+            name: 'shop',
+            body: body<'apps'>({ app: { component: 'stack' }, screens: { home: { root: { component: 'card' } } }, start: 'home', logic: { computes: { tax: { inputs: {}, run: '$.functions.host.tax', outputs: {} } } } })
+        });
+        if (app.kind !== 'created') throw new Error('no app');
+        const runs = new Set(['$.functions.host.tax']);
+
+        // Act
+        const result = await copyAppParts(parts, new InMemoryUiPartRepository(), app.part.id, { functions: { entry: (path) => (runs.has(path) ? ({} as never) : undefined) } });
+        const unasked = await copyAppParts(parts, new InMemoryUiPartRepository(), app.part.id);
+
+        // Assert
+        expect(result.kind === 'copied' && result.missingFunctions).toEqual(['$.functions.text.upper']);
+        expect(unasked.kind === 'copied' && 'missingFunctions' in unasked).toBe(false);
+    });
 });

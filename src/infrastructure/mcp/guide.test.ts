@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import type { FunctionEntry } from '@punyts/stateui-app/core';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import { EXPECTED_TOOLS } from '../../../test/expectedTools.js';
 import { GUIDE_TOPIC_NAMES, GUIDE_TOPICS, MAX_TOPIC_CHARS, guideText, guideTopic } from './guide.js';
 import type { GuideContext, GuideTopic } from './guide.js';
 import { createGuideTools, GUIDE_FALLBACK_TOPIC } from './guideTools.js';
 import { buildServerInstructions, graphicsSection, paintFieldSection, scene3dSection } from './instructions.js';
+
+/** An operator's function with a summary and the schemas of its inputs and outputs */
+function functionEntry(path: string): FunctionEntry {
+    return {
+        id: crypto.randomUUID(),
+        path,
+        kind: 'compute',
+        runs: ['server', 'browser'],
+        summary: 'Works out the tax of an order total',
+        inputs: { type: 'object', properties: { total: { type: 'number' }, region: { type: 'string' } } },
+        outputs: { type: 'object', properties: { tax: { type: 'number' } } }
+    };
+}
 
 /** A catalog the size of the library's: ten categories with long member names, and the four presets */
 const CATALOG: GuideContext = Object.freeze({
@@ -13,7 +27,8 @@ const CATALOG: GuideContext = Object.freeze({
             (category): CategoryIndexEntry => Object.freeze({ category, count: 24, typical: Object.freeze(['dateRangeField', 'navigationRail', 'segmentedControl']) })
         )
     ),
-    presets: Object.freeze(['calm', 'bold', 'warm', 'crisp'])
+    presets: Object.freeze(['calm', 'bold', 'warm', 'crisp']),
+    functions: Object.freeze(Array.from({ length: 60 }, (_unused, n): FunctionEntry => functionEntry(`$.functions.host.taxOfRegion${n}`)))
 });
 
 const NO_CATALOG: GuideContext = Object.freeze({ index: [], presets: [] });
@@ -66,6 +81,22 @@ describe('the guide topics', () => {
         expect(text).toContain('- commerce (24): dateRangeField, navigationRail, segmentedControl');
         expect(guideText('start', CATALOG)).toContain('or from a preset');
         expect(guideText('start', NO_CATALOG)).not.toMatch(/preset/i);
+    });
+
+    it('should list the operator\'s functions under the cap, and say when there are none', () => {
+        // Arrange
+        const one: GuideContext = { ...NO_CATALOG, functions: [functionEntry('$.functions.host.tax')] };
+
+        // Act
+        const listed = guideText('functions', one);
+        const many = guideText('functions', CATALOG);
+        const none = guideText('functions', NO_CATALOG);
+
+        // Assert
+        expect(listed).toContain('- $.functions.host.tax (compute, server and browser): Works out the tax of an order total (inputs total, region; outputs tax)');
+        expect(many.length).toBeLessThan(MAX_TOPIC_CHARS);
+        expect(many).toMatch(/and \d+ more$/);
+        expect(none).toContain('This server runs no functions.');
     });
 
     it('should find a topic by name and nothing for another name', () => {

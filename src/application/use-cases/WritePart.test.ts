@@ -35,6 +35,7 @@ function fakeValidator(): UiAppValidator {
         themeContrast: () => [],
         checkProperty: () => ({ kind: 'unknown-component' }),
         validatePart: (kind: PartKind, _name: string, body: unknown) => (kind === 'themes' && 'bad' in ((body as UiPartBodies['themes']).tokens ?? {}) ? [BROKEN] : []),
+        appFunctions: () => [],
         validateAssembled: (_blueprint, parts, name): UiPartError[] => {
             const themes = Object.values(parts.themes ?? {});
             return themes.some((theme) => 'gone' in theme.tokens) ? [{ ...BROKEN, part: { kind: 'apps', name } }] : [];

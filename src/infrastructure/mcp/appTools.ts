@@ -70,7 +70,7 @@ export function createAppTools(
         {
             name: 'ui_validate',
             description:
-                'Build time: validate an app of parts, assembled with every part it uses. Returns { app, revision, valid, errors, warnings, uses }: each error and warning has a code and the state path it concerns, and names the part that holds it, and uses lists the parts the app names.',
+                'Build time: validate an app of parts, assembled with every part it uses. Returns { app, revision, valid, errors, warnings, uses, functions }: each error and warning has a code and the state path it concerns, and names the part that holds it, uses lists the parts the app names, and functions lists each function path the app names with its kind, where it runs and its summary, or missing: true when this server does not run it.',
             inputSchema: VALIDATE.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -79,7 +79,7 @@ export function createAppTools(
                 const { app } = parsed.value;
                 const part = await useCases.validatePartApp.execute(app);
                 if (part.kind === 'not-found') return fail('not-found', `No app named "${app}"; ui_list lists the apps`, { app });
-                return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: withGuides(part.errors), warnings: withGuides(part.warnings), uses: part.uses });
+                return succeed({ app: part.app, revision: part.revision, valid: part.valid, errors: withGuides(part.errors), warnings: withGuides(part.warnings), uses: part.uses, functions: part.functions });
             }
         },
         {

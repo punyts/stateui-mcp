@@ -3,6 +3,7 @@ import {
     buildAppOverlay,
     entryShape,
     extractLinks,
+    functionPaths,
     libraryFromCatalog,
     resolveNode,
     screenPath,
@@ -16,11 +17,12 @@ import type {
     ComponentLibrary,
     ComponentOverlays,
     DocumentComposed,
+    FunctionLookup,
     JsonObject as LibraryJsonObject,
     Node,
     PartSource
 } from '@punyts/stateui-app/core';
-import type { ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
+import type { AppFunction, ContrastPair, PropertyCheck, UiAppValidator, UiPartError } from '../application/ports/UiAppValidator.js';
 import { resolveDocumentPath, toStatePath } from '../domain/DocumentPath.js';
 import { isJsonObject } from '../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../domain/JsonValue.js';
@@ -32,6 +34,7 @@ import { isBlockingError } from '../domain/UiBuildError.js';
 import type { UiBuildError } from '../domain/UiBuildError.js';
 import { themeContrast } from './contrast.js';
 import { assembledErrors, partErrors } from './partChecks.js';
+import type { PartCheckContext } from './partChecks.js';
 import { loadComponentOverlay } from './stateUiLibrary.js';
 import type { CatalogFile } from './stateUiLibrary.js';
 
@@ -89,7 +92,8 @@ export class StateUiAppValidator implements UiAppValidator {
 
     constructor(
         private readonly catalog: CatalogFile,
-        private readonly isIconName: (name: string) => boolean
+        private readonly isIconName: (name: string) => boolean,
+        private readonly functions?: FunctionLookup
     ) {
         // The catalog file is the library's own `catalog.json`: each entry fits `CatalogComponent`
         this.library = libraryFromCatalog(catalog as unknown as CatalogSource);
@@ -108,8 +112,19 @@ export class StateUiAppValidator implements UiAppValidator {
         return unknown ? undefined : (this.withoutRuntime(result.node as unknown as JsonValue) as JsonObject);
     }
 
+    private checkContext(): PartCheckContext {
+        return { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken, ...(this.functions !== undefined && { functions: this.functions }) };
+    }
+
+    appFunctions(blueprint: AppBlueprint, parts: PartSource): readonly AppFunction[] {
+        return functionPaths(this.assembleApp(blueprint, parts)).map((path) => {
+            const entry = this.functions?.entry?.(path);
+            return entry === undefined ? { path, missing: true as const } : { path, kind: entry.kind, runs: entry.runs, summary: entry.summary };
+        });
+    }
+
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[] {
-        const errors = assembledErrors(blueprint, parts, name, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
+        const errors = assembledErrors(blueprint, parts, name, this.checkContext());
         if (errors.some(isBlockingError)) return errors;
 
         const document = this.assembleApp(blueprint, parts);
@@ -124,7 +139,7 @@ export class StateUiAppValidator implements UiAppValidator {
     }
 
     validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
-        return partErrors(kind, name, body, parts, { library: this.library, isIconName: this.isIconName, hasToken: this.hasToken });
+        return partErrors(kind, name, body, parts, this.checkContext());
     }
 
     /** `SUI-LOCALE-MISSING` warnings (and the errors of an overlay) for each language the app or a screen of the assembled app declares in `locales` */

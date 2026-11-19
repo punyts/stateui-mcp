@@ -1,4 +1,4 @@
-import type { AppBlueprint, PartRef, PartSource } from '@punyts/stateui-app/core';
+import type { AppBlueprint, FunctionKind, LogicSide, PartRef, PartSource } from '@punyts/stateui-app/core';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { PartKind } from '../../domain/partName.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
@@ -27,6 +27,11 @@ export interface UiPartError extends UiBuildError {
     readonly part: PartRef;
 }
 
+/** A function an app names: the operator's entry for it, or `missing` when this server does not run it */
+export type AppFunction =
+    | { readonly path: string; readonly kind: FunctionKind; readonly runs: readonly LogicSide[]; readonly summary: string }
+    | { readonly path: string; readonly missing: true };
+
 /** Checks documents against the component library. Errors and warnings share one list; see `isValid` */
 export interface UiAppValidator {
     /**
@@ -50,6 +55,8 @@ export interface UiAppValidator {
      * checks the result; each error names the part that holds it. `name` is the app's part name
      */
     validateAssembled(blueprint: AppBlueprint, parts: PartSource, name: string): readonly UiPartError[];
+    /** Each function path the assembled app names, once, with what this server runs at it */
+    appFunctions(blueprint: AppBlueprint, parts: PartSource): readonly AppFunction[];
     /**
      * The document the runtime mounts for an app: its blueprint assembled with the parts it uses (`parts`, loaded by
      * the caller). What assembles is returned; the errors are `validateAssembled`'s

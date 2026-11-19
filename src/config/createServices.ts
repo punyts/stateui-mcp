@@ -3,8 +3,9 @@ import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authori
 import type { Authority, Upstream } from '@punyts/state-sync/authority';
 import type { InstancePlacement } from '../application/ports/InstancePlacement.js';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
-import { CORE_ICON_NAMES } from '@punyts/stateui-components';
-import type { LogicFunctionsSource } from '../infrastructure/sync/AppAuthorities.js';
+import { COMPONENT_FUNCTIONS, CORE_ICON_NAMES } from '@punyts/stateui-components';
+import type { InstanceCatalog } from '../infrastructure/sync/AppAuthorities.js';
+import type { FunctionEntry } from '@punyts/stateui-app/core';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { CategoryIndexEntry } from '../application/ports/ComponentCatalog.js';
 import type { ThemePresetSummary } from '../application/ports/PatternCatalog.js';
@@ -69,10 +70,11 @@ export interface ServicesOptions {
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
     readonly procedures?: Readonly<Record<string, AppProcedure>>;
     /**
-     * The compute, expression and effect functions Full-mode logic runs by name, or a factory of them that each running
-     * instance calls with its app, persona and namespace
+     * The catalogs of the functions logic and expressions run by path. The operator chooses them: the host's own under
+     * `$.functions.host`. The components' own catalog (`COMPONENT_FUNCTIONS`) is always installed before them. The
+     * validator checks apps against their entries and the guide lists them
      */
-    readonly logicFunctions?: LogicFunctionsSource;
+    readonly functions?: readonly InstanceCatalog[];
     /** A file that gets one JSON line per tool call; absent: no log */
     readonly toolLog?: string;
     /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
@@ -127,6 +129,8 @@ export interface Services {
     readonly categoryIndex: readonly CategoryIndexEntry[];
     /** The library's theme preset names, for the server instructions */
     readonly presets: readonly ThemePresetSummary[];
+    /** The operator's functions, which the guide lists */
+    readonly functions: readonly FunctionEntry[];
     /** Finishes a part rename that a crash stopped halfway (`rename.pending.json`); true when there was one */
     readonly recoverParts: () => Promise<boolean>;
     readonly browser: PreviewBrowser;
@@ -180,7 +184,13 @@ export function createServices(options: ServicesOptions): Services {
     const storage = options.storage ?? fileStorage(options.dataDir as string, ownerId, now);
     const instancesOf = (persona: string): UiInstanceRepository => storage.instances(persona);
     const hub = new PreviewHub(now);
-    const { validator, catalog, patterns, library, toolCallLog } = createStateUiAdapters({ report: options.report, ...(options.toolLog !== undefined && { toolLog: options.toolLog }) });
+    // A component's functions go with the component: they are installed whenever the components are
+    const catalogs: readonly InstanceCatalog[] = [COMPONENT_FUNCTIONS, ...(options.functions ?? [])];
+    const { validator, catalog, patterns, library, functions, toolCallLog } = createStateUiAdapters({
+        report: options.report,
+        ...(options.toolLog !== undefined && { toolLog: options.toolLog }),
+        functions: catalogs
+    });
     const parts = new IndexedUiPartRepository(storage.parts);
     // Instances bound to one shared dataset see each other's changes (Full mode)
     const writeData = new WriteData(parts, validator, randomUUID, options.report);
@@ -195,7 +205,7 @@ export function createServices(options: ServicesOptions): Services {
             library,
             report: options.report,
             ...(options.procedures !== undefined && { procedures: options.procedures }),
-            ...(options.logicFunctions !== undefined && { functions: options.logicFunctions }),
+            functions: catalogs,
             ...(options.agentAnswers !== undefined && { agentAnswers: options.agentAnswers }),
             ...(options.logicLimits !== undefined && { limits: options.logicLimits })
         },
@@ -260,6 +270,7 @@ export function createServices(options: ServicesOptions): Services {
         resyncParts: () => parts.resync(),
         categoryIndex: catalog.categoryIndex(),
         presets: patterns.presets().map((name) => ({ name, summary: patterns.preset(name)?.summary ?? '' })),
+        functions: functions.entries(),
         recoverParts: () => storage.recover?.() ?? Promise.resolve(false),
         browser,
         report: options.report,

@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { FunctionEntry } from '@punyts/stateui-app/core';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
 import type { ThemePresetSummary } from '../../application/ports/PatternCatalog.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
@@ -41,6 +42,8 @@ export interface StateUiToolDependencies {
     readonly categoryIndex: readonly CategoryIndexEntry[];
     /** The library's theme presets, which the server instructions and ui_theme_create list; none until the catalog has presets */
     readonly presets?: readonly ThemePresetSummary[];
+    /** The functions the operator installed, which the guide topic functions lists; none when absent */
+    readonly functions?: readonly FunctionEntry[];
     readonly hub: PreviewHub;
     readonly liveViews: LiveViews;
     readonly browser: PreviewBrowser;
@@ -70,7 +73,7 @@ const START_HERE_TOOLS = new Set(['ui_list', 'ui_theme_create', 'ui_app_create',
 export function createStateUiTools(dependencies: StateUiToolDependencies): readonly UiToolDefinition[] {
     const { useCases, hub, liveViews, browser, viewUrl, calls, effects, authorities, instanceViews } = dependencies;
     const tools = [
-        ...createGuideTools({ index: dependencies.categoryIndex, presets: presetNames(dependencies) }),
+        ...createGuideTools({ index: dependencies.categoryIndex, presets: presetNames(dependencies), ...(dependencies.functions !== undefined && { functions: dependencies.functions }) }),
         ...createCatalogTools(useCases),
         ...createAppTools(useCases, browser, instanceViews),
         ...createPartTools(useCases, liveViews),
