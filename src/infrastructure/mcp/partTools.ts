@@ -152,7 +152,7 @@ export function createPartTools(
         {
             name: 'ui_delete',
             description:
-                'Build time: delete a part for good, or a screen of an app (kind "screens" with app). Ask the user first: it cannot be restored. A part that anything uses is not deleted, and the result names the users (change or delete them first); the start screen of an app is not deleted either. expectedRevision is required (for a screen, the app\'s). Deleting an app also deletes its instance and closes its open views. Returns { kind, name, revision }.',
+                'Build time: delete a part for good, or a screen of an app (kind "screens" with app). Ask the user first: it cannot be restored. A part that anything uses is not deleted, and the result names the users (change or delete them first). Any screen may be deleted: deleting the start screen makes the next screen the start (else the one before), and deleting the last leaves the app with no screens until ui_screen_create adds one. expectedRevision is required (for a screen, the app\'s). Deleting an app also deletes its instance and closes its open views. Returns { kind, name, revision }, and for a screen app and start (the start screen now, or null).',
             inputSchema: DELETE.schema,
             annotations: DESTROYS,
             run: async (args) => {
@@ -168,7 +168,7 @@ export function createPartTools(
                 switch (result.kind) {
                     case 'deleted':
                         if (kind === 'apps') await live.deleted(result.id);
-                        return succeed({ kind, name, ...(target.app !== undefined && { app: target.app }), revision: result.revision });
+                        return succeed({ kind, name, ...(target.app !== undefined && { app: target.app }), revision: result.revision, ...(result.start !== undefined && { start: result.start }) });
                     case 'in-use':
                         return fail('in-use', `${result.reason}; nothing was deleted`, { kind, name, users: result.users });
                     case 'conflict':

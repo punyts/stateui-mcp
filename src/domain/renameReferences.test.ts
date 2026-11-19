@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appWithRenamedScreen, bodyWithRenamedPart, hasScreen } from './renameReferences.js';
+import { appWithoutScreen, appWithRenamedScreen, bodyWithRenamedPart, hasScreen } from './renameReferences.js';
 import type { UiPartBodies } from './UiPart.js';
 
 function deepFreeze<T>(value: T): T {
@@ -121,5 +121,24 @@ describe('appWithRenamedScreen', () => {
     it('should tell whether an app has a screen', () => {
         // Act, Assert
         expect([hasScreen(APP, 'home'), hasScreen(APP, 'toString'), hasScreen({} as UiPartBodies['apps'], 'home')]).toEqual([true, false, false]);
+    });
+});
+
+describe('appWithoutScreen', () => {
+    it('should hand the start to the screen after it, else the one before, and leave none with the last screen', () => {
+        // Act
+        const withoutHome = appWithoutScreen(APP, 'home') as unknown as { start?: string; screens: Record<string, unknown> };
+        const withoutAbout = appWithoutScreen(APP, 'about') as unknown as { start?: string };
+        const fromLast = appWithoutScreen({ ...APP, start: 'about' } as UiPartBodies['apps'], 'about') as unknown as { start?: string };
+        const empty = appWithoutScreen(withoutHome as unknown as UiPartBodies['apps'], 'about') as unknown as Record<string, unknown>;
+
+        // Assert
+        expect(withoutHome.start).toBe('about');
+        expect(Object.keys(withoutHome.screens)).toEqual(['about']);
+        expect(withoutAbout.start).toBe('home');
+        expect(fromLast.start).toBe('home');
+        expect(empty['screens']).toEqual({});
+        expect(Object.hasOwn(empty, 'start')).toBe(false);
+        expect(appWithoutScreen(APP, 'nothing')).toBeUndefined();
     });
 });

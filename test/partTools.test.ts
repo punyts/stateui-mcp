@@ -245,17 +245,22 @@ describe('ui_delete', () => {
         expect(list.body['count']).toBe(1);
     });
 
-    it('should delete a screen with the app\'s revision and refuse the start screen', async () => {
+    it('should delete any screen with the app\'s revision, the start passing on and the last leaving none', async () => {
         // Act
-        const start = await call(harness.client, 'ui_delete', { kind: 'screens', app: 'shop', name: 'home', expectedRevision: 1 });
-        const about = await call(harness.client, 'ui_delete', { kind: 'screens', app: 'shop', name: 'about', expectedRevision: 1 });
+        const home = await call(harness.client, 'ui_delete', { kind: 'screens', app: 'shop', name: 'home', expectedRevision: 1 });
         const screens = await call(harness.client, 'ui_list', { kind: 'screens', app: 'shop' });
+        const about = await call(harness.client, 'ui_delete', { kind: 'screens', app: 'shop', name: 'about', expectedRevision: 2 });
+        const none = await call(harness.client, 'ui_list', { kind: 'screens', app: 'shop' });
+        const added = await call(harness.client, 'ui_screen_create', { app: 'shop', name: 'again', expectedRevision: 3, root: { component: 'panel' } });
+        const start = await call(harness.client, 'ui_get', { kind: 'apps', name: 'shop', path: 'start' });
 
         // Assert
-        expect(start.body).toMatchObject({ error: 'in-use', users: [{ kind: 'apps', name: 'shop' }] });
-        expect(start.body['message']).toContain('is the start screen of the app "shop"');
-        expect(about.body).toEqual({ kind: 'screens', name: 'about', app: 'shop', revision: 2 });
-        expect(screens.body).toMatchObject({ revision: 2, items: [{ name: 'home' }] });
+        expect(home.body).toEqual({ kind: 'screens', name: 'home', app: 'shop', revision: 2, start: 'about' });
+        expect(screens.body).toMatchObject({ revision: 2, items: [{ name: 'about', start: true }] });
+        expect(about.body).toEqual({ kind: 'screens', name: 'about', app: 'shop', revision: 3, start: null });
+        expect(none.body).toMatchObject({ revision: 3, items: [] });
+        expect(added.isError).not.toBe(true);
+        expect(start.body['value']).toBe('again');
     });
 });
 

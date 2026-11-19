@@ -82,8 +82,3 @@ export function partReferences<K extends PartKind>(kind: K, body: UiPartBodies[K
     }
     return refs.list;
 }
-
-/** The `start` screen of an app, which cannot be deleted */
-export function startScreen(app: UiPartBodies['apps']): string | undefined {
-    return typeof app.start === 'string' ? app.start : undefined;
-}

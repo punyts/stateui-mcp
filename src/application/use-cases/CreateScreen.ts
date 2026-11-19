@@ -38,7 +38,8 @@ export type CreateScreenResult =
 
 /**
  * Adds a screen to an app: title, params and a root (a node tree, or a library or owner pattern). It is a write of the app, so the
- * app's revision is checked and raised, and the app is checked as a whole first (`checkPartApp`)
+ * app's revision is checked and raised, and the app is checked as a whole first (`checkPartApp`). Added to an app with no
+ * screens (its last was deleted), the screen becomes the app's start
  */
 export class CreateScreen {
     constructor(
@@ -69,7 +70,8 @@ export class CreateScreen {
             ...(input.params !== undefined && { params: input.params }),
             root: root.tree
         };
-        const body = { ...app.body, screens: { ...app.body.screens, [input.name]: screen } } as unknown as UiPartBodies['apps'];
+        // The first screen of an app with none is its start
+        const body = { ...app.body, screens: { ...app.body.screens, [input.name]: screen }, start: app.body.start ?? input.name } as unknown as UiPartBodies['apps'];
         const check = await checkPartApp(this.parts, this.validator, input.app, body);
         if (check.kind !== 'checked') return check;
         const written = await this.parts.write('apps', input.app, body, input.expectedRevision);

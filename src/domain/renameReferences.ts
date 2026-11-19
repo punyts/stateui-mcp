@@ -94,7 +94,16 @@ export function appWithoutScreen(app: UiPartBodies['apps'], name: string): UiPar
     const screens = source['screens'];
     if (!isRecord(screens) || !Object.hasOwn(screens, name)) return undefined;
     const kept = Object.fromEntries(Object.entries(screens).filter(([key]) => key !== name));
-    return structuredClone({ ...source, screens: kept }) as unknown as UiPartBodies['apps'];
+    const without: Record<string, Json> = { ...source, screens: kept };
+    // The start passes to the screen after it, else the one before; the last screen leaves the app with none
+    if (source['start'] === name) {
+        const names = Object.keys(screens);
+        const at = names.indexOf(name);
+        const next = names[at + 1] ?? names[at - 1];
+        if (next === undefined) delete without['start'];
+        else without['start'] = next;
+    }
+    return structuredClone(without) as unknown as UiPartBodies['apps'];
 }
 
 /** True when the app has a screen of this name */

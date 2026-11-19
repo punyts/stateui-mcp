@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { componentNames, partReferences, startScreen } from './partReferences.js';
+import { componentNames, partReferences } from './partReferences.js';
 import type { UiPartBodies } from './UiPart.js';
 
 const PATTERN = Object.freeze({
@@ -23,12 +23,6 @@ describe('partReferences', () => {
         expect(partReferences('data', { records: {} } as UiPartBodies['data'])).toEqual([]);
         expect(partReferences('logic', { needs: 'x' } as unknown as UiPartBodies['logic'])).toEqual([]);
         expect(partReferences('apps', { uses: { themes: 'store', data: { a: 1 } } } as unknown as UiPartBodies['apps'])).toEqual([]);
-    });
-
-    it('should read the start screen only when it is a string', () => {
-        // Act, Assert
-        expect(startScreen({ start: 'home' } as UiPartBodies['apps'])).toBe('home');
-        expect(startScreen({} as UiPartBodies['apps'])).toBeUndefined();
     });
 
     it('should not take a component key that holds no string as a name', () => {

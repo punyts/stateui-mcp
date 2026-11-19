@@ -93,21 +93,6 @@ describe('UsageIndex and deleteRule', () => {
                 users
             });
         });
-
-        it('should report the start screen of an app and allow another screen', () => {
-            // Arrange
-            const index = shopIndex();
-
-            // Act
-            const users = index.usedBy('screens', 'home', 'shop');
-            const start = deleteRule(index, { kind: 'screens', app: 'shop', name: 'home' });
-            const other = deleteRule(index, { kind: 'screens', app: 'shop', name: 'about' });
-
-            // Assert
-            expect(users).toEqual([{ kind: 'apps', name: 'shop' }]);
-            expect(start).toEqual({ kind: 'refused', reason: 'The screen "home" is the start screen of the app "shop": make another screen the start first', users });
-            expect(other).toEqual({ kind: 'ok' });
-        });
     });
 
     it('should allow deleting a part with no users', () => {
@@ -153,7 +138,6 @@ describe('UsageIndex and deleteRule', () => {
 
             // Assert
             expect(index.usedBy('themes', 'store')).toEqual([{ kind: 'apps', name: 'shop' }]);
-            expect(index.usedBy('screens', 'home', 'shop')).toHaveLength(1);
         });
 
         it('should follow a write, a delete and a create', async () => {
@@ -172,7 +156,6 @@ describe('UsageIndex and deleteRule', () => {
             expect(afterWrite).toEqual({ kind: 'ok' });
             expect(index.has('components', 'badge')).toBe(false);
             expect(index.usedBy('themes', 'store')).toEqual([{ kind: 'apps', name: 'kiosk' }, { kind: 'apps', name: 'shop' }]);
-            expect(index.usedBy('screens', 'about', 'kiosk')).toHaveLength(1);
         });
 
         it('should move a renamed part and keep the old name used by parts that still name it', async () => {
@@ -187,7 +170,6 @@ describe('UsageIndex and deleteRule', () => {
             // Assert
             expect(index.usedBy('themes', 'brand')).toEqual([]);
             expect(index.usedBy('themes', 'store')).toEqual([{ kind: 'apps', name: 'store-front' }]);
-            expect(index.usedBy('screens', 'home', 'store-front')).toHaveLength(1);
             expect(index.has('apps', 'shop')).toBe(false);
         });
 

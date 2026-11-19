@@ -1,7 +1,7 @@
 import type { PartRef } from '@punyts/stateui-app/core';
 import { PART_KINDS } from '../domain/partName.js';
 import type { PartKind } from '../domain/partName.js';
-import { partReferences, startScreen } from '../domain/partReferences.js';
+import { partReferences } from '../domain/partReferences.js';
 import type { UiPartBodies } from '../domain/UiPart.js';
 import type { UiPartRepository } from './ports/UiPartRepository.js';
 
@@ -30,7 +30,6 @@ export interface UsageSource {
 export class UsageIndex {
     private readonly references = new Map<string, readonly PartRef[]>();
     private readonly parts = new Map<string, PartRef>();
-    private readonly starts = new Map<string, string>();
 
     /** The index of every part in `repository` */
     static async build(repository: UiPartRepository): Promise<UsageIndex> {
@@ -52,41 +51,28 @@ export class UsageIndex {
             key,
             partReferences(kind, body).filter((ref) => ref.kind !== kind || ref.name !== name)
         );
-        if (kind !== 'apps') return;
-        const start = startScreen(body as UiPartBodies['apps']);
-        if (start === undefined) this.starts.delete(name);
-        else this.starts.set(name, start);
     }
 
     remove(kind: PartKind, name: string): void {
         const key = keyOf(kind, name);
         this.parts.delete(key);
         this.references.delete(key);
-        if (kind === 'apps') this.starts.delete(name);
     }
 
     /** Moves a part to its new name with its own references; references to it elsewhere are the writes of those parts */
     rename(kind: PartKind, from: string, to: string): void {
         const references = this.references.get(keyOf(kind, from));
-        const start = kind === 'apps' ? this.starts.get(from) : undefined;
         this.remove(kind, from);
         this.parts.set(keyOf(kind, to), { kind, name: to });
         this.references.set(keyOf(kind, to), references ?? []);
-        if (start !== undefined) this.starts.set(to, start);
     }
 
     has(kind: PartKind, name: string): boolean {
         return this.parts.has(keyOf(kind, name));
     }
 
-    /**
-     * The parts that name this part directly, by kind then name. With `kind: "screens"`, `name` is a screen of `app`, and
-     * the app is its user when the screen is the app's `start`
-     */
-    usedBy(kind: PartKind, name: string): PartRef[];
-    usedBy(kind: 'screens', name: string, app: string): PartRef[];
-    usedBy(kind: PartKind | 'screens', name: string, app?: string): PartRef[] {
-        if (kind === 'screens') return app !== undefined && this.starts.get(app) === name ? [{ kind: 'apps', name: app }] : [];
+    /** The parts that name this part directly, by kind then name */
+    usedBy(kind: PartKind, name: string): PartRef[] {
         const users: PartRef[] = [];
         for (const [key, references] of this.references) {
             if (references.some((ref) => ref.kind === kind && ref.name === name)) users.push(this.parts.get(key) as PartRef);
