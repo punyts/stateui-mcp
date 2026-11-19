@@ -34,7 +34,8 @@
 - **`startHttpServer` stays for embedders** (Magnetic): a statenet has no authentication to hand to signed-in browsers. `createServices` takes `viewPage` (the page of an app's view, when it is not `<origin>/apps/<id>`) and `Services` has `onPartChange`; `BrowserPreview` takes the page of an app instead of an origin.
 - **Apps open from another computer on the network.** With `--host 0.0.0.0` the pages are plain HTTP on a
   network address, which is not a secure context, so `crypto.randomUUID` was missing and the host script stopped
-  before making the frame. The host script and the runtime bundle (through state-sync) now use `randomId()`.
+  before making the frame. The host script, the statenet channel's file requests and the runtime bundle (through state-sync) now use
+  `randomId()`.
 - **`logicRunOrder` is exported** (from `@punyts/stateui-app/core`): the units of an app's logic in run order with the
   paths each reads and writes. Magnetic's State tab shows them beside each path.
 - **An editor can work over the page (`window.stateuiHost`).** `inspect({ at: { x, y } } | { paths })` asks the app

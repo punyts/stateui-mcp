@@ -7,6 +7,7 @@
  * most `MAX_QUEUED`) and go once it is back, after the hello.
  */
 
+import { randomId } from '@punyts/state-sync';
 import type { SyncClient } from '@punyts/state-sync';
 import { fromBase64, isRelayEnvelope, RelayAssembler, SERVER_EMIT, toBase64, toEnvelopes, VIEW_EMIT } from '../domain/viewRelay.js';
 import type { Json } from './documentUpdate.js';
@@ -70,7 +71,7 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
                 resolve(undefined);
                 return;
             }
-            const id = crypto.randomUUID();
+            const id = randomId();
             const timer = setTimeout(() => {
                 requests.delete(id);
                 resolve(undefined);
