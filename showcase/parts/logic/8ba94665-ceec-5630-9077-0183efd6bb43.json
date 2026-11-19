@@ -1,0 +1,31 @@
+{
+  "id": "8ba94665-ceec-5630-9077-0183efd6bb43",
+  "kind": "logic",
+  "name": "showcase-tasks",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "needs": {
+      "tasks": {
+        "model": "showcase-task"
+      }
+    },
+    "params": {},
+    "rules": {
+      "unassignOnTodo": {
+        "when": {
+          "path": "$.data.tasks.{task}.column",
+          "is": "todo"
+        },
+        "do": [
+          {
+            "command": "set",
+            "target": "$.data.tasks.{task}.assignee",
+            "value": ""
+          }
+        ]
+      }
+    }
+  }
+}

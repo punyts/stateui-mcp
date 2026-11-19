@@ -4931,6 +4931,9 @@
         "preferences": {
           "dataset": "showcase-preferences"
         }
+      },
+      "logic": {
+        "showcase-tasks": {}
       }
     }
   }

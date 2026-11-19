@@ -75,6 +75,23 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
         expect(afterReload).toEqual({ theme: 'showcase-moody', mode: 'dark' });
     });
 
+    it("should unassign a task moved back to To do, by the showcase's logic module", async () => {
+        // Arrange
+        await call(harness.client, 'ui_preview', { app: SHOWCASE_APP, screen: 'data' });
+        const assignee = async (): Promise<unknown> => {
+            const state = await call(harness.client, 'ui_state_get', { app: SHOWCASE_APP, path: '$.data.tasks.t3.assignee' });
+            return state.body['value'];
+        };
+        expect(await assignee()).not.toBe('');
+
+        // Act
+        const moved = await call(harness.client, 'ui_data_write', { dataset: 'showcase-tasks', operations: [{ op: 'set', path: 't3.column', value: 'todo' }] });
+
+        // Assert
+        expect(moved.isError, JSON.stringify(moved.body)).toBe(false);
+        await expect.poll(assignee).toBe('');
+    });
+
     it('should report no runtime error for the whole visit', async () => {
         // Act
         const state = await call(harness.client, 'ui_state_get', { app: SHOWCASE_APP, path: '$.route' });

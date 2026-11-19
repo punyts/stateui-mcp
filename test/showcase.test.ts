@@ -167,7 +167,7 @@ describe('installing the showcase', () => {
             expect(JSON.stringify(listed.body)).toContain(SHOWCASE_APP);
             expect(Object.keys(names['apps'] ?? {})).toEqual([SHOWCASE_APP]);
             expect(Object.keys(names['themes'] ?? {})).toHaveLength(4);
-            expect(validated.isError).toBe(false);
+            expect(validated.isError, JSON.stringify(validated.body)).toBe(false);
             expect(validated.body['errors']).toEqual([]);
             expect(validated.body['valid']).toBe(true);
         } finally {

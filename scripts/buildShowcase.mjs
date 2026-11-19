@@ -408,6 +408,19 @@ export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DI
         bindings[name] = { dataset: part.name };
     }
 
+    // A logic module: a task moved back to To do on the board loses its assignee
+    const tasksModule = partFile('logic', 'showcase-tasks', {
+        needs: { tasks: { model: 'showcase-task' } },
+        params: {},
+        rules: {
+            unassignOnTodo: {
+                when: { path: '$.data.tasks.{task}.column', is: 'todo' },
+                do: [{ command: 'set', target: '$.data.tasks.{task}.assignee', value: '' }]
+            }
+        }
+    });
+    output.set(`logic/${tasksModule.id}.json`, json(tasksModule));
+
     // The header and the menu every screen places
     for (const [name, body] of [[HEADER, headerPart()], [MENU, menuPart(sources, total)]]) {
         const part = partFile('components', name, body);
@@ -422,7 +435,7 @@ export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DI
         start: 'home',
         app: appNode(),
         screens,
-        uses: { themes, data: bindings }
+        uses: { themes, data: bindings, logic: { [tasksModule.name]: {} } }
     });
     if (app.id !== appId) throw new Error('The app id is not the one its files are stored under');
     output.set(`apps/${app.id}.json`, json(app));
