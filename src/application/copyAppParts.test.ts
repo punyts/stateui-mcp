@@ -99,10 +99,10 @@ describe('copyAppParts', () => {
             body: body<'apps'>({ app: { component: 'stack' }, screens: { home: { root: { component: 'card' } } }, start: 'home', logic: { computes: { tax: { inputs: {}, run: '$.functions.host.tax', outputs: {} } } } })
         });
         if (app.kind !== 'created') throw new Error('no app');
-        const runs = new Set(['$.functions.host.tax']);
+        const runs = [{ id: '00000000-0000-4000-8000-000000000001', path: '$.functions.host.tax', kind: 'compute', runs: ['server'], summary: 'tax', inputs: {}, outputs: {} }] as const;
 
         // Act
-        const result = await copyAppParts(parts, new InMemoryUiPartRepository(), app.part.id, { functions: { entry: (path) => (runs.has(path) ? ({} as never) : undefined) } });
+        const result = await copyAppParts(parts, new InMemoryUiPartRepository(), app.part.id, { functions: runs });
         const unasked = await copyAppParts(parts, new InMemoryUiPartRepository(), app.part.id);
 
         // Assert

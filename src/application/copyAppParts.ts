@@ -1,5 +1,5 @@
 import { functionPaths } from '@punyts/stateui-app/core';
-import type { FunctionTable, PartRef } from '@punyts/stateui-app/core';
+import type { FunctionEntry, PartRef } from '@punyts/stateui-app/core';
 import { partReferences } from '../domain/partReferences.js';
 import { bodyWithRenamedPart } from '../domain/renameReferences.js';
 import type { PartKind } from '../domain/partName.js';
@@ -33,8 +33,8 @@ export interface CopyAppOptions {
     readonly name?: string;
     /** Keeps the app's id in the target, for a move rather than a copy; the target must not have an app with that id */
     readonly keepId?: boolean;
-    /** The functions the target server runs; the result then lists those the app names that it lacks */
-    readonly functions?: Pick<FunctionTable, 'entry'>;
+    /** The functions the target server runs (`Services.functions`); the result then lists those the app names that it lacks */
+    readonly functions?: readonly FunctionEntry[];
 }
 
 const MAX_NAME = 63;
@@ -130,6 +130,7 @@ export async function copyAppParts(
     const created = await to.create({ kind: 'apps', name, body: renamed('apps', app.body), ...(options.keepId === true && { id: app.id }) });
     if (created.kind !== 'created') return { kind: 'failed', reason: created.kind === 'invalid' ? created.reason : `The app "${name}" could not be made` };
     const { functions } = options;
-    const missingFunctions = functions === undefined ? undefined : functionPaths([app.body, ...reached.map((part) => part.body)]).filter((path) => functions.entry(path) === undefined);
+    const runs = functions === undefined ? undefined : new Set(functions.map((entry) => entry.path));
+    const missingFunctions = runs === undefined ? undefined : functionPaths([app.body, ...reached.map((part) => part.body)]).filter((path) => !runs.has(path));
     return { kind: 'copied', app: created.part, parts: made.reverse(), ...(missingFunctions !== undefined && { missingFunctions }) };
 }
