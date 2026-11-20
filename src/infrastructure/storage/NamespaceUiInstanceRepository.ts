@@ -7,8 +7,8 @@ import type { JsonObject } from '../../domain/JsonValue.js';
 
 /** Where instances are kept as stored namespaces: an epoch storage (an aggregate's, or the node's way to one) that can also forget one */
 export interface InstanceNamespaceStore extends EpochStorage {
-    /** Removes a namespace whole: its state, its log and its head */
-    remove(address: string): Promise<void>;
+    /** Removes a namespace whole: its state, its log and its head; under `epoch`, where the store fences */
+    remove(address: string, epoch?: number): Promise<void>;
 }
 
 type DiffInput = Parameters<typeof diffInstance>[0];
@@ -106,7 +106,8 @@ export class NamespaceUiInstanceRepository implements UiInstanceRepository {
 
     async reset(appId: string): Promise<void> {
         if (!isAppId(appId)) return;
-        await this.store.remove(this.addressOf(appId));
+        const address = this.addressOf(appId);
+        await this.store.remove(address, this.epochOf(address) ?? 0);
     }
 
     /** The revision of a write made beside the authority: past the stored one, and past any a stopped authority reached */
