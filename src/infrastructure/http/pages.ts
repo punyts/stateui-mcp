@@ -14,6 +14,8 @@ body.list th, body.list td { text-align: left; padding: 0.4rem 0.6rem; border-bo
 body.list .muted { color: #666; }
 body.view { display: flex; flex-direction: column; }
 body.view iframe { border: 0; width: 100%; flex: 1; display: block; }
+/* an app in the page fills it as the runtime page's body fills its frame */
+body.view > [data-app-frame] { flex: 1; display: grid; min-height: 0; }
 body.view[data-status="loading"]::after { content: "Loading..."; position: fixed; top: 0.5rem; right: 0.75rem; font-size: 0.8rem; color: #666; }
 body.view[data-status="failed"]::after { content: attr(data-note); position: fixed; top: 0.5rem; left: 0.75rem; font-size: 0.9rem; color: #b00020; }
 `;
@@ -61,10 +63,20 @@ export interface AppPageOptions {
      * under the namespace and shows this instead of the app
      */
     readonly revoked?: string;
+    /**
+     * The hash of the page bundle (`/assets/page/<hash>.js`) when the app runs in the page rather than in a frame
+     * (`data-surface="page"`): the page loads the bundle before the host script and marks where the app goes with
+     * `data-app-frame`
+     */
+    readonly pageBundle?: string;
 }
 
-/** `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame */
+/**
+ * `GET /apps/:appId`: a shell with no inline script; the host script reads these attributes and builds the frame, or
+ * mounts the app in the page's `[data-app-frame]` when the page bundle is given
+ */
 export function appPage(options: AppPageOptions): string {
+    const surface = options.pageBundle === undefined ? `data-runtime-url="${escapeHtml(options.runtimeUrl)}"` : 'data-surface="page"';
     return [
         '<!doctype html>',
         '<html lang="en">',
@@ -74,7 +86,8 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" data-runtime-url="${escapeHtml(options.runtimeUrl)}"${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`} data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" ${surface}${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`} data-status="loading">`,
+        ...(options.pageBundle === undefined ? [] : [`<script src="/assets/page/${escapeHtml(options.pageBundle)}.js"></script>`, '<div data-app-frame></div>']),
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',
         '</html>',

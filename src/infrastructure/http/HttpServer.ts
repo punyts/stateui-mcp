@@ -21,7 +21,7 @@ import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
-import { COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
+import { APP_PAGE_CSP, COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
 /** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
 export interface HttpTenant {
@@ -252,6 +252,15 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         throw new HttpError(404, 'Not found', 'not_found');
     }
 
+    /** The script `/assets/page/<hash>.js` names: the page bundle or the 3D chunk; undefined for any other path */
+    function pageAsset(path: string): Buffer | undefined {
+        const page = runtime.page;
+        if (page === undefined) return undefined;
+        if (path === `/assets/page/${page.hash}.js`) return page.script;
+        if (chunk3d !== undefined && path === `/assets/page/${chunk3d.hash}.js`) return chunk3d.script;
+        return undefined;
+    }
+
     async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
         const url = new URL(request.url ?? '/', 'http://localhost');
         const path = url.pathname;
@@ -268,6 +277,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
         if (method === 'GET' && path === '/assets/host.js') {
             send(response, 200, 'text/javascript; charset=utf-8', options.hostScript, { 'Cache-Control': 'no-cache' });
+            return;
+        }
+        // The page bundle and the 3D chunk it loads from its own folder, for an app that runs in the page (`?surface=page`)
+        const pageScript = method === 'GET' ? pageAsset(path) : undefined;
+        if (pageScript !== undefined) {
+            send(response, 200, 'text/javascript; charset=utf-8', pageScript, { 'Cache-Control': 'public, max-age=31536000, immutable' });
             return;
         }
         if (method === 'GET' && path === '/assets/page.css') {
@@ -319,6 +334,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
         const runtimeOrigin = runtimeOriginOf(request);
+        // `?surface=page`: the app runs in the page itself, with the page bundle, when the build made one
+        const inPage = new URL(request.url ?? '/', 'http://localhost').searchParams.get('surface') === 'page' ? runtime.page : undefined;
         send(
             response,
             200,
@@ -328,10 +345,11 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 name: part.name,
                 runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`,
                 ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
+                ...(inPage !== undefined && { pageBundle: inPage.hash }),
                 viewKind: headless ? 'headless' : 'browser',
                 namespace: instances.namespace(part, persona)
             }),
-            { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
+            { 'Content-Security-Policy': inPage === undefined ? hostPageCsp(runtimeOrigin) : APP_PAGE_CSP, 'Cache-Control': 'no-store' }
         );
     }
 

@@ -5,7 +5,7 @@ export { installShowcase, SHOWCASE_APP } from './config/showcase.js';
 export { HttpError, startHttpServer } from './infrastructure/http/HttpServer.js';
 export type { HttpServerOptions, HttpTenant, PublicOrigins, RunningHttpServer, TenantAnswer } from './infrastructure/http/HttpServer.js';
 export { escapeHtml, PAGE_CSS } from './infrastructure/http/pages.js';
-export { COMMON_HEADERS, hostPageCsp, isSameOrigin, requestHostName } from './infrastructure/http/security.js';
+export { APP_PAGE_CSP, COMMON_HEADERS, hostPageCsp, isSameOrigin, requestHostName } from './infrastructure/http/security.js';
 export { loadChunk3d, loadRuntimeBundle } from './infrastructure/http/runtimeBundle.js';
 export { loadCatalogFile } from './infrastructure/stateUiLibrary.js';
 export { BrowserPreview } from './infrastructure/preview/BrowserPreview.js';

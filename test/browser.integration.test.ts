@@ -1954,3 +1954,142 @@ describe.skipIf(!installed)('the host script serving an editor over the page (st
         expect((appEmits.body['events'] as { name: string }[]).some((event) => event.name === 'picked')).toBe(false);
     });
 });
+
+describe.skipIf(!installed)('the live app in the page, B3a of the screens board (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+    const EMAIL = '$.screens.home.children.form.children.email';
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    /** The app's page with the app in the page itself, rendered and online */
+    async function openInPage(page: Page, appId: string): Promise<string | undefined> {
+        const response = await page.goto(`${harness.server.origin}/apps/${appId}?surface=page`);
+        await page.waitForSelector('body[data-status="ready"][data-sync="online"]');
+        return response?.headers()['content-security-policy'];
+    }
+
+    it('should render the app in the page with no frame, under the page policy, and show a tool write', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page');
+        const page = await browser.newPage();
+        const errors: string[] = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+
+        // Act
+        const csp = await openInPage(page, app.id);
+        await call(harness.client, 'ui_state_set', { app: app.name, path: `${EMAIL}.value`, value: 'from@tool.test' });
+
+        // Assert
+        await expect.poll(() => page.locator('[data-app-frame] input').first().inputValue()).toBe('from@tool.test');
+        expect(await page.locator('iframe').count()).toBe(0);
+        expect(await page.evaluate(() => document.body.dataset['surface'])).toBe('page');
+        expect(csp).toContain("script-src 'self' 'unsafe-eval'");
+        expect(csp).not.toContain('frame-src');
+        expect(errors).toEqual([]);
+        await page.close();
+    });
+
+    it('should sync what the person types in the page to the server', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page-typing');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+
+        // Act
+        await page.locator('[data-app-frame] input').first().fill('typed@page.test');
+        const state = await eventually(harness, 'ui_state_get', { app: app.name }, (result) => JSON.stringify(result.body['state']).includes('typed@page.test'));
+
+        // Assert
+        expect(JSON.stringify(state.body['state'])).toContain('typed@page.test');
+        await page.close();
+    });
+
+    it('should answer inspect in the pixels of the app element when the page zooms it', async () => {
+        // Arrange: the node's width before the zoom
+        const app = await createApp(harness.client, 'in-page-zoom');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+        const widthOf = (path: string) =>
+            page.evaluate(async (at) => {
+                const host = (window as unknown as { stateuiHost: { inspect(query: { paths: string[] }): Promise<{ nodes: { path: string; rect: { width: number } }[] } | undefined> } }).stateuiHost;
+                const inspected = await host.inspect({ paths: [at] });
+                return inspected?.nodes.find((node) => node.path === at)?.rect.width;
+            }, path);
+        const before = await widthOf(EMAIL);
+
+        // Act: the app's element drawn at half its size
+        const drawn = await page.evaluate(() => {
+            const holder = document.querySelector<HTMLElement>('[data-app-frame]');
+            if (!holder) return undefined;
+            const full = holder.getBoundingClientRect().width;
+            holder.style.transformOrigin = '0 0';
+            holder.style.transform = 'scale(0.5)';
+            return holder.getBoundingClientRect().width / full;
+        });
+        const after = await widthOf(EMAIL);
+
+        // Assert
+        expect(drawn).toBeCloseTo(0.5, 2);
+        expect(before).toBeGreaterThan(0);
+        expect(after).toBeCloseTo(before ?? 0, 1);
+        await page.close();
+    });
+
+    it('should attach the live app to the element the page asks for, through the app host, and keep it synced', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page-attach');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+
+        // Act: the page asks its app host for the live app inside an element of its own
+        await page.evaluate(async (appId) => {
+            const element = document.createElement('section');
+            element.id = 'board';
+            document.body.append(element);
+            const host = (window as unknown as { stateuiHost: { apps: { open(ask: { app: string; live: boolean }): Promise<{ attach(request: object): unknown }> } } }).stateuiHost;
+            const opened = await host.apps.open({ app: appId, live: true });
+            opened.attach({ element, onEmit: () => undefined, onNavigate: () => undefined });
+        }, app.id);
+        await call(harness.client, 'ui_state_set', { app: app.name, path: `${EMAIL}.value`, value: 'attached@page.test' });
+
+        // Assert
+        await expect.poll(() => page.locator('#board input').first().inputValue()).toBe('attached@page.test');
+        expect(await page.locator('[data-app-frame] input').count()).toBe(0);
+        await page.close();
+    });
+
+    it('should give a preview of the live app as its document on the page library, and refuse an app it does not know', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page-preview');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+
+        // Act
+        const answer = await page.evaluate(async (appId) => {
+            const host = (window as unknown as { stateuiHost: { apps: { open(ask: { app: string; live: boolean }): Promise<{ document?: { screens?: object }; library?: unknown; follows?: unknown }> } } }).stateuiHost;
+            const page = (window as unknown as { stateuiPage: { library: unknown } }).stateuiPage;
+            const preview = await host.apps.open({ app: appId, live: false });
+            const refused = await host.apps.open({ app: 'another', live: false }).then(() => 'opened', (error: unknown) => String(error));
+            return { screens: Object.keys(preview.document?.screens ?? {}), library: preview.library === page.library, follows: preview.follows !== undefined, refused };
+        }, app.id);
+
+        // Assert
+        expect(answer.screens).toContain('home');
+        expect(answer.library).toBe(true);
+        expect(answer.follows).toBe(true);
+        expect(answer.refused).toContain('No app another in this page');
+        await page.close();
+    });
+});

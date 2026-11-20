@@ -10,6 +10,12 @@
  * origin still shows it), speaks the versioned message protocol of `@punyts/stateui-app/protocol` with a per-load
  * nonce, and checks every message by source, origin and nonce.
  *
+ * A page with `data-surface="page"` that loaded the page bundle (`window.stateuiPage`, `@punyts/stateui-app`'s
+ * `runtime-bundle/page-entry.ts`) runs the app in the page itself: the same runtime (`createRuntime`, `inPage`) on an
+ * element, `[data-app-frame]` or the one the page attaches it to (`attach`, through `stateuiHost.apps`), with the
+ * same messages handed over by call instead of posted. The app then shares the page's origin, so the page's policy
+ * allows what the runtime frame's allows (`APP_PAGE_CSP`).
+ *
  * The app runs in Full mode: the page's sync client syncs the app's state, and the server's view messages bring the
  * document. The sync client keeps the confirmed state and the changes not yet acknowledged in `localStorage`, with
  * the document beside them, so the app opens and takes changes offline and sends them when the connection is back.
@@ -53,6 +59,11 @@
  *   are, now and whenever they move, and the popovers open in the frame), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
  *   its sign-in and link pages, with it.
  *
+ * - `apps` is the page's app host (`AppHost` of `@punyts/stateui-app`), for an `embeddedApp` in an app the page mounts
+ *   with `stateuiPage.mountApp`: the live app itself is attached in the asking element, and a preview of it is its
+ *   document on the page bundle's library, following the live app's store. In the page surface only; it refuses
+ *   every other app.
+ *
  * A page with no `data-app-id` has no app of its own: it only mounts panels.
  *
  * `document.body.dataset` tells Playwright what the view shows: `status` is `loading`, `ready` or `failed`, `revision`
@@ -66,6 +77,7 @@ import { createReleaseGate } from './fileRelease.js';
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { ServerMessage, ViewChannel } from './viewChannel.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport } from '@punyts/state-sync';
+import type { AppAsk, AppDocument, AppHost, AppOpenRequest, AttachedApp, EmbeddedApp, OpenedApp, RuntimeCore, StateuiPage } from '@punyts/stateui-app';
 
 /** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
 const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?([a-z0-9=-]|escape)$/;
@@ -98,6 +110,16 @@ const CONTENT_PREFIX = '_';
 const INSPECT_TIMEOUT_MS = 2000;
 
 type AppMessage = Extract<ServerMessage, { type: 'app' }>;
+/** What a page that attaches the live app to one of its elements gives with it */
+type AttachRequest = Pick<AppOpenRequest, 'screen' | 'onEmit' | 'onNavigate'>;
+/** A navigation replaces `$.route` or writes below it */
+const ROUTE_PATHS = ['$.route', '$.route.$all'];
+
+/** The page bundle's global (`window.stateuiPage`), when the page loaded it */
+function stateuiPage(): StateuiPage | undefined {
+    const page = (window as unknown as { stateuiPage?: StateuiPage }).stateuiPage;
+    return typeof page?.createRuntime === 'function' ? page : undefined;
+}
 
 interface RuntimeMessage {
     v?: unknown;
@@ -341,9 +363,21 @@ export class LiveView {
     /** The `inspect` messages waiting for their answer, by id */
     private readonly inspections = new Map<number, (answer: JsonRecord | undefined) => void>();
     private inspection = 0;
+    /**
+     * Where the app runs: `frame`, a sandboxed frame from the runtime origin, or `page`, the page itself
+     * (`data-surface="page"` on the body and the page bundle loaded), where the runtime is mounted on an element
+     */
+    readonly surface: 'frame' | 'page';
+    /** The runtime in the page and the element it is mounted on; page surface only */
+    private runtime: RuntimeCore | undefined;
+    private holder: Element | undefined;
+    /** The page's request the app is attached with (`attach`), and the end of its route watch */
+    private attached: AttachRequest | undefined;
+    private routeWatch: (() => void) | undefined;
 
     constructor(private readonly body: HTMLElement) {
         this.appId = body.dataset['appId'] ?? '';
+        this.surface = body.dataset['surface'] === 'page' && stateuiPage() !== undefined ? 'page' : 'frame';
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
         this.runtimeOrigin = new URL(this.runtimeUrl, window.location.href).origin;
@@ -381,7 +415,9 @@ export class LiveView {
         }
         this.setStatus('loading');
         this.body.dataset['sync'] = 'connecting';
-        window.addEventListener('message', (event) => this.onRuntimeMessage(event));
+        if (this.surface === 'frame') window.addEventListener('message', (event) => this.onRuntimeMessage(event));
+        // In the page, the host's key chords are taken before the app sees them, as the frame's runtime takes them
+        else window.addEventListener('keydown', (event) => this.runtime?.key(event), true);
         const cached: unknown = this.store.read(this.namespace, 'document');
         if (isAppMessage(cached)) this.onApp({ type: 'app', reason: 'attach', revision: cached.revision, document: cached.document, icons: cached.icons });
         this.client = createSyncClient({
@@ -437,8 +473,12 @@ export class LiveView {
         this.channel.report({ viewId: this.viewId, ...body });
     }
 
-    /** Posts to the runtime; the buffers in `transfer` move to the frame (`fileData`) */
+    /** Posts to the runtime; the buffers in `transfer` move to the frame (`fileData`); in the page it takes the message as it is */
     private post(message: Record<string, unknown>, transfer: Transferable[] = []): void {
+        if (this.surface === 'page') {
+            this.runtime?.handle({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message });
+            return;
+        }
         this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, { targetOrigin: this.runtimeOrigin, transfer });
     }
 
@@ -482,6 +522,7 @@ export class LiveView {
         this.setStatus('failed', note);
         this.frame?.remove();
         this.frame = undefined;
+        this.unmount();
     }
 
     private onSyncStatus(report: SyncStatusReport): void {
@@ -492,7 +533,18 @@ export class LiveView {
         if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
     }
 
+    /** Makes the frame, or in the page the runtime on its element: the attached one, else `[data-app-frame]` */
     private ensureFrame(): void {
+        if (this.surface === 'page') {
+            const page = stateuiPage();
+            const holder = this.holder ?? this.body.querySelector('[data-app-frame]') ?? undefined;
+            if (this.runtime !== undefined || page === undefined || holder === undefined) return;
+            this.holder = holder;
+            // A message of the runtime is handled after the one it answers, as a frame's would be
+            this.runtime = page.createRuntime({ host: holder, nonce: this.nonce, post: (message) => queueMicrotask(() => this.onRuntimeData(message)) });
+            this.frameLoaded = true;
+            return;
+        }
         if (this.frame !== undefined) return;
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
@@ -637,7 +689,12 @@ export class LiveView {
 
     private onRuntimeMessage(event: MessageEvent<unknown>): void {
         if (this.frame === undefined || event.source !== this.frame.contentWindow || event.origin !== this.runtimeOrigin) return;
-        const message = event.data as RuntimeMessage;
+        this.onRuntimeData(event.data);
+    }
+
+    /** A message of the runtime, from its frame or from the runtime in the page */
+    private onRuntimeData(data: unknown): void {
+        const message = data as RuntimeMessage;
         if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
         switch (message['type']) {
             case 'ready':
@@ -650,6 +707,7 @@ export class LiveView {
                 if (typeof message['name'] === 'string') {
                     this.channel.event(message['name'], message['payload'] as Json | undefined);
                     window.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
+                    this.attached?.onEmit(message['name'], message['payload']);
                 }
                 break;
             case 'key':
@@ -703,10 +761,75 @@ export class LiveView {
         this.body.dataset['revision'] = String(this.revision);
         this.setStatus('ready');
         if (this.frame !== undefined) this.frame.style.visibility = '';
+        this.watchRoute();
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
         }
         this.report({ type: 'ready', revision: this.revision, load: this.load });
+    }
+
+    /**
+     * Mounts the live app on `element`, a node of the page (an `embeddedApp`'s element), on `request.screen`; page
+     * surface only. A mount elsewhere is disposed first, and the app loads again from the synced state. The app's emits
+     * and the screens it moves to itself go to the request as well. Disposing it unmounts the app; the view keeps
+     * syncing, and the next `attach` shows it again
+     */
+    attach(element: Element, request: AttachRequest): EmbeddedApp {
+        if (this.surface !== 'page') throw new Error(`The app ${this.appId} runs in a frame and cannot be attached`);
+        this.unmount();
+        this.holder = element;
+        this.attached = request;
+        if (request.screen !== undefined) this.openAt = { screen: request.screen };
+        this.ensureFrame();
+        if (this.app !== undefined) this.sendLoad();
+        return {
+            navigate: (screen) => {
+                this.navigate(screen);
+                return undefined;
+            },
+            dispose: () => {
+                if (this.attached !== request) return;
+                this.unmount();
+                this.holder = undefined;
+                this.attached = undefined;
+            }
+        };
+    }
+
+    /** The store of the app mounted in the page, which previews of it follow; undefined in a frame or before a load */
+    liveStore(): OpenedApp['follows'] {
+        return this.runtime?.app()?.store;
+    }
+
+    /** Disposes the runtime in the page; the next `ensureFrame` makes a new one, which a load then fills */
+    private unmount(): void {
+        this.routeWatch?.();
+        this.routeWatch = undefined;
+        if (this.runtime === undefined) return;
+        this.runtime.dispose();
+        this.runtime = undefined;
+        this.frameLoaded = false;
+        this.loaded = false;
+        this.ready = false;
+    }
+
+    /** Tells the attached request the screen the app shows whenever the app moves itself */
+    private watchRoute(): void {
+        this.routeWatch?.();
+        this.routeWatch = undefined;
+        const app = this.runtime?.app();
+        const store = app?.store;
+        const request = this.attached;
+        if (app === undefined || store === undefined || request === undefined) return;
+        let shown = app.visibleScreen();
+        const moved = (): void => {
+            const screen = app.visibleScreen();
+            if (screen === undefined || screen === shown) return;
+            shown = screen;
+            request.onNavigate(screen);
+        };
+        store.on(ROUTE_PATHS, moved);
+        this.routeWatch = () => store.off(ROUTE_PATHS, moved);
     }
 
     /** A change the user made in the frame: what is synced goes to the sync client, which sends it or keeps it for later */
@@ -950,12 +1073,37 @@ class PageView {
     }
 }
 
+/**
+ * The page's app host (`MountOptions.apps`) for the live app in the page: the live app itself is attached where it is
+ * asked for (`LiveView.attach`), and a preview of it is its document as the page last had it, on the page bundle's
+ * library, following the live app's store. It knows no other app
+ */
+function appHost(live: LiveView | undefined): AppHost {
+    return {
+        open: (ask: AppAsk): Promise<OpenedApp | AttachedApp> => {
+            const page = stateuiPage();
+            if (live === undefined || page === undefined || live.surface !== 'page' || ask.app !== live.appId) return Promise.reject(new Error(`No app ${ask.app} in this page`));
+            if (ask.live) return Promise.resolve({ attach: (request) => live.attach(request.element, request) });
+            const snapshot = live.snapshot();
+            if (snapshot === undefined) return Promise.reject(new Error(`The app ${ask.app} has no document yet`));
+            const follows = live.liveStore();
+            return Promise.resolve({
+                document: { ...snapshot.document, data: snapshot.data } as unknown as AppDocument,
+                library: page.library,
+                options: { functions: page.functions },
+                ...(follows !== undefined && { follows })
+            });
+        }
+    };
+}
+
 /** `window.stateuiHost`: what an editor laid over the page uses */
 export function installHostApi(live: LiveView | undefined): void {
     (window as unknown as { stateuiHost: unknown }).stateuiHost = {
         inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
         navigate: (screen: string, params?: Json) => live?.navigate(screen, params),
         snapshot: () => live?.snapshot(),
+        apps: appHost(live),
         mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] }, title = 'Panel') => {
             const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
             const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);

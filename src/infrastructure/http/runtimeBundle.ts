@@ -4,10 +4,18 @@ import { dirname, join } from 'node:path';
 
 const HASH_PATTERN = /^[0-9a-f]{16}$/;
 
-/** The built runtime bundle of `@punyts/stateui-app`: one content-hashed classic script, read once at start-up */
-export interface RuntimeBundle {
+/** One content-hashed classic script, read once at start-up */
+export interface HashedScript {
     readonly hash: string;
     readonly script: Buffer;
+}
+
+/**
+ * The built runtime bundle of `@punyts/stateui-app`: the runtime a frame loads, and the page bundle a page loads to run
+ * apps in its own elements (`window.stateuiPage`), absent when the build made none
+ */
+export interface RuntimeBundle extends HashedScript {
+    readonly page?: HashedScript;
 }
 
 /** The folder of the built bundle: `dir` when given, else `dist/runtime-bundle` of `@punyts/stateui-app` through its package exports */
@@ -45,11 +53,17 @@ export function loadRuntimeBundle(dir: string | undefined, components?: readonly
             );
         }
     }
-    return { hash: manifest.hash, script: readFileSync(join(resolved, `${manifest.hash}.js`)) };
+    const page = 'page' in manifest && typeof manifest.page === 'string' ? manifest.page.replace(/.js$/, '') : undefined;
+    if (page !== undefined && !HASH_PATTERN.test(page)) throw new Error(`manifest.json in ${resolved} has no valid page bundle name`);
+    return {
+        hash: manifest.hash,
+        script: readFileSync(join(resolved, `${manifest.hash}.js`)),
+        ...(page !== undefined && { page: { hash: page, script: readFileSync(join(resolved, `${page}.js`)) } })
+    };
 }
 
 /** The built 3D renderer chunk of `@punyts/stateui-3d`: one content-hashed classic script the runtime loads on demand */
-export type RuntimeChunk = RuntimeBundle;
+export type RuntimeChunk = HashedScript;
 
 /**
  * The folder of the built 3D chunk: `dir` when given, else `dist/runtime-chunk` of `@punyts/stateui-3d` through its

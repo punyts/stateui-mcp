@@ -42,6 +42,24 @@ export function hostPageCsp(runtimeOrigin: string): string {
     ].join('; ');
 }
 
+/**
+ * The policy of an app page whose app runs in the page itself (`?surface=page`): its own scripts, the page bundle among
+ * them, its own event stream and reports, and no frames. The app shares the page's origin, so the page allows what the
+ * runtime frame allows: `'unsafe-eval'` (`@punyts/expression` evaluates literals with `Function`) and images and fonts
+ * from `data:` and `https:`. No inline script and no inline style. No other page may frame it
+ */
+export const APP_PAGE_CSP = [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-eval'",
+    "style-src 'self'",
+    "connect-src 'self'",
+    'img-src data: https:',
+    'font-src data:',
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'"
+].join('; ');
+
 /** The policy of a page that only lists links: a stylesheet from its own origin and nothing else */
 export const LIST_PAGE_CSP = ["default-src 'none'", "style-src 'self'", "form-action 'none'", "base-uri 'none'", "frame-ancestors 'none'"].join('; ');
 
