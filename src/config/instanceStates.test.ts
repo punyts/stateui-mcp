@@ -297,7 +297,7 @@ describe('InstanceNamespaceStorage', () => {
     });
 
     describe('kept as one stored namespace', () => {
-        const ADDRESS = (id: string): string => `${OWNER}/${id}/user`;
+        const ADDRESS = (id: string): string => `${OWNER}/apps/${id}`;
         function namespaces(clock = { now: 5000 }) {
             const memory = createMemoryEpochStorage();
             const saves: number[] = [];

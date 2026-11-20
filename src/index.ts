@@ -76,5 +76,5 @@ export { NamespaceUiInstanceRepository } from './infrastructure/storage/Namespac
 export type { InstanceNamespaceStore } from './infrastructure/storage/NamespaceUiInstanceRepository.js';
 export { diffInstance } from '@punyts/stateui-app/core';
 /** Statenet addresses: `<ownerId>/<appId>/<scope>` */
-export { appStateAddress, formatAddress, parseAddress, userStateAddress } from './domain/StateAddress.js';
-export type { StateAddress, StateScope } from './domain/StateAddress.js';
+export { formatAddress, instanceOfAddress, OWNER_IDS, parseAddress, userStateAddress } from './domain/StateAddress.js';
+export type { OwnerNames, StateAddress, StateBranch } from './domain/StateAddress.js';
