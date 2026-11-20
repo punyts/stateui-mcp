@@ -2070,6 +2070,54 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.close();
     });
 
+    it('should give a preview asked for while the live app moves once it is mounted again, after stateui:ready', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page-moved');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+
+        // Act: the live app moves to an element of the page, and a preview is asked for at once
+        const order = await page.evaluate(async (appId) => {
+            const seen: string[] = [];
+            addEventListener('stateui:ready', () => seen.push('ready'));
+            const element = document.body.appendChild(document.createElement('section'));
+            const host = (window as unknown as { stateuiHost: { apps: { open(ask: { app: string; live: boolean }): Promise<{ attach?(request: object): unknown; follows?: unknown }> } } }).stateuiHost;
+            const live = await host.apps.open({ app: appId, live: true });
+            live.attach?.({ element, onEmit: () => undefined, onNavigate: () => undefined });
+            const preview = await host.apps.open({ app: appId, live: false });
+            seen.push(preview.follows === undefined ? 'preview alone' : 'preview');
+            return seen;
+        }, app.id);
+
+        // Assert
+        expect(order).toEqual(['ready', 'preview']);
+        await page.close();
+    });
+
+    it('should mount a panel in the page, with no frame, whose embeddedApp shows the live app synced', async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'in-page-panel');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+
+        // Act: a panel of the page around the live app, mounted in the page rather than in a frame
+        await page.evaluate((appId) => {
+            const element = document.createElement('section');
+            element.id = 'panel';
+            document.body.append(element);
+            const host = (window as unknown as { stateuiHost: { mount(element: HTMLElement, app: object, title: string): unknown } }).stateuiHost;
+            const document_ = { app: { component: 'panel', children: { live: { component: 'embeddedApp', app: appId, live: true, width: 640, height: 480 } } } };
+            host.mount(element, { document: document_, inPage: true }, 'Board');
+        }, app.id);
+        await call(harness.client, 'ui_state_set', { app: app.name, path: `${EMAIL}.value`, value: 'panel@page.test' });
+
+        // Assert
+        await expect.poll(() => page.locator('#panel input').first().inputValue()).toBe('panel@page.test');
+        expect(await page.locator('iframe').count()).toBe(0);
+        expect(await page.locator('[data-app-frame] input').count()).toBe(0);
+        await page.close();
+    });
+
     it('should give a preview of the live app as its document on the page library, and refuse an app it does not know', async () => {
         // Arrange
         const app = await createApp(harness.client, 'in-page-preview');

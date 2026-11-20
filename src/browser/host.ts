@@ -51,7 +51,8 @@
  * - `snapshot()` is a copy of what the app frame shows: the document and its icons and revision, and the synced
  *   `data` and `route` (undefined before the server sent a document). An editor draws its other screens with it, each
  *   a panel of its own (`mount`), and keeps their data in step from `stateui:change`.
- * - `mount(element, { document, icons?, keys? })` puts a second runtime frame in `element`, driven by the page alone: it
+ * - `mount(element, { document, icons?, keys?, inPage? })` puts a second runtime frame in `element` (with `inPage`, in
+ *   the page surface, a runtime on an element of the page instead, whose `embeddedApp` nodes reach `apps`), driven by the page alone: it
  *   is loaded in `standalone` mode with the document given and the page's language and mode (`data-locale`,
  *   `data-mode` on the body), takes the page's writes and commands, and raises its emits on `element`
  *   (not on `window`) as `stateui:emit`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
@@ -60,9 +61,10 @@
  *   its sign-in and link pages, with it.
  *
  * - `apps` is the page's app host (`AppHost` of `@punyts/stateui-app`), for an `embeddedApp` in an app the page mounts
- *   with `stateuiPage.mountApp`: the live app itself is attached in the asking element, and a preview of it is its
- *   document on the page bundle's library, following the live app's store. In the page surface only; it refuses
- *   every other app.
+ *   with `stateuiPage.mountApp` or `mount` with `inPage`: the live app itself is attached in the asking element, and a
+ *   preview of it is its document on the page bundle's library, following the live app's store, given once the live app
+ *   is mounted. Each mount of the live app in the page (a load, an `attach`) has a new store and raises `stateui:ready`
+ *   on `window`, so a page opens its previews again. In the page surface only; it refuses every other app.
  *
  * A page with no `data-app-id` has no app of its own: it only mounts panels.
  *
@@ -374,6 +376,8 @@ export class LiveView {
     /** The page's request the app is attached with (`attach`), and the end of its route watch */
     private attached: AttachRequest | undefined;
     private routeWatch: (() => void) | undefined;
+    /** Who waits for the app to be mounted in the page (`mountedStore`) */
+    private readonly mountWaiters: (() => void)[] = [];
 
     constructor(private readonly body: HTMLElement) {
         this.appId = body.dataset['appId'] ?? '';
@@ -762,6 +766,11 @@ export class LiveView {
         this.setStatus('ready');
         if (this.frame !== undefined) this.frame.style.visibility = '';
         this.watchRoute();
+        if (this.surface === 'page') {
+            for (const waiter of this.mountWaiters.splice(0)) waiter();
+            // Each mount has a store of its own: a page whose previews follow the live app opens them again
+            window.dispatchEvent(new CustomEvent('stateui:ready'));
+        }
         for (const command of this.queuedCommands.splice(0)) {
             if (Date.parse(command.expiresAt) > Date.now()) this.sendCommand(command);
         }
@@ -799,6 +808,12 @@ export class LiveView {
     /** The store of the app mounted in the page, which previews of it follow; undefined in a frame or before a load */
     liveStore(): OpenedApp['follows'] {
         return this.runtime?.app()?.store;
+    }
+
+    /** The store of the app mounted in the page, once it is: now when it is ready, else at its next ready */
+    mountedStore(): Promise<OpenedApp['follows']> {
+        if (this.ready && this.runtime?.app()?.store !== undefined) return Promise.resolve(this.liveStore());
+        return new Promise((resolve) => this.mountWaiters.push(() => resolve(this.liveStore())));
     }
 
     /** Disposes the runtime in the page; the next `ensureFrame` makes a new one, which a load then fills */
@@ -946,9 +961,27 @@ function changed(path: string, value: Json | undefined, origin: 'user' | 'server
  * A runtime frame the page drives alone: loaded in `standalone` mode with a document the page gives, it takes the
  * page's writes and commands and raises its emits on its element. Nothing of it is synced or stored
  */
+/** What `stateuiHost.mount` puts in an element: a document, its icons, the chords the page takes, and where it runs */
+interface PanelApp {
+    readonly document: JsonRecord;
+    readonly icons?: Record<string, string>;
+    readonly keys?: string[];
+    /**
+     * True: the panel runs in the page, on an element, rather than in a frame from the runtime origin (the page
+     * surface only; elsewhere it is a frame). Its `embeddedApp` nodes reach the page's app host (`apps`)
+     */
+    readonly inPage?: boolean;
+}
+
 class PageView {
     private readonly nonce = createNonce();
-    private readonly frame: HTMLIFrameElement;
+    /** The frame from the runtime origin; undefined in the page */
+    private readonly frame: HTMLIFrameElement | undefined;
+    /** The frame, or in the page the element the runtime is mounted on */
+    private readonly holder: HTMLElement;
+    /** The runtime in the page (`inPage`); undefined for a frame */
+    private readonly runtime: RuntimeCore | undefined;
+    private readonly keys: ((event: KeyboardEvent) => void) | undefined;
     private ready = false;
     private readonly queued: Record<string, unknown>[] = [];
     private readonly listener = (event: MessageEvent<unknown>): void => this.onMessage(event);
@@ -960,32 +993,55 @@ class PageView {
         private readonly element: HTMLElement,
         private readonly runtimeUrl: string,
         private readonly runtimeOrigin: string,
-        app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] },
-        title: string
+        app: PanelApp,
+        title: string,
+        apps: AppHost
     ) {
+        const page = app.inPage === true ? stateuiPage() : undefined;
+        if (page !== undefined) {
+            // In the page: the runtime on an element of its own, its messages handed over by call as a frame's are posted
+            const holder = document.createElement('div');
+            holder.className = 'stateui-panel';
+            holder.setAttribute('role', 'region');
+            holder.setAttribute('aria-label', title);
+            element.append(holder);
+            this.holder = holder;
+            this.frame = undefined;
+            const runtime = page.createRuntime({ host: holder, nonce: this.nonce, post: (message) => queueMicrotask(() => this.receive(message)), apps });
+            this.runtime = runtime;
+            this.keys = (event) => runtime.key(event);
+            if ((app.keys ?? []).length > 0) window.addEventListener('keydown', this.keys, true);
+            this.send(PageView.loadOf(app));
+            return;
+        }
+        this.runtime = undefined;
+        this.keys = undefined;
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.title = title;
         frame.style.visibility = 'hidden';
-        frame.addEventListener('load', () => {
-            const icons = iconsMessage(app.icons ?? {}, new Set());
-            const keys = (app.keys ?? []).filter((key) => HOST_KEY.test(key)).slice(0, 16);
-            // The page's language and mode (`data-locale`, `data-mode`), as the app frame of the page gets them
-            const { locale, mode } = document.body.dataset;
-            this.send({
-                type: 'load',
-                document: app.document,
-                mode: 'standalone',
-                ...(icons !== undefined && { icons }),
-                ...(keys.length > 0 && { keys }),
-                ...(mode && { active: { mode } }),
-                ...(locale && { locale })
-            });
-        });
+        frame.addEventListener('load', () => this.send(PageView.loadOf(app)));
         frame.src = `${this.runtimeUrl}#${this.nonce}`;
         window.addEventListener('message', this.listener);
         element.append(frame);
         this.frame = frame;
+        this.holder = frame;
+    }
+
+    /** A panel's `load`: its document in `standalone` mode, with the page's language and mode (`data-locale`, `data-mode`) */
+    private static loadOf(app: PanelApp): Record<string, unknown> {
+        const icons = iconsMessage(app.icons ?? {}, new Set());
+        const keys = (app.keys ?? []).filter((key) => HOST_KEY.test(key)).slice(0, 16);
+        const { locale, mode } = document.body.dataset;
+        return {
+            type: 'load',
+            document: app.document,
+            mode: 'standalone',
+            ...(icons !== undefined && { icons }),
+            ...(keys.length > 0 && { keys }),
+            ...(mode && { active: { mode } }),
+            ...(locale && { locale })
+        };
     }
 
     /** Writes paths of the frame's store (`$.data`, whole nodes below `$.screens`), once it is ready */
@@ -1031,14 +1087,16 @@ class PageView {
         if (change.locale !== undefined) this.later({ type: 'locale', locale: change.locale });
     }
 
-    /** The frame itself, for a page that sizes or focuses it */
-    frameElement(): HTMLIFrameElement {
-        return this.frame;
+    /** The frame itself, or in the page the element the panel is mounted on, for a page that sizes or focuses it */
+    frameElement(): HTMLElement {
+        return this.holder;
     }
 
     dispose(): void {
         window.removeEventListener('message', this.listener);
-        this.frame.remove();
+        if (this.keys !== undefined) window.removeEventListener('keydown', this.keys, true);
+        this.runtime?.dispose();
+        this.holder.remove();
     }
 
     private later(message: Record<string, unknown>): void {
@@ -1047,16 +1105,22 @@ class PageView {
     }
 
     private send(message: Record<string, unknown>): void {
-        this.frame.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
+        if (this.runtime !== undefined) this.runtime.handle({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message });
+        else this.frame?.contentWindow?.postMessage({ v: PROTOCOL_VERSION, nonce: this.nonce, ...message }, this.runtimeOrigin);
     }
 
     private onMessage(event: MessageEvent<unknown>): void {
-        if (event.source !== this.frame.contentWindow || event.origin !== this.runtimeOrigin) return;
-        const message = event.data as RuntimeMessage;
+        if (this.frame === undefined || event.source !== this.frame.contentWindow || event.origin !== this.runtimeOrigin) return;
+        this.receive(event.data);
+    }
+
+    /** A message of the runtime: posted by the frame, or handed over by the runtime in the page */
+    private receive(data: unknown): void {
+        const message = data as RuntimeMessage;
         if (!isRecord(message) || message['v'] !== PROTOCOL_VERSION || message['nonce'] !== this.nonce) return;
         if (message['type'] === 'ready') {
             this.ready = true;
-            this.frame.style.visibility = '';
+            this.holder.style.visibility = '';
             for (const queued of this.queued.splice(0)) this.send(queued);
             this.element.dispatchEvent(new CustomEvent('stateui:ready'));
         } else if (message['type'] === 'emit' && typeof message['name'] === 'string') {
@@ -1084,14 +1148,16 @@ function appHost(live: LiveView | undefined): AppHost {
             const page = stateuiPage();
             if (live === undefined || page === undefined || live.surface !== 'page' || ask.app !== live.appId) return Promise.reject(new Error(`No app ${ask.app} in this page`));
             if (ask.live) return Promise.resolve({ attach: (request) => live.attach(request.element, request) });
-            const snapshot = live.snapshot();
-            if (snapshot === undefined) return Promise.reject(new Error(`The app ${ask.app} has no document yet`));
-            const follows = live.liveStore();
-            return Promise.resolve({
-                document: { ...snapshot.document, data: snapshot.data } as unknown as AppDocument,
-                library: page.library,
-                options: { functions: page.functions },
-                ...(follows !== undefined && { follows })
+            // A preview waits for the live app it follows to be mounted
+            return live.mountedStore().then((follows) => {
+                const snapshot = live.snapshot();
+                if (snapshot === undefined) throw new Error(`The app ${ask.app} has no document yet`);
+                return {
+                    document: { ...snapshot.document, data: snapshot.data } as unknown as AppDocument,
+                    library: page.library,
+                    options: { functions: page.functions },
+                    ...(follows !== undefined && { follows })
+                };
             });
         }
     };
@@ -1099,14 +1165,15 @@ function appHost(live: LiveView | undefined): AppHost {
 
 /** `window.stateuiHost`: what an editor laid over the page uses */
 export function installHostApi(live: LiveView | undefined): void {
+    const apps = appHost(live);
     (window as unknown as { stateuiHost: unknown }).stateuiHost = {
         inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
         navigate: (screen: string, params?: Json) => live?.navigate(screen, params),
         snapshot: () => live?.snapshot(),
-        apps: appHost(live),
-        mount: (element: HTMLElement, app: { document: JsonRecord; icons?: Record<string, string>; keys?: string[] }, title = 'Panel') => {
+        apps,
+        mount: (element: HTMLElement, app: PanelApp, title = 'Panel') => {
             const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
-            const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title);
+            const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title, apps);
             return {
                 write: (writes: PathWrite[]) => view.write(writes),
                 command: (target: string, command: string, value?: Json) => view.command(target, command, value),
