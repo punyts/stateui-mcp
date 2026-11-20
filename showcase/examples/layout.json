@@ -118,6 +118,15 @@
                 }
             }
         },
+        "embeddedApp": {
+            "example": {
+                "component": "embeddedApp",
+                "app": "shop",
+                "width": 320,
+                "height": 200,
+                "_label": "An app, shown here by its name"
+            }
+        },
         "window": {
             "example": {
                 "component": "window",
