@@ -8,6 +8,7 @@ import type { Services } from '../src/config/createServices.js';
 import { installShowcase } from '../src/config/showcase.js';
 import { loadHostScript } from '../src/config/startServer.js';
 import { startHttpServer } from '../src/infrastructure/http/HttpServer.js';
+import type { HttpServerOptions } from '../src/infrastructure/http/HttpServer.js';
 import { loadChunk3d, loadRuntimeBundle } from '../src/infrastructure/http/runtimeBundle.js';
 import { loadCatalogFile } from '../src/infrastructure/stateUiLibrary.js';
 import { createStateUiMcpServer } from '../src/infrastructure/mcp/StateUiMcpServer.js';
@@ -113,6 +114,8 @@ export interface HttpHarnessOptions {
     readonly chunk3dDir?: string;
     readonly browserArgs?: readonly string[];
     readonly showcase?: boolean;
+    readonly routes?: HttpServerOptions['routes'];
+    readonly crossOriginPost?: HttpServerOptions['crossOriginPost'];
 }
 
 /**
@@ -142,7 +145,9 @@ export async function httpHarness(dataDir: string, browser?: PreviewBrowser, ext
         runtime: loadRuntimeBundle(undefined, loadCatalogFile().components.map((component) => component.name)),
         ...(chunk3d !== undefined && { chunk3d }),
         hostScript: loadHostScript(),
-        report: silentReport
+        report: silentReport,
+        ...(extra.routes !== undefined && { routes: extra.routes }),
+        ...(extra.crossOriginPost !== undefined && { crossOriginPost: extra.crossOriginPost })
     });
     origin = http.origin;
     const mcp = createStateUiMcpServer(services);

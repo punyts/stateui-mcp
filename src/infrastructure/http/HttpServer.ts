@@ -92,6 +92,12 @@ export interface HttpServerOptions {
      * they answered the request. A thrown `HttpError` is answered with its status and code
      */
     readonly routes?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+    /**
+     * Whether a `POST` to this path of the main origin is taken from a page of another origin, such as a SAML identity
+     * provider's answer, which the browser posts from the provider's page. Every other request with an `Origin` of
+     * another host is refused. The route itself must check what it is sent
+     */
+    readonly crossOriginPost?: (path: string) => boolean;
     /** The text frames one view's socket may send per second, with a burst of twice as many; absent: no limit */
     readonly socketMessagesPerSecond?: number;
     readonly runtime: RuntimeBundle;
@@ -463,7 +469,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         void (async () => {
             try {
                 if (!hostAllowed(request)) throw new HttpError(403, 'The Host header is not one this server answers to', 'forbidden_host');
-                if (request.method !== 'GET' && request.method !== 'HEAD' && !isSameOrigin(request)) throw new HttpError(403, 'Cross-origin requests are refused', 'forbidden_origin');
+                if (request.method !== 'GET' && request.method !== 'HEAD' && !isSameOrigin(request) && !(request.method === 'POST' && options.crossOriginPost?.((request.url ?? '/').split('?')[0] as string) === true)) throw new HttpError(403, 'Cross-origin requests are refused', 'forbidden_origin');
                 await handle(request, response);
             } catch (error) {
                 if (response.headersSent) {
