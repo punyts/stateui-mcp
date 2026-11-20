@@ -2,7 +2,7 @@ import { initialRoute, layInstance } from '@punyts/stateui-app/core';
 import type { AppDocument, AppInstance, JsonObject as LibraryJsonObject } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import type { NamespaceStorage, StoredNamespace } from '@punyts/state-sync/authority';
-import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
+import type { PersonaDataset, UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import { instanceKeyText } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -83,7 +83,13 @@ function storedNode(diff: Record<string, JsonValue>, path: readonly string[], cr
  * binding that changed. The copies of shared datasets under `$.data` are not the instance's, so they are never saved.
  *
  * Nothing of the authority's log is kept, so a loaded instance's revision is the clock in milliseconds: a view that
- * reconnects with a revision from before the server started is behind it and gets a snapshot
+ * reconnects with a revision from before the server started is behind it and gets a snapshot.
+ *
+ * Over a repository that keeps the instance as one stored namespace (`loadWhole`, `saveWhole`), a load is one read
+ * and a save one write of the whole instance, with the change ids the authority applied, so a change sent again after
+ * the instance moved to another server is applied once. The revision then never goes back (the stored one, or the
+ * clock when that is later), which is what lets an aggregate tell a save sent again from a new one; the log is still
+ * not kept, since the definition may have changed under it
  */
 export class InstanceNamespaceStorage implements NamespaceStorage {
     readonly namespace: string;
@@ -91,6 +97,8 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
     private readonly persona: readonly string[];
     /** The records of each persona binding as last loaded or saved, as JSON text */
     private readonly saved = new Map<string, string>();
+    /** Each persona binding's dataset as last loaded or saved whole: kept as it is while its records cannot be stored */
+    private readonly kept = new Map<string, PersonaDataset>();
 
     constructor(
         private readonly start: InstanceStart,
@@ -108,7 +116,8 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
     async load(namespace: string): Promise<StoredNamespace> {
         this.check(namespace);
         const { appId } = this.start.key;
-        const read = await this.instances.get(appId);
+        const whole = await this.instances.loadWhole?.(appId);
+        const read = whole === undefined ? await this.instances.get(appId) : { value: whole.value.diff, ...(whole.problem !== undefined && { problem: whole.problem }) };
         if (read.problem !== undefined) this.report('Instance ignored', { app: appId, reason: read.problem });
         // A copy: the switch controls are brought in line with the theme below
         const diff = JSON.parse(JSON.stringify(read.value)) as Record<string, JsonValue>;
@@ -124,7 +133,8 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
 
         const data: Record<string, JsonValue> = { ...objectOr(this.start.document['data']) };
         for (const binding of this.persona) {
-            const records = await this.instances.getData(appId, binding);
+            const records = whole === undefined ? await this.instances.getData(appId, binding) : { value: whole.value.datasets[binding], problem: undefined };
+            if (whole !== undefined && records.value !== undefined) this.kept.set(binding, records.value);
             if (records.problem !== undefined) this.report('Persona records ignored', { app: appId, binding, reason: records.problem });
             if (records.value !== undefined) data[binding] = records.value.records;
             this.saved.set(binding, JSON.stringify(data[binding] ?? null));
@@ -159,7 +169,7 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         };
         if (laid.route !== undefined) state['route'] = laid.route as unknown as SyncValue;
         if (Object.keys(laid.active).length > 0) state['theme'] = { active: laid.active };
-        return { state, revision: this.now(), log: [], applied: [] };
+        return whole === undefined ? { state, revision: this.now(), log: [], applied: [] } : { state, revision: Math.max(this.now(), whole.value.revision + 1), log: [], applied: [...whole.value.applied] };
     }
 
     async save(namespace: string, stored: StoredNamespace): Promise<void> {
@@ -171,6 +181,19 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         const start = initialRoute(this.start.document as unknown as AppDocument);
         const moved = route !== undefined && JSON.stringify(route) !== JSON.stringify(start ?? null);
         const fence = this.epoch === undefined ? undefined : { epoch: this.epoch };
+        if (this.instances.saveWhole !== undefined) {
+            for (const binding of this.persona) {
+                const records = allData[binding];
+                const text = JSON.stringify(records ?? null);
+                const model = this.start.bindings[binding]?.model;
+                // as below: records that are still what was loaded (the definition's own, mostly) are not the instance's to keep
+                if (text === this.saved.get(binding) || !isJsonObject(records) || model === undefined) continue;
+                this.kept.set(binding, { model, records });
+                this.saved.set(binding, text);
+            }
+            await this.instances.saveWhole(appId, { app: {}, screens: {}, data: {} }, { ...rest, ...(moved && { route }), data: without(allData, this.bound) }, Object.fromEntries(this.kept), { applied: stored.applied, revision: stored.revision }, fence);
+            return;
+        }
         await this.instances.write(appId, { app: {}, screens: {}, data: {} }, { ...rest, ...(moved && { route }), data: without(allData, this.bound) }, fence);
 
         for (const binding of this.persona) {

@@ -164,7 +164,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         validatePartApp: new ValidatePartApp(parts, parts, validator, report),
         findPartApp: new FindPartApp(parts),
         resetInstance: new ResetInstance(parts, instances, report, instanceStates),
-        writePersonaData: new WritePersonaData(parts, instances, validator, report),
+        writePersonaData: new WritePersonaData(parts, instances, validator, report, instanceStates),
         setPartState: new SetPartState(parts, instanceStates, validator, report),
         getPartState: new GetPartState(instanceStates, previewLog, now, report),
         runPartCommand: new RunPartCommand(instanceStates, runCommand),

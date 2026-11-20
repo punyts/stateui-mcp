@@ -55,7 +55,7 @@ export type {
     UiPartSummary,
     UiPartWriteResult
 } from './application/ports/UiPartRepository.js';
-export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository } from './application/ports/UiInstanceRepository.js';
+export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository, WholeInstance } from './application/ports/UiInstanceRepository.js';
 export type { InstancePlacement } from './application/ports/InstancePlacement.js';
 export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
 export type { SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
@@ -72,6 +72,8 @@ export { PART_KINDS } from './domain/partName.js';
 export type { PartKind } from './domain/partName.js';
 export { isRevisionCurrent } from './domain/revision.js';
 export { isAppId } from './infrastructure/storage/PartFolders.js';
+export { NamespaceUiInstanceRepository } from './infrastructure/storage/NamespaceUiInstanceRepository.js';
+export type { InstanceNamespaceStore } from './infrastructure/storage/NamespaceUiInstanceRepository.js';
 export { diffInstance } from '@punyts/stateui-app/core';
 /** Statenet addresses: `<ownerId>/<appId>/<scope>` */
 export { appStateAddress, formatAddress, parseAddress, userStateAddress } from './domain/StateAddress.js';
