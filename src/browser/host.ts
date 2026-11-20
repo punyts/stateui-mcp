@@ -64,7 +64,12 @@
  *   with `stateuiPage.mountApp` or `mount` with `inPage`: the live app itself is attached in the asking element, and a
  *   preview of it is its document on the page bundle's library, following the live app's store, given once the live app
  *   is mounted. Each mount of the live app in the page (a load, an `attach`) has a new store and raises `stateui:ready`
- *   on `window`, so a page opens its previews again. In the page surface only; it refuses every other app.
+ *   on `window`, so a page opens its previews again. In the page surface only. It also opens the page's own pages
+ *   by name: `pages(provider)` gives it a provider whose `open(name)` answers a page's `{ document, icons?, title? }`
+ *   (undefined for a name that is not one), mounted in the asking element as a panel in the page, sized to it. The
+ *   provider's `mounted(name, panel, element)` is handed the panel (as `mount` returns it) and `disposed(name, panel)`
+ *   is called when the `embeddedApp` lets it go; its emits reach the `embeddedApp` and `stateui:emit` on the
+ *   element. It refuses every other app.
  *
  * A page with no `data-app-id` has no app of its own: it only mounts panels.
  *
@@ -971,6 +976,29 @@ interface PanelApp {
      * surface only; elsewhere it is a frame). Its `embeddedApp` nodes reach the page's app host (`apps`)
      */
     readonly inPage?: boolean;
+    /** True: the panel's element in the page takes the whole of `element` and scrolls (a site page in an `embeddedApp`) */
+    readonly fill?: boolean;
+}
+
+/** The panel `stateuiHost.mount` returns, and a site page's provider is handed */
+interface Panel {
+    write(writes: PathWrite[]): void;
+    command(target: string, command: string, value?: Json): void;
+    inspect(query: { at: { x: number; y: number } } | { paths: string[] }): Promise<JsonRecord | undefined>;
+    watch(paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[], floating: JsonRecord[]) => void): void;
+    view(change: { locale?: string; mode?: string }): void;
+    frame(): HTMLElement;
+    dispose(): void;
+}
+
+/** The page's own pages, by name, that its `embeddedApp` nodes open (`stateuiHost.pages`) */
+interface SitePages {
+    /** The page's document, icons and title; undefined when the name is not one of the site's pages */
+    open(name: string): Promise<PanelApp & { readonly title?: string }> | undefined;
+    /** Called with the panel of a page once it is mounted, and the element it is in */
+    mounted?(name: string, panel: Panel, element: HTMLElement): void;
+    /** Called when the page's `embeddedApp` lets it go, with the panel it was handed */
+    disposed?(name: string, panel: Panel): void;
 }
 
 class PageView {
@@ -1002,6 +1030,8 @@ class PageView {
             // In the page: the runtime on an element of its own, its messages handed over by call as a frame's are posted
             const holder = document.createElement('div');
             holder.className = 'stateui-panel';
+            // An attached site page fills its embeddedApp's frame, which page CSS does not reach
+            if (app.fill === true) holder.style.cssText = 'block-size: 100%; overflow: auto;';
             holder.setAttribute('role', 'region');
             holder.setAttribute('aria-label', title);
             element.append(holder);
@@ -1142,10 +1172,14 @@ class PageView {
  * asked for (`LiveView.attach`), and a preview of it is its document as the page last had it, on the page bundle's
  * library, following the live app's store. It knows no other app
  */
-function appHost(live: LiveView | undefined): AppHost {
+function appHost(live: LiveView | undefined, pages: () => SitePages | undefined, panelOf: (element: HTMLElement, app: PanelApp, title: string) => Panel): AppHost {
     return {
         open: (ask: AppAsk): Promise<OpenedApp | AttachedApp> => {
             const page = stateuiPage();
+            // One of the page's own pages, by name: never the live app's
+            const site = live?.appId === ask.app ? undefined : pages();
+            const served = page === undefined ? undefined : site?.open(ask.app);
+            if (site !== undefined && served !== undefined) return served.then((app) => ({ attach: (request) => attachPage(ask.app, app, request, site, panelOf) }));
             if (live === undefined || page === undefined || live.surface !== 'page' || ask.app !== live.appId) return Promise.reject(new Error(`No app ${ask.app} in this page`));
             if (ask.live) return Promise.resolve({ attach: (request) => live.attach(request.element, request) });
             // A preview waits for the live app it follows to be mounted
@@ -1163,26 +1197,67 @@ function appHost(live: LiveView | undefined): AppHost {
     };
 }
 
+/**
+ * A site page in the element an `embeddedApp` gives: a panel in the page that fills it, its emits handed to the
+ * `embeddedApp` as well as raised on the element, and the provider told when it is mounted and let go
+ */
+function attachPage(
+    name: string,
+    app: PanelApp & { readonly title?: string },
+    request: Pick<AppOpenRequest, 'element' | 'onEmit'>,
+    site: SitePages,
+    panelOf: (element: HTMLElement, app: PanelApp, title: string) => Panel
+): EmbeddedApp {
+    const element = request.element as HTMLElement;
+    const onEmit = (event: Event): void => {
+        const detail = (event as CustomEvent<{ name: string; payload: unknown }>).detail;
+        request.onEmit(detail.name, detail.payload);
+    };
+    element.addEventListener('stateui:emit', onEmit);
+    const panel = panelOf(element, { document: app.document, ...(app.icons !== undefined && { icons: app.icons }), ...(app.keys !== undefined && { keys: app.keys }), inPage: true, fill: true }, app.title ?? name);
+    site.mounted?.(name, panel, element);
+    let disposed = false;
+    return {
+        navigate: (screen) => {
+            panel.command(screen, 'navigate');
+            return undefined;
+        },
+        dispose: () => {
+            if (disposed) return;
+            disposed = true;
+            element.removeEventListener('stateui:emit', onEmit);
+            panel.dispose();
+            site.disposed?.(name, panel);
+        }
+    };
+}
+
 /** `window.stateuiHost`: what an editor laid over the page uses */
 export function installHostApi(live: LiveView | undefined): void {
-    const apps = appHost(live);
+    let pages: SitePages | undefined;
+    const panelOf = (element: HTMLElement, app: PanelApp, title: string): Panel => {
+        const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
+        const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title, apps);
+        return {
+            write: (writes) => view.write(writes),
+            command: (target, command, value) => view.command(target, command, value),
+            inspect: (query) => view.inspect(query),
+            watch: (paths, listener) => view.watch(paths, listener),
+            view: (change) => view.view(change),
+            frame: () => view.frameElement(),
+            dispose: () => view.dispose()
+        };
+    };
+    const apps = appHost(live, () => pages, panelOf);
     (window as unknown as { stateuiHost: unknown }).stateuiHost = {
         inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
         navigate: (screen: string, params?: Json) => live?.navigate(screen, params),
         snapshot: () => live?.snapshot(),
         apps,
-        mount: (element: HTMLElement, app: PanelApp, title = 'Panel') => {
-            const runtimeUrl = document.body.dataset['runtimeUrl'] ?? '';
-            const view = new PageView(element, runtimeUrl, new URL(runtimeUrl, window.location.href).origin, app, title, apps);
-            return {
-                write: (writes: PathWrite[]) => view.write(writes),
-                command: (target: string, command: string, value?: Json) => view.command(target, command, value),
-                inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => view.inspect(query),
-                watch: (paths: string[], listener: (nodes: { path: string; rect: JsonRecord }[], floating: JsonRecord[]) => void) => view.watch(paths, listener),
-                view: (change: { locale?: string; mode?: string }) => view.view(change),
-                frame: () => view.frameElement(),
-                dispose: () => view.dispose()
-            };
-        }
+        /** The page's own pages, which its embeddedApp nodes open by name */
+        pages: (provider: SitePages) => {
+            pages = provider;
+        },
+        mount: (element: HTMLElement, app: PanelApp, title = 'Panel') => panelOf(element, app, title)
     };
 }

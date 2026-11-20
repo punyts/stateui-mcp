@@ -2118,6 +2118,54 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.close();
     });
 
+    it("should open a page of the site's own by name in an embeddedApp, hand its provider the panel and pass its emits on", async () => {
+        // Arrange: a provider of one page, side, that records what it is handed
+        const app = await createApp(harness.client, 'in-page-site');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+        await page.evaluate(() => {
+            const seen: unknown[] = [];
+            (window as unknown as { seen: unknown[] }).seen = seen;
+            const side = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', on: { press: { command: 'emit', target: 'picked', value: 'x' } } } } } };
+            const host = (window as unknown as { stateuiHost: { pages(provider: object): void } }).stateuiHost;
+            host.pages({
+                open: (name: string) => (name === 'side' ? Promise.resolve({ document: side, title: 'Side' }) : undefined),
+                mounted: (name: string, panel: { write(writes: object[]): void }) => {
+                    seen.push(`mounted ${name}`);
+                    panel.write([{ path: '$.app.children.go._title', value: 'Pick' }]);
+                },
+                disposed: (name: string) => seen.push(`disposed ${name}`)
+            });
+        });
+
+        // Act: a panel in the page whose embeddedApp asks for side, and one that asks for a name no one knows
+        await page.evaluate(() => {
+            const element = document.createElement('section');
+            element.id = 'panel';
+            document.body.append(element);
+            element.addEventListener('emit', (event) => (window as unknown as { seen: unknown[] }).seen.push((event as CustomEvent).detail));
+            const document_ = {
+                app: {
+                    component: 'panel',
+                    children: {
+                        side: { component: 'embeddedApp', app: 'side', live: true, width: 320, height: 240 },
+                        nobody: { component: 'embeddedApp', app: 'nobody', live: true, width: 320, height: 240, _label: 'Nobody' }
+                    }
+                }
+            };
+            const host = (window as unknown as { stateuiHost: { mount(element: HTMLElement, app: object, title: string): unknown } }).stateuiHost;
+            host.mount(element, { document: document_, inPage: true }, 'Board');
+        });
+        await page.locator('#panel').getByRole('region', { name: 'Side' }).getByRole('button', { name: 'Pick' }).click();
+        await page.waitForFunction(() => (window as unknown as { seen: unknown[] }).seen.length > 1);
+
+        // Assert
+        expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(['mounted side', { name: 'picked', payload: 'x' }]);
+        await expect.poll(() => page.locator('#panel').getByText('Nobody').isVisible()).toBe(true);
+        expect(await page.locator('iframe').count()).toBe(0);
+        await page.close();
+    });
+
     it('should give a preview of the live app as its document on the page library, and refuse an app it does not know', async () => {
         // Arrange
         const app = await createApp(harness.client, 'in-page-preview');
