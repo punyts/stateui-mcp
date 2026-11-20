@@ -1,5 +1,7 @@
 import busboy from 'busboy';
 import { createServer } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
+import type { TLSSocket } from 'node:tls';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
@@ -78,6 +80,11 @@ export interface HttpServerOptions {
      * loopback) are answered. Absent: each origin is the request's host name with that origin's port
      */
     readonly publicOrigins?: PublicOrigins;
+    /**
+     * Also listen on an address of the local network, over HTTPS with this key and certificate (PEM), on the same two
+     * ports: so other computers reach the server while `host` stays loopback. Its pages name `https://<Host>:<port>`
+     */
+    readonly network?: NetworkListener;
     /** The one owner of a local server, or how a request finds its owner on a server with many */
     readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
     /**
@@ -95,6 +102,18 @@ export interface HttpServerOptions {
     readonly report: UseCaseReport;
 }
 
+/** The second listener of a server reached from the local network: its address and its TLS key and certificate (PEM) */
+export interface NetworkListener {
+    readonly host: string;
+    readonly key: string;
+    readonly cert: string;
+}
+
+/** Whether a request came over the network listener's TLS */
+export function isNetworkRequest(request: IncomingMessage): boolean {
+    return (request.socket as Partial<TLSSocket>).encrypted === true;
+}
+
 /** The two public origins of a server behind a proxy: the pages', and the runtime frame's, which must differ */
 export interface PublicOrigins {
     readonly main: string;
@@ -107,6 +126,8 @@ export interface RunningHttpServer {
     readonly port: number;
     /** The port of the runtime origin */
     readonly runtimePort: number;
+    /** The origin of the network listener, such as `https://192.168.1.20:4100`, when there is one */
+    readonly networkOrigin?: string;
     close(): Promise<void>;
 }
 
@@ -217,11 +238,16 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     let runtimePort = 0;
 
     const publicHosts = options.publicOrigins === undefined ? undefined : new Set([new URL(options.publicOrigins.main).hostname, new URL(options.publicOrigins.runtime).hostname]);
-    const hostAllowed = (request: IncomingMessage): boolean => (publicHosts === undefined ? isAllowedHost(request.headers.host, options.host) : isPublicHost(request.headers.host, publicHosts));
+    const hostAllowed = (request: IncomingMessage): boolean => {
+        if (publicHosts !== undefined) return isPublicHost(request.headers.host, publicHosts);
+        return isAllowedHost(request.headers.host, options.network !== undefined && isNetworkRequest(request) ? options.network.host : options.host);
+    };
+    /** The scheme a request came over: HTTPS on the network listener */
+    const schemeOf = (request: IncomingMessage): string => (isNetworkRequest(request) ? 'https' : 'http');
     /** The origin of the pages, as the browser of a request reaches it */
-    const mainOriginOf = (request: IncomingMessage): string => options.publicOrigins?.main ?? `http://${hostNameOf(request)}:${mainPort}`;
+    const mainOriginOf = (request: IncomingMessage): string => options.publicOrigins?.main ?? `${schemeOf(request)}://${hostNameOf(request)}:${mainPort}`;
     /** The origin of the runtime frame, as the browser of a request reaches it */
-    const runtimeOriginOf = (request: IncomingMessage): string => options.publicOrigins?.runtime ?? `http://${hostNameOf(request)}:${runtimePort}`;
+    const runtimeOriginOf = (request: IncomingMessage): string => options.publicOrigins?.runtime ?? `${schemeOf(request)}://${hostNameOf(request)}:${runtimePort}`;
 
     /** The host name the request used, so the other origin is reached by the same name */
     function hostNameOf(request: IncomingMessage): string {
@@ -585,10 +611,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         });
     }
 
-    const listen = (target: Server, port: number): Promise<AddressInfo> =>
+    const listen = (target: Server, port: number, host = options.host): Promise<AddressInfo> =>
         new Promise<AddressInfo>((resolve, reject) => {
             target.once('error', reject);
-            target.listen(port, options.host, () => {
+            target.listen(port, host, () => {
                 target.off('error', reject);
                 resolve(target.address() as AddressInfo);
             });
@@ -601,13 +627,15 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     const server: Server = createServer(handler(route));
     const runtimeServer: Server = createServer(handler(runtimeRoute));
-    server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
         socket.on('error', () => socket.destroy());
         syncUpgrade(request, socket, head).catch((error: unknown) => {
             report.info('Sync connection failed', { path: request.url?.split('?')[0], error: error instanceof Error ? error.message : String(error) });
             if (!socket.destroyed) refuseUpgrade(socket, 500, 'Internal Server Error');
         });
-    });
+    };
+    server.on('upgrade', upgrade);
+    const servers: Server[] = [server, runtimeServer];
     const address = await listen(server, options.port);
     mainPort = address.port;
     try {
@@ -616,16 +644,35 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         await stop(server);
         throw error instanceof Error ? new Error(`The runtime port ${options.runtimePort}: ${error.message}`) : error;
     }
-    const hostForUrl = address.family === 'IPv6' ? `[${address.address}]` : address.address;
+    const urlHost = (info: AddressInfo): string => (info.family === 'IPv6' ? `[${info.address}]` : info.address);
+    let networkOrigin: string | undefined;
+    if (options.network !== undefined) {
+        // The same two ports on the network address, over TLS
+        const tls = { key: options.network.key, cert: options.network.cert };
+        const networkServer = createSecureServer(tls, handler(route)) as unknown as Server;
+        const networkRuntime = createSecureServer(tls, handler(runtimeRoute)) as unknown as Server;
+        networkServer.on('upgrade', upgrade);
+        try {
+            const at = await listen(networkServer, mainPort, options.network.host);
+            servers.push(networkServer);
+            await listen(networkRuntime, runtimePort, options.network.host);
+            servers.push(networkRuntime);
+            networkOrigin = `https://${urlHost(at)}:${at.port}`;
+        } catch (error) {
+            await Promise.all(servers.map(stop));
+            throw error instanceof Error ? new Error(`The network address ${options.network.host}: ${error.message}`) : error;
+        }
+    }
     return {
-        origin: `http://${hostForUrl}:${address.port}`,
+        origin: `http://${urlHost(address)}:${address.port}`,
         port: address.port,
         runtimePort,
+        ...(networkOrigin !== undefined && { networkOrigin }),
         close: async () => {
             // Upgraded sockets are no longer the HTTP server's connections
             for (const client of sockets.clients) client.terminate();
             sockets.close();
-            await Promise.all([stop(server), stop(runtimeServer)]);
+            await Promise.all(servers.map(stop));
         }
     };
 }
