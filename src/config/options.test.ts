@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseConvertOptions, parseOptions, UsageError } from './options.js';
+import { isNodeUrl, parseConvertOptions, parseOptions, UsageError } from './options.js';
 
 describe('parseOptions', () => {
     it('should default to ./data, the local statenet and the local view server', () => {
@@ -9,6 +9,7 @@ describe('parseOptions', () => {
         expect(options).toEqual({
             dataDir: resolve('./data'),
             statenet: 'ws://127.0.0.1:4200/sync',
+            statenetCa: undefined,
             viewUrl: 'http://127.0.0.1:5180/',
             secretKeyFile: undefined,
             secretKey: undefined,
@@ -43,8 +44,21 @@ describe('parseOptions', () => {
         expect(parseOptions(['--view-url=http://localhost:6000'], {}).viewUrl).toBe('http://localhost:6000/');
     });
 
-    it('should refuse a statenet that is not a WebSocket and a view that is not http', () => {
-        expect(() => parseOptions(['--statenet', 'http://127.0.0.1:4200/sync'], {})).toThrow('Invalid statenet URL');
+    it('should take a node to sign in to as the statenet, over https or on loopback, with its certificate authority', () => {
+        // Act
+        const node = parseOptions(['--statenet', 'https://192.168.1.20:4300', '--statenet-ca', 'authority.crt'], {});
+        const local = parseOptions([], { STATEUI_MCP_STATENET: 'http://127.0.0.1:4300', STATEUI_MCP_STATENET_CA: 'env.crt' });
+
+        // Assert
+        expect(node).toMatchObject({ statenet: 'https://192.168.1.20:4300/', statenetCa: resolve('authority.crt') });
+        expect(local).toMatchObject({ statenet: 'http://127.0.0.1:4300/', statenetCa: resolve('env.crt') });
+        expect(isNodeUrl(node.statenet)).toBe(true);
+        expect(isNodeUrl('ws://127.0.0.1:4200/sync')).toBe(false);
+        expect(() => parseOptions(['--statenet', 'http://192.168.1.20:4300'], {})).toThrow('reached over https');
+    });
+
+    it('should refuse a statenet that is not a WebSocket or a node and a view that is not http', () => {
+        expect(() => parseOptions(['--statenet', 'ftp://127.0.0.1:4200/sync'], {})).toThrow('Invalid statenet URL');
         expect(() => parseOptions(['--view-url', 'ws://127.0.0.1:5180'], {})).toThrow('Invalid view URL');
         expect(() => parseOptions([], { STATEUI_MCP_STATENET: 'nonsense' })).toThrow('Invalid statenet URL');
     });

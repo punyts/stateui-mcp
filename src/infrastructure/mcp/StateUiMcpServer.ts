@@ -13,6 +13,7 @@ import type { AppCalls } from '../sync/AppCalls.js';
 import type { AppEffects } from '../sync/AppEffects.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
+import type { NodeClient, NodeTools } from '../statenet/NodeClient.js';
 import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
 import { createFileTools } from './fileTools.js';
@@ -127,7 +128,7 @@ interface CallContent {
     isError: boolean;
 }
 
-function toContent(outcome: ToolOutcome): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; isError: boolean } {
+export function toContent(outcome: ToolOutcome): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; isError: boolean } {
     return {
         content: [
             { type: 'text', text: JSON.stringify(outcome.body) },
@@ -182,5 +183,29 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
         }
     }
 
+    return server;
+}
+
+/**
+ * The MCP server of a stateui-mcp signed in to a node (docs/design/statenet-network.md, S10b): the node's tools and
+ * instructions, each call run at the node as the person. It holds no apps of its own
+ */
+export function createNodeMcpServer(client: Pick<NodeClient, 'call'>, node: NodeTools, report: UseCaseReport): Server {
+    const server = new Server({ name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION }, { capabilities: { tools: {} }, instructions: node.instructions });
+    const names = new Set(node.tools.map((tool) => tool.name));
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: node.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema, ...(tool.annotations !== undefined && { annotations: tool.annotations }) }))
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const { name } = request.params;
+        if (!names.has(name)) return toContent(fail('unknown-tool', `Unknown tool: ${name}`));
+        try {
+            return toContent(await client.call(name, request.params.arguments ?? {}));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            report.info('Tool call to the node failed', { tool: name, error: message });
+            return toContent(fail('node-unreachable', `The node did not answer: ${message}`));
+        }
+    });
     return server;
 }
