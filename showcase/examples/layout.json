@@ -97,6 +97,27 @@
                 }
             }
         },
+        "viewport": {
+            "wide": true,
+            "example": {
+                "component": "viewport",
+                "grid": true,
+                "_label": "A plan to pan and zoom",
+                "content": {
+                    "component": "treeDiagram",
+                    "_label": "Teams",
+                    "twoSided": true,
+                    "nodes": {
+                        "company": { "label": "Company" },
+                        "design": { "label": "Design", "parent": "company", "note": "4 people" },
+                        "build": { "label": "Build", "parent": "company", "note": "9 people" },
+                        "web": { "label": "Web", "parent": "build" },
+                        "mobile": { "label": "Mobile", "parent": "build" }
+                    },
+                    "on": { "select": { "command": "lookAt", "target": "$parent" } }
+                }
+            }
+        },
         "window": {
             "example": {
                 "component": "window",

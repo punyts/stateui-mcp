@@ -230,21 +230,20 @@
                 "component": "treeDiagram",
                 "_label": "An app and its parts",
                 "twoSided": true,
-                "addable": true,
-                "noteField": "note",
+                "leafBlock": 260,
                 "nodes": {
                     "shop": { "label": "Shop" },
                     "data": { "label": "Data", "parent": "shop", "note": "2 datasets" },
                     "orders": { "label": "Orders", "parent": "data" },
                     "stock": { "label": "Stock", "parent": "data" },
                     "screens": { "label": "Screens", "parent": "shop", "note": "3 screens" },
-                    "home": { "label": "Home", "parent": "screens" },
-                    "cart": { "label": "Cart", "parent": "screens" },
-                    "checkout": { "label": "Checkout", "parent": "screens" }
+                    "home": { "label": "Home", "parent": "screens", "wrap": true },
+                    "cart": { "label": "Cart", "parent": "screens", "wrap": true },
+                    "checkout": { "label": "Checkout", "parent": "screens", "wrap": true }
                 },
                 "links": [
-                    { "from": "cart", "to": "orders", "kind": "uses" },
-                    { "from": "home", "to": "stock", "kind": "uses" }
+                    { "from": "cart", "to": "orders", "kind": "uses", "label": "Cart uses Orders" },
+                    { "from": "home", "to": "stock", "kind": "uses", "label": "Home uses Stock" }
                 ]
             }
         },
