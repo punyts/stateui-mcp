@@ -1,6 +1,8 @@
 import type { Browser, ElementHandle, Frame, Page } from 'playwright';
+import { report } from '@punyts/core';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
+import { msSince } from '../msSince.js';
 import type { PreviewHub, UiEvent } from './PreviewHub.js';
 import { DRAG_OFFSET_FORM, dragTargetOf, formatDragOffset } from './dragTarget.js';
 import type { DragOffset } from './dragTarget.js';
@@ -151,6 +153,9 @@ export interface FoundNode extends RenderedNode {
  */
 type ShapeTarget = { readonly kind: string; readonly via: 'svg' | 'proxy' };
 
+/** The category of the preview's reports: the browser started and closed, pages loaded, previews, screenshots and interactions with their durations */
+const PREVIEW_CATEGORY = 'stateui-mcp.preview';
+
 /**
  * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
  * for. A page loads the same view page a human opens, so what it renders and reports is what a person
@@ -195,6 +200,7 @@ export class BrowserPreview {
      */
     async open(appId: string, revision: number, at?: PreviewScreen): Promise<PreviewOpenResult> {
         return this.lock.run(appId, async () => {
+            const start = performance.now();
             const existing = this.pages.get(appId);
             if (existing !== undefined && !existing.isClosed()) {
                 this.hub.markStale(appId, 'headless');
@@ -204,12 +210,14 @@ export class BrowserPreview {
                 await this.pageFor(appId, at);
             }
             const rendered = await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
+            report(PREVIEW_CATEGORY, 'Preview opened', { appId, revision, rendered, ms: msSince(start) });
             return { rendered };
         });
     }
 
     async screenshot(appId: string, revision: number, options: ScreenshotOptions): Promise<ScreenshotResult> {
         return this.lock.run(appId, async () => {
+            const start = performance.now();
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             const viewport = { width: options.width ?? DEFAULT_VIEWPORT.width, height: options.height ?? DEFAULT_VIEWPORT.height };
@@ -223,6 +231,7 @@ export class BrowserPreview {
                 if (options.path === undefined) {
                     if (options.fullPage === true) pending = await this.growToContent(page, viewport, pending);
                     const png = await page.screenshot({ type: 'png' });
+                    report(PREVIEW_CATEGORY, 'Screenshot taken', { appId, revision, target: 'page', fullPage: options.fullPage === true, ...viewport, pending: pending.length, ms: msSince(start) });
                     return { png, ...viewport, target: 'page', ...pendingOf(pending) };
                 }
                 const statePath = toStatePath(options.path);
@@ -242,6 +251,7 @@ export class BrowserPreview {
                         }
                         throw error;
                     });
+                    report(PREVIEW_CATEGORY, 'Screenshot taken', { appId, revision, target: statePath, width: Math.round(box.width), height: Math.round(box.height), pending: pending.length, ms: msSince(start) });
                     return { png, width: Math.round(box.width), height: Math.round(box.height), target: statePath, ...pendingOf(pending) };
                 } finally {
                     await handle.dispose();
@@ -303,6 +313,7 @@ export class BrowserPreview {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             await this.waitDrawn(page);
+            const start = performance.now();
             const errorCursor = this.hub.errorCursor(appId);
             const eventCursor = this.hub.readEvents(appId, undefined).cursor;
             const results: InteractStepResult[] = [];
@@ -321,6 +332,7 @@ export class BrowserPreview {
             const pending = await this.waitDrawn(page);
             await this.settle(page);
             const { events, cursor } = this.hub.readEvents(appId, eventCursor);
+            report(PREVIEW_CATEGORY, 'Interaction run', { appId, revision, steps: steps.length, done: results.filter((result) => result.ok).length, failed: results.some((result) => !result.ok), ms: msSince(start) });
             return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor, ...pendingOf(pending) };
         });
     }
@@ -339,6 +351,7 @@ export class BrowserPreview {
         this.browser = undefined;
         this.pages.clear();
         if (launching === undefined) return;
+        report(PREVIEW_CATEGORY, 'Headless browser closed', {});
         try {
             await (await launching).close();
         } catch {
@@ -350,11 +363,15 @@ export class BrowserPreview {
         if (this.closed) throw new BrowserUnavailableError('the server is shutting down');
         if (this.browser === undefined) {
             this.browser = (async () => {
+                const start = performance.now();
                 try {
                     const { chromium } = await import('playwright');
-                    return await chromium.launch({ headless: true, ...(this.launchArgs.length > 0 && { args: [...this.launchArgs] }) });
+                    const browser = await chromium.launch({ headless: true, ...(this.launchArgs.length > 0 && { args: [...this.launchArgs] }) });
+                    report(PREVIEW_CATEGORY, 'Headless browser started', { ms: msSince(start) });
+                    return browser;
                 } catch (error) {
                     this.browser = undefined;
+                    report(PREVIEW_CATEGORY, 'Headless browser not started', { ms: msSince(start) });
                     throw new BrowserUnavailableError(error instanceof Error ? (error.message.split('\n')[0] ?? 'launch failed') : 'launch failed');
                 }
             })();
@@ -377,7 +394,9 @@ export class BrowserPreview {
         page.on('close', () => {
             if (this.pages.get(appId) === page) this.pages.delete(appId);
         });
+        const start = performance.now();
         await page.goto(this.viewUrl(appId, at), { waitUntil: 'domcontentloaded' });
+        report(PREVIEW_CATEGORY, 'Headless page loaded', { appId, ms: msSince(start) });
         return page;
     }
 

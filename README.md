@@ -282,6 +282,21 @@ For each app, `convertDataDir` (`src/config/`) runs `splitDocument` of `@punyts/
 
 An app that is not converted keeps its folder; fix what the report names in that app (with the previous release) or rebuild it from parts. The `--statenet` option and Persisted apps (`sync: "persisted"`) are gone with the old store: their state lived in the statenet under `apps.<appId>`, which this version does not read, so convert such an app from its `app.json` (its `$.data` snapshot is read from `state.json`, which a statenet-backed app does not have) or rebuild it.
 
+## Reporting
+
+The server's own lines (started, showcase installed, a failure) go to stderr through its reporter. Besides, it reports
+to `@punyts/core`'s default reporter, where the libraries report, and listens there: warnings and errors always reach
+stderr, and `PUNYTS_REPORT`, a comma-separated list of categories, turns more on
+(`PUNYTS_REPORT=stateui-mcp.*,stateui-app.*`). Every line is `[stateui-mcp] <category> <message> <details>`, on stderr
+only. A report names tools, ids, kinds, counts and durations, never arguments, bodies or values.
+
+| Category | Reports |
+|---|---|
+| `stateui-mcp.tool` | a tool call: `tool`, `ms`, `outcome` (`ok`, `refused` with the error `code`, `failed`) |
+| `stateui-mcp.usecase` | a use case run: `useCase`, `ms`, `outcome` (the result's kind, or `failed`) |
+| `stateui-mcp.preview` | the headless browser started and closed; a page loaded, a preview opened, a screenshot taken, an interaction run, each with `ms`; the view server listening, a view page served; a view attached, detached and a revision it rendered |
+| `stateui-mcp.storage` | a part read, created, written, refused for an older revision, deleted and renamed (`kind`, `id`, `revision`); an instance written or reset; a persona dataset written (`records` count) |
+
 ## Security notes
 
 - **No port.** The server listens on nothing: MCP is on stdio, and it reaches the statenet as a client. Signing in to a node, it listens on `127.0.0.1` on a port of the system's choosing for one answer, which must carry the sign-in's random `state`, and closes it.

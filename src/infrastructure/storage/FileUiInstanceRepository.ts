@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises';
+import { report } from '@punyts/core';
 import { diffInstance } from '@punyts/stateui-app/core';
 import type { JsonObject as LibraryJsonObject } from '@punyts/stateui-app/core';
 import type { InstanceDiff, InstanceRead, PersonaDataset, UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
@@ -32,6 +33,9 @@ function datasetProblem(value: unknown): string | undefined {
     return isJsonObject(value['records']) ? undefined : 'the file has no records object';
 }
 
+/** The category of the instance store's reports: an instance written or reset, a persona dataset written */
+const STORAGE_CATEGORY = 'stateui-mcp.storage';
+
 /**
  * One persona's instances as files (`PartFolders.instanceFile`, `personaDataFile`); the default persona's unless
  * another is named. An instance is stored as the diff over its definition, so a definition edit never needs to touch it
@@ -59,6 +63,7 @@ export class FileUiInstanceRepository implements UiInstanceRepository {
             if (Object.keys(diff).length === 0) await rm(path, { force: true });
             else await writeJsonAtomic(path, diff);
         });
+        report(STORAGE_CATEGORY, 'Instance written', { appId, persona: this.persona, changed: Object.keys(diff).length > 0 });
         return diff;
     }
 
@@ -71,6 +76,7 @@ export class FileUiInstanceRepository implements UiInstanceRepository {
     async writeData(appId: string, binding: string, dataset: PersonaDataset): Promise<void> {
         const path = this.folders.personaDataFile(appId, binding, this.persona);
         await this.lock.run(this.key(appId), () => writeJsonAtomic(path, { model: dataset.model, records: dataset.records }));
+        report(STORAGE_CATEGORY, 'Persona data written', { appId, binding, persona: this.persona, records: Object.keys(dataset.records).length });
     }
 
     async reset(appId: string): Promise<void> {
@@ -80,6 +86,7 @@ export class FileUiInstanceRepository implements UiInstanceRepository {
             await rm(instance, { force: true });
             await rm(data, { recursive: true, force: true });
         });
+        report(STORAGE_CATEGORY, 'Instance reset', { appId, persona: this.persona });
     }
 
     private key(appId: string): string {

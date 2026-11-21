@@ -1,3 +1,4 @@
+import { isReported, report } from '@punyts/core';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 
@@ -59,6 +60,9 @@ interface AppChannel {
     waiters: Set<() => void>;
 }
 
+/** The category of the hub's reports: a view attached, detached, and a revision it rendered */
+const PREVIEW_CATEGORY = 'stateui-mcp.preview';
+
 /**
  * The in-memory side of the live views: who has an app open, what they rendered, the `emit` events they raised and
  * the messages the server pushes to them. Nothing here is stored: a restart empties it and the views reconnect
@@ -75,10 +79,12 @@ export class PreviewHub {
     attach(appId: string, connection: ViewConnection): () => void {
         const channel = this.channel(appId);
         channel.views.set(connection.id, { connection, renderedRevision: undefined, ready: false, lastSeenAt: this.now() });
+        report(PREVIEW_CATEGORY, 'View attached', { appId, viewId: connection.id, viewKind: connection.kind, views: channel.views.size });
         this.wake(channel);
         return () => {
             if (channel.views.get(connection.id)?.connection !== connection) return;
             channel.views.delete(connection.id);
+            report(PREVIEW_CATEGORY, 'View detached', { appId, viewId: connection.id, views: channel.views.size });
             this.wake(channel);
         };
     }
@@ -121,6 +127,10 @@ export class PreviewHub {
         const view = channel?.views.get(viewId);
         if (channel === undefined || view === undefined) return;
         view.lastSeenAt = this.now();
+        // A view touches the hub on every frame it sends: only a newly rendered revision is reported
+        if (update.revision !== undefined && update.revision !== view.renderedRevision && isReported(PREVIEW_CATEGORY)) {
+            report(PREVIEW_CATEGORY, 'View rendered', { appId, viewId, viewKind: view.connection.kind, revision: update.revision });
+        }
         if (update.revision !== undefined) view.renderedRevision = update.revision;
         if (update.ready !== undefined) view.ready = update.ready;
         this.wake(channel);

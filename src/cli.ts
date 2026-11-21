@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { createStderrReporter } from './config/reporter.js';
+import { createStderrReporter, listenToLibraries } from './config/reporter.js';
 import { convertDataDir, formatConvertReport } from './config/convertDataDir.js';
 import { CONVERT_HELP_TEXT, HELP_TEXT, isNodeUrl, parseConvertOptions, parseOptions, UsageError } from './config/options.js';
 import type { CliOptions } from './config/options.js';
@@ -76,6 +76,8 @@ async function main(): Promise<void> {
         return;
     }
     if (command === 'sign-in') return;
+    // The libraries report to the default reporter: their warnings, errors and the PUNYTS_REPORT categories go to stderr
+    listenToLibraries();
     if (isNodeUrl(options.statenet)) {
         const reporter = createStderrReporter();
         const node = await startNodeServer({ url: options.statenet, dataDir: options.dataDir, report: reporter.report, ...(options.statenetCa !== undefined && { ca: await readFile(options.statenetCa, 'utf8') }) });

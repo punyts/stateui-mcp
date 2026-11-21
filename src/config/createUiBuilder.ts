@@ -1,3 +1,4 @@
+import { isReported, report } from '@punyts/core';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import type {
     ComponentCatalog,
@@ -50,6 +51,7 @@ import { WriteNodes } from '../application/use-cases/WriteNodes.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
 import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
 import type { UsageSource } from '../application/UsageIndex.js';
+import { msSince } from '../infrastructure/msSince.js';
 
 /** The adapters the use cases run on */
 export interface UiBuilderPorts {
@@ -130,7 +132,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
     const readFile = new ReadFile(fileRepository, fileStore, report);
     const runCommand = new RunCommand(catalog, previewLog, now, newId, report);
     const writePart = new WritePart(parts, parts, validator, report);
-    return {
+    return reportedUseCases({
         searchComponents: new SearchComponents(catalog, parts, ports.meanings),
         searchPatterns: new SearchPatterns(patterns, parts, ports.meanings),
         getComponent: new GetComponent(catalog),
@@ -169,5 +171,55 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         getPartState: new GetPartState(instanceStates, previewLog, now, report),
         runPartCommand: new RunPartCommand(instanceStates, runCommand),
         outlinePartApp: new OutlinePartApp(instanceStates, validator, report)
-    };
+    });
+}
+
+const USE_CASE_CATEGORY = 'stateui-mcp.usecase';
+
+interface Executable {
+    execute(...args: unknown[]): unknown;
+}
+
+/** The outcome a use case's result names (its `kind`), or `done` for a result without one */
+function outcomeOf(result: unknown): string {
+    const kind = typeof result === 'object' && result !== null ? (result as { kind?: unknown }).kind : undefined;
+    return typeof kind === 'string' ? kind : 'done';
+}
+
+/**
+ * The use cases, each `execute` reported under `stateui-mcp.usecase`: the use case's name, the duration and the
+ * outcome (the result's `kind`, or `failed` when it threw). Never its input or its result. A use case another one
+ * calls (`writePart`) is reported there too. Off, it adds one check per run
+ */
+function reportedUseCases<T extends object>(useCases: T): T {
+    for (const [name, useCase] of Object.entries(useCases) as [string, Executable][]) {
+        const execute = useCase.execute.bind(useCase);
+        useCase.execute = (...args: unknown[]): unknown => {
+            if (!isReported(USE_CASE_CATEGORY)) return execute(...args);
+            const start = performance.now();
+            const done = (outcome: string): void => report(USE_CASE_CATEGORY, 'Use case run', { useCase: name, ms: msSince(start), outcome });
+            let result: unknown;
+            try {
+                result = execute(...args);
+            } catch (error) {
+                done('failed');
+                throw error;
+            }
+            if (!(result instanceof Promise)) {
+                done(outcomeOf(result));
+                return result;
+            }
+            return result.then(
+                (value: unknown) => {
+                    done(outcomeOf(value));
+                    return value;
+                },
+                (error: unknown) => {
+                    done('failed');
+                    throw error;
+                }
+            );
+        };
+    }
+    return useCases;
 }

@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { report as reportArea } from '@punyts/core';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
@@ -193,6 +194,9 @@ function isUuid(value: string | null): value is string {
     return value !== null && isAppId(value);
 }
 
+/** The category of the view server's reports: listening, and a view page served */
+const PREVIEW_CATEGORY = 'stateui-mcp.preview';
+
 /**
  * The browser endpoint of a server that serves its own view pages, for people and for Playwright: what an embedding
  * server with sign-in and many owners uses (Magnetic). The stateui-mcp server itself serves no HTTP: its views live
@@ -368,6 +372,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const runtimeOrigin = runtimeOriginOf(request);
         // `?surface=page`: the app runs in the page itself, with the page bundle, when the build made one
         const inPage = new URL(request.url ?? '/', 'http://localhost').searchParams.get('surface') === 'page' ? runtime.page : undefined;
+        reportArea(PREVIEW_CATEGORY, 'View page served', { appId, viewKind: headless ? 'headless' : 'browser', surface: inPage === undefined ? 'frame' : 'page' });
         send(
             response,
             200,
@@ -669,6 +674,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             throw error instanceof Error ? new Error(`The network address ${options.network.host}: ${error.message}`) : error;
         }
     }
+    reportArea(PREVIEW_CATEGORY, 'View server listening', { port: address.port, runtimePort, network: networkOrigin !== undefined });
     return {
         origin: `http://${urlHost(address)}:${address.port}`,
         port: address.port,
