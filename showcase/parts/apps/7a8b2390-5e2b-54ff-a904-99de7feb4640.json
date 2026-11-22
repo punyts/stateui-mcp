@@ -1170,7 +1170,7 @@
                 "richTextField": {
                   "component": "card",
                   "_title": "richTextField",
-                  "_subtitle": "A labelled rich-text editor writing block JSON: headings, lists, checks, quotes, code and marks",
+                  "_subtitle": "A labelled rich-text editor writing block JSON: headings, lists, checks, quotes, code, tables, mentions and marks",
                   "children": {
                     "example": {
                       "component": "richTextField",
