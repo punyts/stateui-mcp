@@ -31,9 +31,10 @@ export const MAX_SEARCH_LIMIT = 20;
 /**
  * Below this best score a search is weak. Set between the score of a need whose only match is one word of one
  * component's summary (weak) and one whose only match is one word of one purpose phrase (not weak); the catalog tests
- * pin both on the real catalog. One summary word scores above it: `delete`, in the short summary of `crudTable`
+ * pin both on the real catalog (`faq` scores about 4.9 and `budget` about 5.8 with the C2 components). The scores move
+ * as components join, because a word in fewer of more components weighs more, so the tests pin both ends
  */
-export const WEAK_SCORE_FLOOR = 4.9;
+export const WEAK_SCORE_FLOOR = 5.3;
 
 /** The lowercased words of a camelCase name: `dateRangeField` is date, range, field */
 function nameWords(name: string): string[] {

@@ -1,19 +1,97 @@
 {
     "title": "Conversation",
     "icon": "message-circle",
-    "description": "Chat screens and message lists that stay at the newest message.",
+    "description": "Chat screens, the composer, citations, an agent's steps and actions to approve.",
     "components": {
         "messageList": {
             "wide": true,
-            "example": { "component": "messageList", "<-records": "$.data.messages" }
+            "example": {
+                "component": "messageList",
+                "<-records": "$.data.messages"
+            }
         },
         "chatView": {
             "wide": true,
             "example": {
                 "component": "chatView",
                 "children": {
-                    "messages": { "<-records": "$.data.messages" },
-                    "composer": { "children": { "input": { "_placeholder": "Reply to Grace" } } }
+                    "messages": {
+                        "<-records": "$.data.messages"
+                    },
+                    "composer": {
+                        "_placeholder": "Reply to Grace"
+                    }
+                }
+            }
+        },
+        "composer": {
+            "example": {
+                "component": "composer",
+                "_placeholder": "Ask anything",
+                "suggestions": {
+                    "summary": {
+                        "_label": "Summarize this thread",
+                        "_prompt": "Summarize this thread"
+                    },
+                    "next": {
+                        "_label": "What should I do next?",
+                        "_prompt": "What should I do next?"
+                    }
+                }
+            }
+        },
+        "sources": {
+            "example": {
+                "component": "sources",
+                "items": {
+                    "guide": {
+                        "_title": "Shipping guide",
+                        "url": "https://example.com/help/shipping",
+                        "_excerpt": "Orders ship within two working days."
+                    },
+                    "policy": {
+                        "_title": "Returns policy",
+                        "url": "https://example.com/help/returns",
+                        "_excerpt": "Damaged items are refunded in full."
+                    }
+                }
+            }
+        },
+        "steps": {
+            "example": {
+                "component": "steps",
+                "open": true,
+                "_title": "Answering",
+                "items": {
+                    "search": {
+                        "_label": "Search the help centre",
+                        "status": "done",
+                        "_detail": "2 articles found"
+                    },
+                    "read": {
+                        "_label": "Read the articles",
+                        "status": "running"
+                    },
+                    "write": {
+                        "_label": "Write the answer"
+                    }
+                }
+            }
+        },
+        "actionConfirm": {
+            "example": {
+                "component": "actionConfirm",
+                "_title": "Send this email?",
+                "tone": "accent",
+                "details": {
+                    "to": {
+                        "_label": "To",
+                        "_value": "grace@example.com"
+                    },
+                    "subject": {
+                        "_label": "Subject",
+                        "_value": "Your refund"
+                    }
                 }
             }
         }

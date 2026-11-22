@@ -81,7 +81,7 @@
       "footer": {
         "component": "text",
         "textRole": "caption",
-        "_text": "115 components of @punyts/stateui-components"
+        "_text": "119 components of @punyts/stateui-components"
       }
     },
     "exposes": [
