@@ -281,6 +281,29 @@ describe('request checks', () => {
         expect(response.status).toBe(403);
     });
 
+    it('should give a request to a loopback name loopback origins behind public ones, so a page on this machine loads', async () => {
+        // Arrange
+        const behindData = await tempData();
+        const behind = await httpHarness(behindData.dir, noBrowser, { publicOrigins: { main: 'https://ui.example', runtime: 'https://run.ui.example' } });
+        const behindId = (await createApp(behind.client, 'form', FORM_ROOT)).id;
+
+        try {
+            // Act
+            const local = await fetch(`${behind.server.origin}/apps/${behindId}`);
+            const html = await local.text();
+            const runtime = /data-runtime-url="([^"]+)"/.exec(html)?.[1] ?? '';
+            const frame = await fetch(runtime);
+
+            // Assert
+            expect(local.status).toBe(200);
+            expect(runtime.startsWith(`http://127.0.0.1:${behind.server.runtimePort}/runtime/`)).toBe(true);
+            expect(frame.headers.get('content-security-policy')).toContain(`frame-ancestors ${behind.server.origin}`);
+        } finally {
+            await behind.close();
+            await behindData.cleanup();
+        }
+    });
+
     it('should answer an unknown path with 404', async () => {
         expect((await fetch(`${origin}/nothing`)).status).toBe(404);
     });
