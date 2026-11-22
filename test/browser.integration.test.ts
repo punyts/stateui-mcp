@@ -2001,6 +2001,50 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.close();
     });
 
+    it("should refuse an app asked for inside the live app, so the request never reaches the page's own pages", async () => {
+        // Arrange: the page serves a page of its own by name, and counts the asks
+        const app = await createApp(harness.client, 'in-page-nested');
+        const page = await browser.newPage();
+        await openInPage(page, app.id);
+        await page.evaluate(() => {
+            const w = window as unknown as { asked: number; stateuiHost: { pages(provider: { open(name: string): Promise<unknown> | undefined }): void } };
+            w.asked = 0;
+            w.stateuiHost.pages({ open: () => { w.asked += 1; return Promise.resolve({ document: { screens: {} } }); } });
+        });
+
+        // Act: an embeddedApp inside the live app asks for that page, and the page's board around the live app would answer
+        const outcome = await page.evaluate(async () => {
+            const find = (root: ParentNode): Element | null => {
+                const found = root.querySelector('input');
+                if (found) return found;
+                for (const each of Array.from(root.querySelectorAll('*'))) {
+                    const inner = each.shadowRoot ? find(each.shadowRoot) : null;
+                    if (inner) return inner;
+                }
+                return null;
+            };
+            const holder = document.querySelector('[data-app-frame]');
+            const inside = holder ? find(holder) : null;
+            if (!inside) return 'no app';
+            document.body.addEventListener('ui-app-open', () => ((window as unknown as { leaked: boolean }).leaked = true));
+            const answered = new Promise<string>((resolve) => {
+                inside.dispatchEvent(new CustomEvent('ui-app-open', {
+                    bubbles: true,
+                    composed: true,
+                    detail: { app: 'site-page', live: false, element: document.createElement('div'), onEmit: () => undefined, onNavigate: () => undefined, respond: (result: Promise<unknown>) => result.then(() => resolve('opened'), () => resolve('refused')) }
+                }));
+                setTimeout(() => resolve('unanswered'), 2000);
+            });
+            return answered;
+        });
+
+        // Assert
+        expect(outcome).toBe('refused');
+        expect(await page.evaluate(() => (window as unknown as { asked: number }).asked)).toBe(0);
+        expect(await page.evaluate(() => (window as unknown as { leaked?: boolean }).leaked ?? false)).toBe(false);
+        await page.close();
+    });
+
     it('should sync what the person types in the page to the server', async () => {
         // Arrange
         const app = await createApp(harness.client, 'in-page-typing');

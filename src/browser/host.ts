@@ -61,7 +61,8 @@
  *   its sign-in and link pages, with it.
  *
  * - `apps` is the page's app host (`AppHost` of `@punyts/stateui-app`), for an `embeddedApp` in an app the page mounts
- *   with `stateuiPage.mountApp` or `mount` with `inPage`: the live app itself is attached in the asking element, and a
+ *   with `stateuiPage.mountApp` or `mount` with `inPage` (never for one in the live app, whose runtime refuses every app,
+ *   `NO_APPS`): the live app itself is attached in the asking element, and a
  *   preview of it is its document on the page bundle's library, following the live app's store, given once the live app
  *   is mounted. Each mount of the live app in the page (a load, an `attach`) has a new store and raises `stateui:ready`
  *   on `window`, so a page opens its previews again. In the page surface only. It also opens the page's own pages
@@ -320,6 +321,9 @@ function localStore(): LocalStore {
 }
 
 /** The live view of one app in the page: the runtime frame, its sync client and the channel to the server */
+/** The app host of the live app in the page: it opens no app, so an embeddedApp in the live app stays empty */
+const NO_APPS: AppHost = { open: (ask: AppAsk) => Promise.reject(new Error(`No app ${ask.app} inside the live app`)) };
+
 export class LiveView {
     readonly appId: string;
     readonly viewId = randomId();
@@ -550,7 +554,9 @@ export class LiveView {
             if (this.runtime !== undefined || page === undefined || holder === undefined) return;
             this.holder = holder;
             // A message of the runtime is handled after the one it answers, as a frame's would be
-            this.runtime = page.createRuntime({ host: holder, nonce: this.nonce, post: (message) => queueMicrotask(() => this.onRuntimeData(message)) });
+            // The live app opens no app of the page's: an embeddedApp in it is refused here, so its request never reaches the
+            // page's own mount around it (a page of the site, or the live app itself, which only one place may hold)
+            this.runtime = page.createRuntime({ host: holder, nonce: this.nonce, post: (message) => queueMicrotask(() => this.onRuntimeData(message)), apps: NO_APPS });
             this.frameLoaded = true;
             return;
         }
