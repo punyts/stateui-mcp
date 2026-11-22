@@ -48,6 +48,22 @@
         "textareaField": {
             "example": { "component": "textareaField", "_label": "Bio", "rows": 3, "autoGrow": true, "maxLength": 280, "value": "Engineer, writer and occasional baker.", "_help": "At most 280 characters" }
         },
+        "richTextField": {
+            "example": {
+                "component": "richTextField",
+                "_label": "Release notes",
+                "rows": 4,
+                "_help": "Markdown shortcuts work: ## for a heading, - for a list, **bold**",
+                "value": {
+                    "blocks": {
+                        "bTitle": { "order": "V", "type": "heading", "level": 2, "runs": [{ "text": "Version 2.4" }] },
+                        "bIntro": { "order": "W", "type": "paragraph", "runs": [{ "text": "Faster search and a " }, { "text": "new", "marks": ["bold"] }, { "text": " export." }] },
+                        "bOne": { "order": "X", "type": "bullet", "indent": 0, "runs": [{ "text": "Search answers in under a second" }] },
+                        "bTwo": { "order": "Y", "type": "bullet", "indent": 0, "runs": [{ "text": "Export to CSV" }] }
+                    }
+                }
+            }
+        },
         "numberField": {
             "children": {
                 "quantity": { "component": "numberField", "_label": "Quantity", "value": 2, "min": 1, "max": 99, "step": 1 },
