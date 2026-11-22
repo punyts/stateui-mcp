@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 
 /**
  * The policy of the runtime page, which the app iframe loads from the runtime origin (its own port). Scripts and styles
- * only from that origin, no network but `https:` images (an `image` or `avatar` src), fonts only as `data:`, no forms, and only the host page of this server
+ * only from that origin, no network but `https:` images (an `image` or `avatar` src) and `https:` audio, video and captions (a `mediaPlayer`), fonts only as `data:`, no forms, and only the host page of this server
  * (`hostOrigin`) may frame it.
  *
  * `script-src` has one source beyond `'self'`: `'unsafe-eval'`. `@punyts/expression` turns the literal parts of a
@@ -16,6 +16,7 @@ export function runtimeCsp(hostOrigin: string): string {
         "script-src 'self' 'unsafe-eval'",
         "style-src 'self'",
         'img-src data: https:',
+        'media-src https:',
         'font-src data:',
         "connect-src 'none'",
         "form-action 'none'",
@@ -45,8 +46,8 @@ export function hostPageCsp(runtimeOrigin: string): string {
 /**
  * The policy of an app page whose app runs in the page itself (`?surface=page`): its own scripts, the page bundle among
  * them, its own event stream and reports, and no frames. The app shares the page's origin, so the page allows what the
- * runtime frame allows: `'unsafe-eval'` (`@punyts/expression` evaluates literals with `Function`) and images and fonts
- * from `data:` and `https:`. No inline script and no inline style. No other page may frame it
+ * runtime frame allows: `'unsafe-eval'` (`@punyts/expression` evaluates literals with `Function`), images and fonts
+ * from `data:` and `https:`, and `https:` media. No inline script and no inline style. No other page may frame it
  */
 export const APP_PAGE_CSP = [
     "default-src 'none'",
@@ -54,6 +55,7 @@ export const APP_PAGE_CSP = [
     "style-src 'self'",
     "connect-src 'self'",
     'img-src data: https:',
+    'media-src https:',
     'font-src data:',
     "form-action 'none'",
     "base-uri 'none'",

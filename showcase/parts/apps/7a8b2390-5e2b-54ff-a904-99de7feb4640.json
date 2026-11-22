@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **126** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **129** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -170,7 +170,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 8
+                          "value": 9
                         },
                         "open": {
                           "component": "link",
@@ -187,7 +187,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 13
+                          "value": 15
                         },
                         "open": {
                           "component": "link",
@@ -1562,7 +1562,7 @@
                   "_title": "fileField",
                   "_subtitle": "A labelled field that takes files by picker or drop and keeps their references, with progress, remove and cancel",
                   "children": {
-                    "example": {
+                    "attachments": {
                       "component": "fileField",
                       "_label": "Attachments",
                       "maxFiles": 3,
@@ -1572,6 +1572,18 @@
                         "application/pdf"
                       ],
                       "_help": "Pictures or PDFs, up to 10 MB each"
+                    },
+                    "avatar": {
+                      "component": "fileField",
+                      "_label": "Profile picture",
+                      "crop": "1:1",
+                      "accept": [
+                        "image/png",
+                        "image/jpeg",
+                        "image/webp"
+                      ],
+                      "_choose": "Choose a picture",
+                      "_help": "You can crop it to a square before it is saved"
                     }
                   }
                 },
@@ -2754,7 +2766,7 @@
             "content": {
               "component": "panel",
               "_title": "Overlays",
-              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 8 components.",
+              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 9 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -2975,6 +2987,40 @@
                     }
                   }
                 },
+                "lightbox": {
+                  "component": "card",
+                  "_title": "lightbox",
+                  "_subtitle": "A full-screen viewer over a set of pictures with previous, next, zoom and captions, opened by a command",
+                  "children": {
+                    "open": {
+                      "component": "button",
+                      "icon": "maximize",
+                      "_title": "View the photos",
+                      "on": {
+                        "press": {
+                          "command": "open",
+                          "target": "$.screens.overlays.children.content.children.lightbox.children.gallery"
+                        }
+                      }
+                    },
+                    "gallery": {
+                      "component": "lightbox",
+                      "_label": "Site photos",
+                      "images": {
+                        "dusk": {
+                          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAIAAACwpMoFAAADAklEQVR42u3R6U4UQRQF4PM4Pga/jDFGY4wxyioiIiKCyCYCgoiIMAwz7Ps6LDHGGI0xxhhfwtfRH51gx2Hpqmaqbt05yfez03XuObh455AUw6XKQ1IMl6sOSDFcqT4gxXC1Zp8Uw7WafVIM12v3SDHcqNsjxXDzboEUw636AimG2/cKpBgqG3ZJMVTf3yXFUNu4Q4qhrnGHFEP9g21SDA1N26QYGh9ukWJoat4ixdD8aIsUQ0vLJimG1sebpBjaWjdIMbS3bpBi6HiyToqhs22dFEN3+xopht6na6QY+jrWSDH0P1slxTDYuUrp/fndU0xCMAx1rVAax04b5zcehrtWyNqZ60Y8JsRI9zLZSbhuxFdIjPYskwWjdSNecmKsd4lMWawbcR8V48+XyJT1wO6jYqJviYxYrxtxnBaZF4tkJOXAjtMi279IRlIO7DgtcgMLZCTlwI7TIj+wQEZSDuw4LWYH58lIyoEdp8X8y3kyknJgx2mxODRHpqzXdR8Vy8NzZMp6YPdRsfpqjixYrOslJ9ZHZsmO0bq+QmLz9SxZS7iux4TYHp2hNM5c12887IzOUHrHTishGApv8ipV9FSZUtkD9sfyaliMehI1neDwbS5057hrsdDLwfvxXLhKOm1cuBXhw7tccJztWiy4rvBxYjogHqeNC6gxfJqcDoKQaeOC6A2fM1nhBE4bJ7w9HAX9kslKI3zaOIHtRQXiv6Bfp6YkCGhagQXG8+DYlN+yU16Eu6vYAnFKyu/TGWfUTCutQCQJ+iOXKRGVu4oqEEZBf+YzJ7lQVXGmo4/lT5LkHIvfnlKgkeQvwrqCXzOTkSRdpK9G1LTpzzlqz4jFQ3DcheSZVZ4DL11I60XxOfDYhYRSSnGOx4uKk0BCHb5KKYdzIKEL972UzzmQ04WzUsrqHEhbt6S9lOE5ENhFKUqRcM45XpT8RYjt4rxKUXaO6UWQ3EXKXpSdY3cR5HdhUQ3P+TdwQF0QByYOzIGJAxMHJg5MHJg4MHFgDkwcmDgwCfQXJu/XDoH8ebIAAAAASUVORK5CYII=",
+                          "_alt": "Green hills under a dusk sky",
+                          "_caption": "The north field at dusk"
+                        },
+                        "again": {
+                          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAIAAACwpMoFAAADAklEQVR42u3R6U4UQRQF4PM4Pga/jDFGY4wxyioiIiKCyCYCgoiIMAwz7Ps6LDHGGI0xxhhfwtfRH51gx2Hpqmaqbt05yfez03XuObh455AUw6XKQ1IMl6sOSDFcqT4gxXC1Zp8Uw7WafVIM12v3SDHcqNsjxXDzboEUw636AimG2/cKpBgqG3ZJMVTf3yXFUNu4Q4qhrnGHFEP9g21SDA1N26QYGh9ukWJoat4ixdD8aIsUQ0vLJimG1sebpBjaWjdIMbS3bpBi6HiyToqhs22dFEN3+xopht6na6QY+jrWSDH0P1slxTDYuUrp/fndU0xCMAx1rVAax04b5zcehrtWyNqZ60Y8JsRI9zLZSbhuxFdIjPYskwWjdSNecmKsd4lMWawbcR8V48+XyJT1wO6jYqJviYxYrxtxnBaZF4tkJOXAjtMi279IRlIO7DgtcgMLZCTlwI7TIj+wQEZSDuw4LWYH58lIyoEdp8X8y3kyknJgx2mxODRHpqzXdR8Vy8NzZMp6YPdRsfpqjixYrOslJ9ZHZsmO0bq+QmLz9SxZS7iux4TYHp2hNM5c12887IzOUHrHTishGApv8ipV9FSZUtkD9sfyaliMehI1neDwbS5057hrsdDLwfvxXLhKOm1cuBXhw7tccJztWiy4rvBxYjogHqeNC6gxfJqcDoKQaeOC6A2fM1nhBE4bJ7w9HAX9kslKI3zaOIHtRQXiv6Bfp6YkCGhagQXG8+DYlN+yU16Eu6vYAnFKyu/TGWfUTCutQCQJ+iOXKRGVu4oqEEZBf+YzJ7lQVXGmo4/lT5LkHIvfnlKgkeQvwrqCXzOTkSRdpK9G1LTpzzlqz4jFQ3DcheSZVZ4DL11I60XxOfDYhYRSSnGOx4uKk0BCHb5KKYdzIKEL972UzzmQ04WzUsrqHEhbt6S9lOE5ENhFKUqRcM45XpT8RYjt4rxKUXaO6UWQ3EXKXpSdY3cR5HdhUQ3P+TdwQF0QByYOzIGJAxMHJg5MHJg4MHFgDkwcmDgwCfQXJu/XDoH8ebIAAAAASUVORK5CYII=",
+                          "_alt": "The same hills from the road",
+                          "_caption": "From the road, a week later"
+                        }
+                      }
+                    }
+                  }
+                },
                 "infoTip": {
                   "component": "card",
                   "_title": "infoTip",
@@ -3162,7 +3208,7 @@
             "content": {
               "component": "panel",
               "_title": "Content",
-              "_description": "Text, pictures, icons and surfaces that show content. 13 components.",
+              "_description": "Text, pictures, icons and surfaces that show content. 15 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -3588,6 +3634,30 @@
                       "language": "ts",
                       "lineNumbers": true,
                       "code": "const total = items\n    .map((item) => item.price * item.qty)\n    .reduce((sum, line) => sum + line, 0);"
+                    }
+                  }
+                },
+                "qrCode": {
+                  "component": "card",
+                  "_title": "qrCode",
+                  "_subtitle": "A QR code of a text or link, drawn as one SVG path with its quiet zone, at four error correction levels",
+                  "children": {
+                    "example": {
+                      "component": "qrCode",
+                      "value": "https://example.com/invite/7f3k",
+                      "_label": "Scan to join the team"
+                    }
+                  }
+                },
+                "mediaPlayer": {
+                  "component": "card",
+                  "_title": "mediaPlayer",
+                  "_subtitle": "Video or audio from an https URL or the app's files, with themed controls, captions and full screen",
+                  "children": {
+                    "example": {
+                      "component": "mediaPlayer",
+                      "src": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+                      "_label": "A flower opening, a short clip"
                     }
                   }
                 }

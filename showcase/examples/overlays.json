@@ -76,6 +76,19 @@
                 }
             }
         },
+        "lightbox": {
+            "children": {
+                "open": { "component": "button", "icon": "maximize", "_title": "View the photos", "on": { "press": { "command": "open", "target": "$card.children.gallery" } } },
+                "gallery": {
+                    "component": "lightbox",
+                    "_label": "Site photos",
+                    "images": {
+                        "dusk": { "src": "@image:landscape", "_alt": "Green hills under a dusk sky", "_caption": "The north field at dusk" },
+                        "again": { "src": "@image:landscape", "_alt": "The same hills from the road", "_caption": "From the road, a week later" }
+                    }
+                }
+            }
+        },
         "infoTip": {
             "example": { "component": "infoTip", "_label": "About the fee", "_text": "A 2% fee applies to card payments; bank transfers are free." }
         },

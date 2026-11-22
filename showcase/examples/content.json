@@ -115,6 +115,12 @@
         },
         "codeBlock": {
             "example": { "component": "codeBlock", "language": "ts", "lineNumbers": true, "code": "const total = items\n    .map((item) => item.price * item.qty)\n    .reduce((sum, line) => sum + line, 0);" }
+        },
+        "qrCode": {
+            "example": { "component": "qrCode", "value": "https://example.com/invite/7f3k", "_label": "Scan to join the team" }
+        },
+        "mediaPlayer": {
+            "example": { "component": "mediaPlayer", "src": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", "_label": "A flower opening, a short clip" }
         }
     }
 }

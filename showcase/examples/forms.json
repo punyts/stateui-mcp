@@ -151,7 +151,10 @@
             "example": { "component": "dateRangeField", "_label": "Stay", "value": { "start": "2026-12-18", "end": "2026-12-27" }, "minDays": 1 }
         },
         "fileField": {
-            "example": { "component": "fileField", "_label": "Attachments", "maxFiles": 3, "accept": ["image/png", "image/jpeg", "application/pdf"], "_help": "Pictures or PDFs, up to 10 MB each" }
+            "children": {
+                "attachments": { "component": "fileField", "_label": "Attachments", "maxFiles": 3, "accept": ["image/png", "image/jpeg", "application/pdf"], "_help": "Pictures or PDFs, up to 10 MB each" },
+                "avatar": { "component": "fileField", "_label": "Profile picture", "crop": "1:1", "accept": ["image/png", "image/jpeg", "image/webp"], "_choose": "Choose a picture", "_help": "You can crop it to a square before it is saved" }
+            }
         },
         "paintField": {
             "example": { "component": "paintField", "_label": "Signature", "width": 360, "height": 140, "tools": ["brush", "eraser", "line"] }

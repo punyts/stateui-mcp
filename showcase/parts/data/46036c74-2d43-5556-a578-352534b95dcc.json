@@ -36,12 +36,12 @@
       "overlays": {
         "id": "overlays",
         "label": "Overlays",
-        "count": 8
+        "count": 9
       },
       "content": {
         "id": "content",
         "label": "Content",
-        "count": 13
+        "count": 15
       },
       "conversation": {
         "id": "conversation",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostPageCsp, isPublicHost, runtimeCsp } from './security.js';
+import { APP_PAGE_CSP, hostPageCsp, isPublicHost, runtimeCsp } from './security.js';
 
 /** The sources of one directive of a policy */
 function sources(policy: string, directive: string): string[] {
@@ -8,15 +8,24 @@ function sources(policy: string, directive: string): string[] {
 }
 
 describe('runtimeCsp', () => {
-    it('should allow data: and https: images and nothing else of the network', () => {
+    it('should allow data: and https: images, https: media and nothing else of the network', () => {
         // Act
         const policy = runtimeCsp('http://127.0.0.1:4300');
 
         // Assert
         expect(sources(policy, 'img-src')).toEqual(['data:', 'https:']);
+        expect(sources(policy, 'media-src')).toEqual(['https:']);
         expect(sources(policy, 'connect-src')).toEqual(["'none'"]);
         expect(sources(policy, 'font-src')).toEqual(['data:']);
         expect(sources(policy, 'frame-ancestors')).toEqual(['http://127.0.0.1:4300']);
+    });
+});
+
+describe('APP_PAGE_CSP', () => {
+    it('should allow what the runtime frame allows of images and media', () => {
+        // Assert
+        expect(sources(APP_PAGE_CSP, 'img-src')).toEqual(['data:', 'https:']);
+        expect(sources(APP_PAGE_CSP, 'media-src')).toEqual(['https:']);
     });
 });
 
