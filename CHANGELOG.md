@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **A refused change reaches the app with its kind.** The view-only ack of the HTTP view channel says `code: 'access'`, `StatenetViews` passes the relay's code on, and the host page puts `code` in the `sync.rejected` payload, so the app shows the unsaved-changes notice when a node with no link refuses. Tests: `test/http.test.ts`, `test/browser.integration.test.ts` (unchanged, passing).
 - **Uploads take audio and video.** `ALLOWED_FILE_TYPES` gains MP3, M4A, Ogg, WAV, MP4 and WebM under the 10 MiB limit, and `detectMediaType` (`src/domain/UiFile.ts`) sniffs them from the bytes: an ID3 tag or an MPEG frame, an `ftyp` box (`M4A ` is audio; QuickTime `qt  ` is refused), an EBML header whose document type is `webm` (Matroska is refused), `OggS` and RIFF `WAVE`. Test: `src/domain/UiFile.test.ts` ("audio and video detection").
 - **The showcase shows `map` and `treeSelectField`.** Data gains a map of three markers (no tiles: the showcase has no tile route), forms a department picker; the parts are regenerated. Test: `test/showcase.test.ts`.
 - **The runtime frame and app pages play https media.** `runtimeCsp` and `APP_PAGE_CSP` add `media-src https:`, as `img-src` allows https pictures, so a `mediaPlayer` loads its video, audio and captions; nothing else of the network is opened. Test: `src/infrastructure/http/security.test.ts`.

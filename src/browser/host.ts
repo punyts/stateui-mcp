@@ -446,7 +446,7 @@ export class LiveView {
                 if (this.loaded && isLogicEvent(name)) this.post({ type: 'event', name, ...(value === undefined ? {} : { payload: value }) });
             },
             onRejected: (rejection) => {
-                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason } });
+                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason, ...(rejection.code === undefined ? {} : { code: rejection.code }) } });
             },
             // The client has deleted its parts already; the frame still shows the app
             onRevoked: (message) => this.forget(message)
@@ -524,7 +524,7 @@ export class LiveView {
                 this.forget('This app was deleted');
                 break;
             case 'rejected':
-                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: message.path, reason: message.reason } });
+                if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: message.path, reason: message.reason, ...(message.code === undefined ? {} : { code: message.code }) } });
                 break;
         }
     }

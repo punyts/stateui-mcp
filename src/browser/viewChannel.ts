@@ -8,7 +8,7 @@
  *   messages ride the protocol's `emit` (`src/domain/viewRelay.ts`).
  */
 
-import type { SyncClient, SyncStatus, SyncTransport } from '@punyts/state-sync';
+import type { RejectionCode, SyncClient, SyncStatus, SyncTransport } from '@punyts/state-sync';
 import { readStoredFile } from './fileRead.js';
 import type { FileFetch, FileReadOutcome } from './fileRead.js';
 import { releaseStoredFile } from './fileRelease.js';
@@ -25,7 +25,7 @@ export type ServerMessage =
     | { type: 'theme'; kind: string; name: string }
     | { type: 'deleted' }
     /** A change of this view the server's authority refused after the statenet had applied it: the app gets `sync.rejected` */
-    | { type: 'rejected'; path: string; reason: string };
+    | { type: 'rejected'; path: string; reason: string; code?: RejectionCode };
 
 /** A file the runtime asks the host to upload */
 export interface UploadInput {

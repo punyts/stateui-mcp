@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
-import type { JsonValue, SyncState } from '@punyts/state-sync';
+import { isRejectionCode, type JsonValue, type SyncState } from '@punyts/state-sync';
 import type { Authority, AuthoritySession } from '@punyts/state-sync/authority';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
@@ -261,7 +261,7 @@ class AppBridge {
                 // The statenet applied the page's change first: it gets the authority's value back
                 const value = this.authority?.get(path);
                 this.link.write([value === undefined ? { path } : { path, value }]);
-                if (message['result'] === 'rejected') this.broadcast({ type: 'view', message: { type: 'rejected', path, reason: typeof message['reason'] === 'string' ? message['reason'] : 'Refused' } });
+                if (message['result'] === 'rejected') this.broadcast({ type: 'view', message: { type: 'rejected', path, reason: typeof message['reason'] === 'string' ? message['reason'] : 'Refused', ...(isRejectionCode(message['code']) ? { code: message['code'] } : {}) } });
                 return;
             }
             default:

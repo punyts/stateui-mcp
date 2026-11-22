@@ -530,7 +530,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (frame['type'] !== 'change') return false;
         const change = frame['change'];
         const id = isJsonObject(change) && typeof change['id'] === 'string' ? change['id'] : undefined;
-        if (id !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ack', id, result: 'rejected', reason: 'This app is shared with you to look at only' }));
+        if (id !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ack', id, result: 'rejected', reason: 'This app is shared with you to look at only', code: 'access' }));
         return true;
     }
 
