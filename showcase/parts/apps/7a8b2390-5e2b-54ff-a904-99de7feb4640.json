@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **121** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **122** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -119,7 +119,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 31
+                          "value": 32
                         },
                         "open": {
                           "component": "link",
@@ -990,7 +990,7 @@
             "content": {
               "component": "panel",
               "_title": "Forms",
-              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 31 components.",
+              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 32 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -1414,7 +1414,7 @@
                 "dateField": {
                   "component": "card",
                   "_title": "dateField",
-                  "_subtitle": "A labelled date field that writes an ISO date (YYYY-MM-DD), with optional earliest and latest dates",
+                  "_subtitle": "A labelled date field that writes an ISO date (YYYY-MM-DD), a month (YYYY-MM) or a year, with earliest and latest",
                   "children": {
                     "example": {
                       "component": "dateField",
@@ -1422,6 +1422,20 @@
                       "value": "2026-11-20",
                       "min": "2026-11-01",
                       "_help": "Not before November"
+                    }
+                  }
+                },
+                "dateTimeField": {
+                  "component": "card",
+                  "_title": "dateTimeField",
+                  "_subtitle": "A labelled date and time field that writes an ISO date-time with the offset of a named time zone",
+                  "children": {
+                    "example": {
+                      "component": "dateTimeField",
+                      "_label": "Kick-off",
+                      "value": "2026-11-24T15:00:00+01:00",
+                      "timeZone": "Europe/Berlin",
+                      "_help": "Shown in Berlin time"
                     }
                   }
                 },
@@ -2108,7 +2122,7 @@
                 "calendar": {
                   "component": "card",
                   "_title": "calendar",
-                  "_subtitle": "A calendar of records: month, week and day views, arrow-key navigation and a range event for data providers",
+                  "_subtitle": "A calendar of records: month, week, day, agenda and resource timeline views, with a range event for providers",
                   "placement": {
                     "span": 2
                   },
