@@ -18,6 +18,21 @@
                 "_text": "### Release notes\n\nThis release adds **3D scenes** and a *component showcase*.\n\n- Tables keep their header while you scroll\n- Charts format currency without cents\n\n> Run `npm run showcase:build` after adding a component."
             }
         },
+        "richText": {
+            "example": {
+                "component": "richText",
+                "value": {
+                    "blocks": {
+                        "bTitle": { "order": "V", "type": "heading", "level": 2, "runs": [{ "text": "Meeting notes" }] },
+                        "bIntro": { "order": "Z", "type": "paragraph", "runs": [{ "text": "Written in the editor and stored as " }, { "text": "blocks", "marks": ["bold"] }, { "text": ", not HTML. Read the " }, { "text": "design", "link": "#design" }, { "text": "." }] },
+                        "bOne": { "order": "d", "type": "bullet", "indent": 0, "runs": [{ "text": "Ship the " }, { "text": "richText", "marks": ["code"] }, { "text": " atom" }] },
+                        "bTwo": { "order": "f", "type": "numbered", "indent": 1, "runs": [{ "text": "then the editor" }] },
+                        "bDone": { "order": "h", "type": "check", "indent": 0, "checked": true, "runs": [{ "text": "Agree on block JSON" }] },
+                        "bQuote": { "order": "k", "type": "quote", "runs": [{ "text": "The document is data; the page is a view of it." }] }
+                    }
+                }
+            }
+        },
         "card": {
             "example": {
                 "component": "card",
