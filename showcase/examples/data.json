@@ -19,6 +19,16 @@
                 }
             }
         },
+        "actionBar": {
+            "example": {
+                "component": "actionBar",
+                "selected": ["p1", "p2"],
+                "actions": {
+                    "export": { "_label": "Export", "icon": "download" },
+                    "remove": { "_label": "Delete", "icon": "trash", "tone": "danger" }
+                }
+            }
+        },
         "chart": {
             "wide": true,
             "example": {
