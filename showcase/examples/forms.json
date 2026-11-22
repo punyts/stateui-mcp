@@ -129,6 +129,15 @@
         "dateTimeField": {
             "example": { "component": "dateTimeField", "_label": "Kick-off", "value": "2026-11-24T15:00:00+01:00", "timeZone": "Europe/Berlin", "_help": "Shown in Berlin time" }
         },
+        "buttonGroup": {
+            "children": {
+                "marks": { "component": "buttonGroup", "_label": "Text style", "actions": { "bold": { "_label": "Bold", "icon": "bold" }, "italic": { "_label": "Italic", "icon": "italic" }, "code": { "_label": "Code", "icon": "code" } } },
+                "save": { "component": "buttonGroup", "split": true, "variant": "solid", "_label": "Save", "actions": { "save": { "_label": "Save" }, "saveAs": { "_label": "Save as copy" }, "template": { "_label": "Save as template" } } }
+            }
+        },
+        "editableText": {
+            "example": { "component": "editableText", "level": "title", "_label": "Board name", "value": "Spring launch", "required": true }
+        },
         "timeField": {
             "example": { "component": "timeField", "_label": "Pickup time", "value": "09:30", "min": "08:00", "max": "18:00", "_help": "Between 8 in the morning and 6 in the evening" }
         },

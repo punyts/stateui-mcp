@@ -66,7 +66,7 @@
               "children": {
                 "intro": {
                   "component": "markdown",
-                  "_text": "Every component of the StateUI library, **122** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
+                  "_text": "Every component of the StateUI library, **126** in all, each with a live example. Pick a category in the menu, or one of the cards below.\n\nThis showcase is an ordinary app of parts: open it with `ui_get` to see how each example is built, or copy a node into your own app. Switch the theme in the header to see every component in another preset."
                 },
                 "categories": {
                   "component": "panel",
@@ -119,7 +119,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 32
+                          "value": 34
                         },
                         "open": {
                           "component": "link",
@@ -170,7 +170,7 @@
                         "count": {
                           "component": "stat",
                           "_label": "Components",
-                          "value": 6
+                          "value": 8
                         },
                         "open": {
                           "component": "link",
@@ -776,7 +776,7 @@
                 "menu": {
                   "component": "card",
                   "_title": "menu",
-                  "_subtitle": "A popup list of menu items that a trigger opens, closed by Escape, an outside press or a choice",
+                  "_subtitle": "A popup list of menu items that a trigger opens, or a context menu at the pointer, closed by a choice or Escape",
                   "children": {
                     "example": {
                       "component": "menu",
@@ -990,7 +990,7 @@
             "content": {
               "component": "panel",
               "_title": "Forms",
-              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 32 components.",
+              "_description": "Buttons, fields and whole forms that collect, check and submit what the user enters. 34 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -1128,7 +1128,7 @@
                 "textField": {
                   "component": "card",
                   "_title": "textField",
-                  "_subtitle": "A labelled single-line text field with optional icon, help and error text",
+                  "_subtitle": "A labelled single-line text field with optional icon, help and error text, and a password reveal and strength hint",
                   "children": {
                     "name": {
                       "component": "textField",
@@ -1329,7 +1329,7 @@
                 "radioField": {
                   "component": "card",
                   "_title": "radioField",
-                  "_subtitle": "A labelled radio group of options from data or a translated static map, vertical or horizontal, with help and error text",
+                  "_subtitle": "A labelled radio group of options from data or a static map, as a list or as choice cards, with help and errors",
                   "children": {
                     "example": {
                       "component": "radioField",
@@ -1352,7 +1352,7 @@
                 "checkField": {
                   "component": "card",
                   "_title": "checkField",
-                  "_subtitle": "A labelled checkbox that validates and resets like every other field",
+                  "_subtitle": "A labelled checkbox that validates and resets like every other field, plain or as a choice card",
                   "children": {
                     "terms": {
                       "component": "checkField",
@@ -1436,6 +1436,62 @@
                       "value": "2026-11-24T15:00:00+01:00",
                       "timeZone": "Europe/Berlin",
                       "_help": "Shown in Berlin time"
+                    }
+                  }
+                },
+                "buttonGroup": {
+                  "component": "card",
+                  "_title": "buttonGroup",
+                  "_subtitle": "Joined buttons for related actions, or a split button whose second half opens a menu of more actions",
+                  "children": {
+                    "marks": {
+                      "component": "buttonGroup",
+                      "_label": "Text style",
+                      "actions": {
+                        "bold": {
+                          "_label": "Bold",
+                          "icon": "bold"
+                        },
+                        "italic": {
+                          "_label": "Italic",
+                          "icon": "italic"
+                        },
+                        "code": {
+                          "_label": "Code",
+                          "icon": "code"
+                        }
+                      }
+                    },
+                    "save": {
+                      "component": "buttonGroup",
+                      "split": true,
+                      "variant": "solid",
+                      "_label": "Save",
+                      "actions": {
+                        "save": {
+                          "_label": "Save"
+                        },
+                        "saveAs": {
+                          "_label": "Save as copy"
+                        },
+                        "template": {
+                          "_label": "Save as template"
+                        }
+                      }
+                    }
+                  }
+                },
+                "editableText": {
+                  "component": "card",
+                  "_title": "editableText",
+                  "_subtitle": "Text that turns into an input on press and writes its value on Enter or blur; Escape cancels",
+                  "children": {
+                    "example": {
+                      "component": "editableText",
+                      "level": "title",
+                      "_label": "Board name",
+                      "value": "Spring launch",
+                      "required": true
                     }
                   }
                 },
@@ -2698,7 +2754,7 @@
             "content": {
               "component": "panel",
               "_title": "Overlays",
-              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 6 components.",
+              "_description": "Dialogs, drawers, popovers and tooltips that open above the page. 8 components.",
               "layout": {
                 "type": "grid",
                 "cols": 2,
@@ -2914,6 +2970,55 @@
                             "iconPosition": "only",
                             "_title": "Help"
                           }
+                        }
+                      }
+                    }
+                  }
+                },
+                "infoTip": {
+                  "component": "card",
+                  "_title": "infoTip",
+                  "_subtitle": "An info button beside a label that shows a short note on press or keyboard focus, never on hover",
+                  "children": {
+                    "example": {
+                      "component": "infoTip",
+                      "_label": "About the fee",
+                      "_text": "A 2% fee applies to card payments; bank transfers are free."
+                    }
+                  }
+                },
+                "tour": {
+                  "component": "card",
+                  "_title": "tour",
+                  "_subtitle": "A guided tour: steps shown one at a time beside the node each points at, with next, back and skip",
+                  "children": {
+                    "start": {
+                      "component": "button",
+                      "_title": "Take the tour",
+                      "on": {
+                        "press": {
+                          "command": "start",
+                          "target": "$.screens.overlays.children.content.children.tour.children.tour"
+                        }
+                      }
+                    },
+                    "search": {
+                      "component": "searchBox",
+                      "_placeholder": "Search orders"
+                    },
+                    "tour": {
+                      "component": "tour",
+                      "steps": {
+                        "find": {
+                          "target": "$.screens.overlays.children.content.children.tour.children.search",
+                          "_title": "Find an order",
+                          "_text": "Search by customer, number or product."
+                        },
+                        "again": {
+                          "target": "$.screens.overlays.children.content.children.tour.children.start",
+                          "side": "end",
+                          "_title": "Come back any time",
+                          "_text": "This button starts the tour again."
                         }
                       }
                     }

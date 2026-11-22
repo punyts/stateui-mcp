@@ -21,7 +21,7 @@
       "forms": {
         "id": "forms",
         "label": "Forms",
-        "count": 32
+        "count": 34
       },
       "data": {
         "id": "data",
@@ -36,7 +36,7 @@
       "overlays": {
         "id": "overlays",
         "label": "Overlays",
-        "count": 6
+        "count": 8
       },
       "content": {
         "id": "content",

@@ -76,6 +76,22 @@
                 }
             }
         },
+        "infoTip": {
+            "example": { "component": "infoTip", "_label": "About the fee", "_text": "A 2% fee applies to card payments; bank transfers are free." }
+        },
+        "tour": {
+            "children": {
+                "start": { "component": "button", "_title": "Take the tour", "on": { "press": { "command": "start", "target": "$card.children.tour" } } },
+                "search": { "component": "searchBox", "_placeholder": "Search orders" },
+                "tour": {
+                    "component": "tour",
+                    "steps": {
+                        "find": { "target": "$card.children.search", "_title": "Find an order", "_text": "Search by customer, number or product." },
+                        "again": { "target": "$card.children.start", "side": "end", "_title": "Come back any time", "_text": "This button starts the tour again." }
+                    }
+                }
+            }
+        },
         "confirmDialog": {
             "children": {
                 "open": { "component": "button", "tone": "danger", "variant": "soft", "icon": "trash", "_title": "Delete project", "on": { "press": { "command": "open", "target": "$card.children.confirm" } } },
