@@ -51,6 +51,11 @@ export interface HttpTenant {
      * (`ack` `rejected`) and its events are dropped
      */
     readonly access?: 'owner' | 'use' | 'view';
+    /**
+     * Sync namespaces the browser deletes before it opens the app (`data-forget`): what it kept of an instance the
+     * person no longer has, such as their own after a move from `use` to `view`
+     */
+    readonly forget?: readonly string[];
 }
 
 /**
@@ -61,8 +66,8 @@ export interface RevokedApp {
     readonly message: string;
     /** The sync namespace the person kept the app's state under */
     readonly namespace: string;
-    /** The app's name, for the page title */
-    readonly name: string;
+    /** The page's title: never the app's name, which the person no longer has */
+    readonly title: string;
 }
 
 /**
@@ -365,12 +370,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             response,
             200,
             'text/html; charset=utf-8',
-            appPage({ appId, name: revoked.name, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: 'browser', namespace: revoked.namespace, revoked: revoked.message }),
+            appPage({ appId, name: revoked.title, runtimeUrl: `${runtimeOrigin}${runtimeBase}/${runtime.hash}.html`, viewKind: 'browser', namespace: revoked.namespace, revoked: revoked.message }),
             { 'Content-Security-Policy': hostPageCsp(runtimeOrigin), 'Cache-Control': 'no-store' }
         );
     }
 
-    async function appRoute({ instances, persona }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function appRoute({ instances, persona, forget }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
@@ -389,7 +394,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
                 ...(inPage !== undefined && { pageBundle: inPage.hash }),
                 viewKind: headless ? 'headless' : 'browser',
-                namespace: instances.namespace(part, persona)
+                namespace: instances.namespace(part, persona),
+                ...(forget !== undefined && forget.length > 0 && { forget })
             }),
             { 'Content-Security-Policy': inPage === undefined ? hostPageCsp(runtimeOrigin) : APP_PAGE_CSP, 'Cache-Control': 'no-store' }
         );

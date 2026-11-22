@@ -183,7 +183,7 @@ A server that serves its own view pages, with sign-in and many owners, embeds `s
 | Route | What |
 |---|---|
 | `GET /` | the apps (app parts), with a link to each |
-| `GET /apps/:appId` | the live view of an app part, assembled and with the default persona's instance |
+| `GET /apps/:appId` | the live view of an app part, assembled and with the default persona's instance (or the tenant's `persona`). A tenant's `forget` namespaces go in `data-forget`, and the host deletes what the browser kept of them first; an app taken back (`RevokedApp`) is titled with its `title`, never the app's name, and the host deletes what the browser kept of it |
 | `GET /apps/:appId/sync?view=<uuid>` | the WebSocket of a view: the state-sync protocol and `{ type: 'view', message }` frames (document, commands, locale, theme, deletion); same origin only |
 | `POST /apps/:appId/report` | what a view tells the server: ready, rendered revision and runtime errors |
 | `POST /apps/:appId/files` | an upload from a `fileField`: `multipart/form-data` with one field `file`; `201 { id, name, size, type }`, `409 quota`, `413 too_large`, `415 unsupported_type` |

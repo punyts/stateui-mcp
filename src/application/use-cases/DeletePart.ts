@@ -28,19 +28,24 @@ export type DeletePartResult =
     /** `nearest` are app names when `missingApp` (a screen's app) is set */
     | { readonly kind: 'not-found'; readonly nearest: readonly string[]; readonly missingApp?: string };
 
-/** What deleting an app removes besides the part: its running instance, the stored instance and persona records, and its side folder */
+/**
+ * What deleting an app removes besides the part: its running instances, the default persona's stored instance and
+ * persona records, every other persona's with `removeApp`, and its side folder
+ */
 export interface AppCleanup {
     readonly instances: Pick<UiInstanceRepository, 'reset'>;
     readonly folder: AppFolderStore;
     /** The running instances: the one of the deleted app is stopped first, so it cannot save its state again */
     readonly states?: Pick<InstanceStates, 'stop'>;
+    /** Removes every persona's stored instance of the app (the people it was shared with, an org's members) */
+    readonly removeApp?: (appId: string) => Promise<void>;
 }
 
 /**
  * Deletes a part while nothing uses it (`deleteRule`), or any screen of an app, with the revision the caller read:
  * deleting the start screen makes the screen after it the start (else the one before), and deleting the last leaves
- * the app with no screens and no start. Deleting an app also stops its running instance and removes its default persona's instance and persona
- * records, which are keyed by its id, and its side folder (preview errors and uploaded files)
+ * the app with no screens and no start. Deleting an app also stops its running instances and removes its default persona's instance and persona
+ * records, which are keyed by its id, every other persona's (`AppCleanup.removeApp`), and its side folder (preview errors and uploaded files)
  */
 export class DeletePart {
     constructor(
@@ -87,6 +92,7 @@ export class DeletePart {
             if (deleted.kind === 'not-found') return;
             if (cleanup !== undefined) {
                 await cleanup.instances.reset(part.id);
+                await cleanup.removeApp?.(part.id);
                 await cleanup.folder.remove(part.id);
             }
             result = { kind: 'deleted', id: part.id, revision: part.revision };

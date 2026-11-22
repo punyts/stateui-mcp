@@ -70,6 +70,8 @@ export interface UiBuilderPorts {
     readonly fileStore: UiFileStore;
     /** The side folders of app parts, removed with the app */
     readonly appFolders: AppFolderStore;
+    /** Removes every persona's stored instance of an app, with the app; none: only the default persona's is removed */
+    readonly removeApp?: (appId: string) => Promise<void>;
     /** Ranks the library by meaning when a catalog search is weak; none: keywords only */
     readonly meanings?: CatalogMeanings;
 }
@@ -158,7 +160,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         writeIcons: new WriteIcons(parts, validator, report),
         listParts: new ListParts(parts, report),
         getPart: new GetPart(parts, validator, report),
-        deletePart: new DeletePart(parts, parts, report, { instances, states: instanceStates, folder: appFolders }),
+        deletePart: new DeletePart(parts, parts, report, { instances, states: instanceStates, folder: appFolders, ...(ports.removeApp !== undefined && { removeApp: ports.removeApp }) }),
         writePart,
         renamePart: new RenamePart(parts, parts, report),
         writeData: new WriteData(parts, validator, newId, report),

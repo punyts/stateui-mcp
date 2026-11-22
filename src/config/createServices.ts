@@ -160,6 +160,11 @@ export interface ServicesStorage {
     readonly fileStore: UiFileStore;
     readonly errorLog: UiErrorLog;
     readonly appFolders: AppFolderStore;
+    /**
+     * Removes every persona's stored instance of an app (the people it was shared with, an org's members), called while
+     * the app's instances are stopped as it is deleted. File storage keeps no other persona's instance by app, so it has none
+     */
+    removeApp?(appId: string): Promise<void>;
     /** Stores a part exactly as given (id, name, revision and dates), for importing parts made elsewhere; nothing when it is there */
     importPart?(part: UiPart): Promise<void>;
     /** Finishes what a crash left halfway; true when there was something. Storage with transactions has nothing to finish */
@@ -242,7 +247,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = storage.fileStore;
     const previewLog = new LivePreviewLog(hub, storage.errorLog, fileRepository);
     const useCases = createUiBuilderUseCases(
-        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders, ...(options.catalogMeanings !== undefined && { meanings: options.catalogMeanings }) },
+        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders, ...(storage.removeApp !== undefined && { removeApp: (appId: string) => (storage.removeApp as (id: string) => Promise<void>).call(storage, appId) }), ...(options.catalogMeanings !== undefined && { meanings: options.catalogMeanings }) },
         { now, newId: randomUUID, report: options.report }
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);

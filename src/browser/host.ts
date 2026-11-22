@@ -80,6 +80,7 @@
  */
 
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace, randomId } from '@punyts/state-sync';
+import { forgetListed } from './forgetListed.js';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { createReleaseGate } from './fileRelease.js';
@@ -421,6 +422,7 @@ export class LiveView {
     /** Starts the view with the channel to its server, made for this view's id and kind */
     start(channelFor: (view: LiveView) => ViewChannel): void {
         this.channel = channelFor(this);
+        forgetListed(this.store, this.body.dataset['forget'], this.namespace);
         const revoked = this.body.dataset['revoked'];
         if (revoked !== undefined) {
             // Taken back while this browser was away: nothing of the app may stay here
