@@ -54,6 +54,12 @@
                 }
             }
         },
+        "meter": {
+            "example": { "component": "meter", "_label": "Storage used", "value": 0.72, "max": 1, "low": 0.6, "high": 0.85, "optimum": 0, "format": "percent", "fractionDigits": 0 }
+        },
+        "sparkline": {
+            "example": { "component": "sparkline", "type": "area", "_label": "Sign-ups this week", "values": [12, 18, 15, 22, 28, 24, 31] }
+        },
         "list": {
             "example": {
                 "component": "list",
