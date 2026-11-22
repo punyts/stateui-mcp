@@ -3,6 +3,7 @@ import {
     ALLOWED_FILE_TYPES,
     detectFileType,
     detectMagicType,
+    detectMediaType,
     GLB_TYPE,
     isAllowedFileType,
     isFileReferenced,
@@ -47,7 +48,13 @@ const SHARED_FILE_TYPES = [
     'text/csv',
     'text/markdown',
     'application/json',
-    'model/gltf-binary'
+    'model/gltf-binary',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/wav',
+    'video/mp4',
+    'video/webm'
 ];
 
 /** A GLB: the `glTF` magic, the version and the length in the header (the file's own size unless given), then a JSON chunk */
@@ -172,6 +179,32 @@ describe('GLB detection', () => {
     });
 });
 
+describe('audio and video detection', () => {
+    const bytes = (...parts: (string | number[])[]): Uint8Array => Uint8Array.from(parts.flatMap((part) => (typeof part === 'string' ? Array.from(part, (character) => character.charCodeAt(0)) : part)));
+
+    it('should recognise MP3, M4A, MP4, WebM, Ogg and WAV by their containers, whatever their names', () => {
+        // Assert
+        expect(detectFileType('song.bin', bytes('ID3', [3, 0, 0, 0, 0, 0, 0]))).toBe('audio/mpeg');
+        expect(detectMediaType(bytes([0xff, 0xfb, 0x90, 0x64]))).toBe('audio/mpeg');
+        expect(detectMediaType(bytes([0, 0, 0, 0x20], 'ftypM4A ', [0, 0, 0, 0]))).toBe('audio/mp4');
+        expect(detectMediaType(bytes([0, 0, 0, 0x18], 'ftypisom', [0, 0, 2, 0]))).toBe('video/mp4');
+        expect(detectMediaType(bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 0x01, 0x42, 0x82, 0x84], 'webm'))).toBe('video/webm');
+        expect(detectMediaType(bytes('OggS', [0, 2]))).toBe('audio/ogg');
+        expect(detectMediaType(bytes('RIFF', [0x24, 0, 0, 0], 'WAVEfmt '))).toBe('audio/wav');
+    });
+
+    it('should refuse QuickTime, Matroska, a reserved MPEG header and text that starts like media', () => {
+        // Assert
+        expect(detectMediaType(bytes([0, 0, 0, 0x14], 'ftypqt  '))).toBeUndefined();
+        expect(detectMediaType(bytes([0x1a, 0x45, 0xdf, 0xa3, 0xa3, 0x42, 0x82, 0x88], 'matroska'))).toBeUndefined();
+        expect(detectMediaType(bytes([0xff, 0xe8, 0x90]))).toBeUndefined();
+        expect(detectFileType('notes.txt', utf8('ID3 tags are metadata'))).toBe('text/plain');
+        expect(detectFileType('notes.txt', utf8('abcdftyp is a box'))).toBe('text/plain');
+        expect(detectFileType('notes.txt', utf8('OggS and more'))).toBe('text/plain');
+        expect(detectFileType('a.png', PNG)).toBe('image/png');
+    });
+});
+
 describe('zipEntryNames', () => {
     it('should list entries and return undefined for non-ZIP bytes', () => {
         expect(zipEntryNames(zip('a', 'b/c'))).toEqual(['a', 'b/c']);
@@ -197,7 +230,7 @@ describe('normaliseFileName', () => {
 describe('allowed types', () => {
     it('should not allow HTML, SVG or octet-stream', () => {
         for (const type of ['text/html', 'image/svg+xml', 'application/octet-stream']) expect(isAllowedFileType(type)).toBe(false);
-        expect(ALLOWED_FILE_TYPES).toHaveLength(12);
+        expect(ALLOWED_FILE_TYPES).toHaveLength(18);
     });
 
     it('should be the one list the components library keeps too', () => {

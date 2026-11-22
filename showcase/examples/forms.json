@@ -78,6 +78,9 @@
                 "options": { "uk": { "_label": "United Kingdom" }, "de": { "_label": "Germany" }, "fr": { "_label": "France" }, "us": { "_label": "United States" } }
             }
         },
+        "treeSelectField": {
+            "example": { "component": "treeSelectField", "_label": "Department", "showPath": true, "value": "eng-web", "options": [{ "id": "eng", "label": "Engineering" }, { "id": "eng-web", "label": "Web", "parentId": "eng" }, { "id": "eng-data", "label": "Data", "parentId": "eng" }, { "id": "ops", "label": "Operations" }, { "id": "ops-fleet", "label": "Fleet", "parentId": "ops" }] }
+        },
         "comboboxField": {
             "example": {
                 "component": "comboboxField",

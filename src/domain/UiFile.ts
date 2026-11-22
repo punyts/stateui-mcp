@@ -56,7 +56,8 @@ export const GLB_TYPE = 'model/gltf-binary';
 /**
  * The only types an upload may have. HTML, SVG, XML, other archives, executables, octet-stream and `.gltf` are not
  * here. The live view page's host (`src/browser/host.ts`) imports this list; `@punyts/stateui-components` keeps its
- * own copy in `src/shared/field/files.ts`, and a test in each library pins both to the same literal
+ * own copy in `src/shared/field/files.ts`, and a test in each library pins both to the same literal. Audio and video are MP3, M4A, Ogg, WAV, MP4 and WebM, for `mediaPlayer`, under the same 10 MiB
+ * limit
  */
 export const ALLOWED_FILE_TYPES: readonly string[] = Object.freeze([
     'image/png',
@@ -70,7 +71,13 @@ export const ALLOWED_FILE_TYPES: readonly string[] = Object.freeze([
     'text/csv',
     'text/markdown',
     'application/json',
-    GLB_TYPE
+    GLB_TYPE,
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/wav',
+    'video/mp4',
+    'video/webm'
 ]);
 
 /** The types `ui_file_read` decodes as UTF-8 text */
@@ -119,8 +126,47 @@ function isGlb(head: Uint8Array, size: number): boolean {
     return view.getUint32(4, true) === 2 && view.getUint32(8, true) === size;
 }
 
+/** Whether the bytes at `offset` spell `text` in ASCII */
+function spells(bytes: Uint8Array, text: string, offset = 0): boolean {
+    return startsWith(bytes, Array.from(text, (character) => character.charCodeAt(0)), offset);
+}
+
+/** An MPEG audio frame header: eleven set sync bits, then a version and a layer that are not reserved */
+function isMpegFrame(head: Uint8Array): boolean {
+    if (head.length < 3 || head[0] !== 0xff || ((head[1] ?? 0) & 0xe0) !== 0xe0) return false;
+    const version = ((head[1] ?? 0) >> 3) & 0x03;
+    const layer = ((head[1] ?? 0) >> 1) & 0x03;
+    return version !== 0x01 && layer !== 0x00;
+}
+
 /**
- * The type of an image, a PDF or a GLB recognised by its magic number, otherwise `undefined`. `head` is the start
+ * The type of audio or video recognised by its container: MP3 (an ID3 tag or an MPEG frame), MP4 (an `ftyp` box; the
+ * `M4A ` brand is audio, QuickTime's `qt  ` is refused), WebM (an EBML header whose document type is `webm`;
+ * Matroska is refused), Ogg and WAV; otherwise `undefined`
+ */
+export function detectMediaType(head: Uint8Array): string | undefined {
+    // an ID3 tag's version (2 to 4) and an MP4's first box size (at most 4 KiB) are bytes text does not start with
+    if ((spells(head, 'ID3') && [2, 3, 4].includes(head[3] ?? 0)) || isMpegFrame(head)) return 'audio/mpeg';
+    const boxSize = head.length >= 4 ? new DataView(head.buffer, head.byteOffset, 4).getUint32(0) : 0;
+    if (spells(head, 'ftyp', 4) && boxSize >= 8 && boxSize <= 4096) {
+        if (spells(head, 'M4A ', 8)) return 'audio/mp4';
+        return spells(head, 'qt  ', 8) ? undefined : 'video/mp4';
+    }
+    if (startsWith(head, [0x1a, 0x45, 0xdf, 0xa3])) {
+        const window = head.subarray(0, 64);
+        for (let offset = 4; offset + 6 <= window.length; offset++) {
+            // the DocType element (0x4282), its one-byte length and the name
+            if (window[offset] === 0x42 && window[offset + 1] === 0x82 && spells(window, 'webm', offset + 3)) return 'video/webm';
+        }
+        return undefined;
+    }
+    if (spells(head, 'OggS') && head[4] === 0) return 'audio/ogg';
+    if (spells(head, 'RIFF') && spells(head, 'WAVE', 8)) return 'audio/wav';
+    return undefined;
+}
+
+/**
+ * The type of an image, a PDF, a GLB, or audio or video recognised by its magic number, otherwise `undefined`. `head` is the start
  * of the file and `size` the size of the whole file (the head's length when left out): a GLB's header names its
  * length, which must be the file's
  */
@@ -133,7 +179,7 @@ export function detectMagicType(head: Uint8Array, size: number = head.length): s
     if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
     if (startsWith(head, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf';
     if (isGlb(head, size)) return GLB_TYPE;
-    return undefined;
+    return detectMediaType(head);
 }
 
 function extensionOf(name: string): string {

@@ -225,6 +225,9 @@
                     { "title": "Ordered", "time": "Mon 18:31", "icon": "shopping-cart" }
                 ]
             }
+        },
+        "map": {
+            "example": { "component": "map", "tiles": "", "lat": 48.5, "lng": 6, "zoom": 4, "markers": { "paris": { "lat": 48.86, "lng": 2.35, "_label": "Paris store" }, "lyon": { "lat": 45.76, "lng": 4.84, "_label": "Lyon store" }, "basel": { "lat": 47.56, "lng": 7.59, "_label": "Basel store" } }, "_label": "Our stores", "_attribution": "Tiles come from your server's tile route" }
         }
     }
 }
