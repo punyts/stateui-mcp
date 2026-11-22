@@ -14,6 +14,7 @@ import type { Json } from './documentUpdate.js';
 import { readStoredFile } from './fileRead.js';
 import type { FileFetch } from './fileRead.js';
 import { releaseStoredFile } from './fileRelease.js';
+import { exportRecordsFile } from './fileExport.js';
 import { uploadOutcome } from './viewChannel.js';
 import type { ServerMessage, UploadOutcome, ViewChannel } from './viewChannel.js';
 
@@ -85,7 +86,7 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
         });
     /** A fetch for the file helpers, answered by the server over the relay; a request that gets no answer is a failed fetch */
     const fetcher: FileFetch = async (url, init) => {
-        const response = await request(init.method ?? 'GET', url);
+        const response = await request(init.method ?? 'GET', url, typeof init.body === 'string' ? { body: init.body } : {});
         if (response === undefined) throw new TypeError('The server could not be reached');
         const status = response.status;
         const body = status === 204 ? null : response.bytes !== undefined ? fromBase64(response.bytes) : JSON.stringify(response.json ?? null);
@@ -172,6 +173,7 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
             cancelled.add(requestId);
         },
         readFile: (id) => readStoredFile(appId, id, fetcher),
-        releaseFile: (id) => releaseStoredFile(appId, id, fetcher)
+        releaseFile: (id) => releaseStoredFile(appId, id, fetcher),
+        exportFile: (message) => exportRecordsFile(appId, message, fetcher)
     };
 }

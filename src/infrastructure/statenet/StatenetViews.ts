@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import type { JsonValue, SyncState } from '@punyts/state-sync';
 import type { Authority, AuthoritySession } from '@punyts/state-sync/authority';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
+import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
 import type { Services } from '../../config/createServices.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
@@ -331,6 +332,7 @@ class AppBridge {
     private async fileRequest(message: Record<string, JsonValue>): Promise<{ status: number; json?: JsonValue; bytes?: string; headers?: Record<string, string> }> {
         const { useCases } = this.services;
         const parts = String(message['path'] ?? '').split('/').filter((part) => part !== '');
+        if (parts[0] === 'apps' && parts[1]?.toLowerCase() === this.appId && parts[2] === 'export' && parts.length === 3 && message['method'] === 'POST') return this.exportRequest(message['body']);
         if (parts[0] !== 'apps' || parts[1]?.toLowerCase() !== this.appId || parts[2] !== 'files' || parts.length > 4) return { status: 404 };
         const fileId = parts[3];
         if (message['method'] === 'POST' && fileId === undefined) {
@@ -369,6 +371,25 @@ class AppBridge {
             return { status: result.kind === 'released' ? 204 : result.kind === 'referenced' ? 409 : 404 };
         }
         return { status: 404 };
+    }
+
+    /**
+     * A CSV export over the relay, as `POST /apps/:appId/export` answers it: the records at the source in the owner's
+     * instance (a statenet view runs the default persona), never rows from the browser
+     */
+    private async exportRequest(body: JsonValue | undefined): Promise<{ status: number; json?: JsonValue; bytes?: string; headers?: Record<string, string> }> {
+        if (typeof body !== 'string' || body.length > 64 * 1024) return { status: 400 };
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(body);
+        } catch {
+            return { status: 400 };
+        }
+        const app = await this.services.instanceViews.find(this.appId);
+        if (app === undefined) return { status: 404 };
+        const result = await buildRecordsCsv(this.appId, parsed, async (source) => (await this.services.instanceViews.authority(app)).get(source), this.options.report);
+        if (result.kind === 'refused') return { status: result.status, json: { error: result.code, message: result.message } };
+        return { status: 200, bytes: toBase64(Buffer.from(result.csv, 'utf8')), headers: csvHeaders(result.name, result.rows) };
     }
 
     private send(to: string, message: unknown): void {

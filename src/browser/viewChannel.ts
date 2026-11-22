@@ -12,6 +12,8 @@ import type { SyncClient, SyncStatus, SyncTransport } from '@punyts/state-sync';
 import { readStoredFile } from './fileRead.js';
 import type { FileFetch, FileReadOutcome } from './fileRead.js';
 import { releaseStoredFile } from './fileRelease.js';
+import { exportRecordsFile } from './fileExport.js';
+import type { FileExportOutcome } from './fileExport.js';
 import type { FileReleaseOutcome } from './fileRelease.js';
 import type { Json, JsonRecord } from './documentUpdate.js';
 
@@ -55,6 +57,8 @@ export interface ViewChannel {
     cancelUpload(requestId: number): void;
     readFile(id: unknown): Promise<FileReadOutcome>;
     releaseFile(id: unknown): Promise<FileReleaseOutcome>;
+    /** Has the server build the CSV of a `fileExport` (`source`, `name`, `request`) and saves it */
+    exportFile(message: { source: unknown; name: unknown; request: unknown }): Promise<FileExportOutcome>;
 }
 
 /** The upload refusals by status, as the file route answers them */
@@ -155,6 +159,7 @@ export function directChannel(appId: string, viewId: string, viewKind: string): 
             }),
         cancelUpload: (requestId) => uploads.get(requestId)?.abort(),
         readFile: (id) => readStoredFile(appId, id, fetcher),
-        releaseFile: (id) => releaseStoredFile(appId, id, fetcher)
+        releaseFile: (id) => releaseStoredFile(appId, id, fetcher),
+        exportFile: (message) => exportRecordsFile(appId, message, fetcher)
     };
 }

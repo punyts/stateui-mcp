@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { report as reportArea } from '@punyts/core';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
+import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
@@ -139,6 +140,8 @@ export interface RunningHttpServer {
 }
 
 const MAX_REPORT_BODY_BYTES = 2 * 1024 * 1024;
+/** An export request names columns, filters and a sort, never rows: the runtime caps its message at 64 KiB */
+const MAX_EXPORT_BODY_BYTES = 64 * 1024;
 const KEEP_ALIVE_MS = 15_000;
 /** A sync message is at most 1,000,000 characters (`parseMessage`); a frame may hold that many bytes of UTF-8 twice over */
 const MAX_SYNC_FRAME_BYTES = 4 * 1024 * 1024;
@@ -210,6 +213,7 @@ const PREVIEW_CATEGORY = 'stateui-mcp.preview';
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
+ * | `POST /apps/:appId/export` | a CSV file of records in the persona's own instance: `{ source, name, request }` (`RecordExportRequest`), filtered and sorted here; never rows from the browser |
  * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
  *
@@ -333,7 +337,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const rest = parts.slice(2);
             const page = method === 'GET' && rest.length === 0;
             const fileId = rest.length === 2 && rest[0] === 'files' ? rest[1] : undefined;
-            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
+            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files' || rest[0] === 'export')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
             if (known) {
                 if (page) {
                     const answer = await findTenant(request);
@@ -344,6 +348,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 if (page) return appRoute(tenant, request, response, appId);
                 const owner = (tenant.access ?? 'owner') === 'owner';
                 if (method === 'POST' && rest[0] === 'report') return reportRoute(tenant, request, response, appId);
+                if (method === 'POST' && rest[0] === 'export') return exportRoute(tenant, request, response, appId);
                 if (method === 'GET') return downloadRoute(tenant, response, appId, fileId as string);
                 if (!owner) throw new HttpError(403, "Only the app's owner adds or removes its files", 'forbidden');
                 if (method === 'POST') return uploadRoute(tenant, request, response, appId);
@@ -395,6 +400,22 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (outcome.kind === 'invalid') throw new HttpError(400, outcome.message, 'invalid_report');
         if (outcome.kind === 'not-found') throw new HttpError(404, 'No app with this id', 'not_found');
         sendJson(response, 200, { ok: true });
+    }
+
+    /**
+     * A CSV export (`fileExport` of the runtime, through the host page): the records at `source` in the requesting
+     * persona's own instance, so the file holds only what that persona can read (a shared dataset whole, a persona
+     * binding's own records, another owner's share), filtered, sorted and cut to the columns as the grid shows them. The
+     * browser sends the settings, never rows; nothing is stored. Logs the app, the source and the row count, never a value
+     */
+    async function exportRoute(tenant: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+        const body = await readJsonBody(request, MAX_EXPORT_BODY_BYTES);
+        const app = await tenant.instances.find(appId);
+        if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
+        const result = await buildRecordsCsv(appId, body, async (source) => (await tenant.instances.authority(app, tenant.persona ?? DEFAULT_PERSONA)).get(source), report);
+        if (result.kind === 'refused') throw new HttpError(result.status, result.message, result.code);
+        const { 'content-type': contentType, ...headers } = csvHeaders(result.name, result.rows);
+        send(response, 200, contentType as string, result.csv, { ...headers, 'Content-Security-Policy': FILE_CSP });
     }
 
     async function uploadRoute({ useCases }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {

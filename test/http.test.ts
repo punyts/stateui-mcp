@@ -617,3 +617,80 @@ describe('the embedded endpoint', () => {
         expect((await fetch(origin + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(404);
     });
 });
+
+describe('POST /apps/:appId/export', () => {
+    const exportBody = (overrides: Record<string, unknown> = {}) => ({
+        source: '$.data.people',
+        name: 'People.csv',
+        request: {
+            columns: [
+                { key: 'name', field: 'name', title: 'Name', filter: 'text' },
+                { key: 'state', field: 'state', title: 'State', filter: 'select', options: { open: 'Open', done: 'Done' } }
+            ],
+            filter: '',
+            filters: { name: 'a' },
+            sortBy: 'name',
+            sortDir: 'desc'
+        },
+        ...overrides
+    });
+    let exportAppId = '';
+    /** An app bound to a dataset of people, one of them with a field no column shows */
+    async function seedPeople(): Promise<string> {
+        if (exportAppId !== '') return exportAppId;
+        const steps: [string, Record<string, unknown>][] = [
+            ['ui_model_write', { model: 'person', operations: [{ op: 'set', field: 'name', type: 'string', required: true }, { op: 'set', field: 'state', type: 'string' }, { op: 'set', field: 'secret', type: 'string' }] }],
+            ['ui_data_write', { dataset: 'people', model: 'person', operations: [{ op: 'set', path: 'p1', value: { name: 'Ada', state: 'open', secret: 'x' } }, { op: 'set', path: 'p2', value: { name: 'Grace', state: 'done' } }, { op: 'set', path: 'p3', value: { name: 'Hopper', state: 'open' } }] }]
+        ];
+        for (const [name, args] of steps) {
+            const result = await call(harness.client, name, args);
+            if (result.isError) throw new Error(`${name}: ${JSON.stringify(result.body)}`);
+        }
+        exportAppId = (await createApp(harness.client, 'export-people', FORM_ROOT, { data: { people: { dataset: 'people' } } })).id;
+        return exportAppId;
+    }
+    const post = (body: unknown): Promise<Response> => fetch(`${origin}/apps/${exportAppId}/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify(body) });
+
+    it("should answer a CSV of the instance's records filtered, sorted and cut to the columns, as an attachment", async () => {
+        // Arrange
+        await seedPeople();
+
+        // Act
+        const response = await post(exportBody());
+
+        // Assert
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+        expect(response.headers.get('content-disposition')).toBe("attachment; filename*=UTF-8''People.csv");
+        expect(response.headers.get('x-export-rows')).toBe('2');
+        expect(await response.text()).toBe('Name,State\r\nGrace,Done\r\nAda,Open\r\n');
+    });
+
+    it('should refuse a source outside the data, a name that is not a csv, rows in the request and an unknown app', async () => {
+        // Arrange
+        await seedPeople();
+
+        // Act
+        const statuses = [
+            (await post(exportBody({ source: '$.server.keys' }))).status,
+            (await post(exportBody({ name: 'people.html' }))).status,
+            (await post({ ...exportBody(), rows: [] })).status,
+            (await post(exportBody({ source: '$.data.nothing' }))).status,
+            (await fetch(`${origin}/apps/11111111-1111-4111-8111-111111111111/export`, { method: 'POST', headers: { Origin: origin }, body: JSON.stringify(exportBody()) })).status
+        ];
+
+        // Assert
+        expect(statuses).toEqual([400, 400, 400, 404, 404]);
+    });
+
+    it('should refuse a cross-origin export', async () => {
+        // Arrange
+        await seedPeople();
+
+        // Act
+        const response = await fetch(`${origin}/apps/${exportAppId}/export`, { method: 'POST', headers: { Origin: 'http://evil.test' }, body: JSON.stringify(exportBody()) });
+
+        // Assert
+        expect(response.status).toBe(403);
+    });
+});

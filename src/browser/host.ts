@@ -28,6 +28,7 @@
  *
  * Files: a `file` from the runtime is uploaded through the channel (answered with `fileProgress` and `fileResult`),
  * a `fileRead` is read through it (`fileRead.ts`) and answered with `fileData`, its bytes in the transfer list, and a
+ * `fileExport` (`fileExport.ts`) is answered with `fileExported` once the page has saved the CSV the server built.
  * `fileRelease` (`fileRelease.ts`) is answered with `fileReleased`: `ok: true` when the file is gone or was never
  * there, and also when the server keeps it because the app or its live state still references it (the sweep removes
  * it later). A release waits until the sync client has no change waiting for its ack (at most `RELEASE_SETTLE_MS`), so
@@ -746,6 +747,9 @@ export class LiveView {
             case 'fileRelease':
                 this.onFileRelease(message);
                 break;
+            case 'fileExport':
+                this.onFileExport(message);
+                break;
             default:
                 break;
         }
@@ -955,6 +959,19 @@ export class LiveView {
         if (typeof requestId !== 'number') return;
         void this.releaseGate.settled().then(() => this.channel.releaseFile(message['id'])).then((outcome) => {
             this.post({ type: 'fileReleased', requestId, ...outcome });
+        });
+    }
+
+    /**
+     * A grid asks for its records as a CSV file: the server builds it from the persona's own instance and the page saves
+     * it (the frame cannot download), answered with `fileExported`. It waits until the frame's changes before it are
+     * acknowledged, so an edit made just before is in the file
+     */
+    private onFileExport(message: RuntimeMessage): void {
+        const requestId = message['requestId'];
+        if (typeof requestId !== 'number') return;
+        void this.releaseGate.settled().then(() => this.channel.exportFile({ source: message['source'], name: message['name'], request: message['request'] })).then((outcome) => {
+            this.post({ type: 'fileExported', requestId, ...outcome });
         });
     }
 

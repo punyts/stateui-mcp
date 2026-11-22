@@ -246,6 +246,28 @@ describe('the server and its views through a statenet', () => {
         expect([released['status'], again['status'], otherApp['status']]).toEqual([204, 404, 404]);
     });
 
+    it("should answer an export over the relay as the HTTP route does, from the app's instance", async () => {
+        // Arrange
+        const page = await openPage();
+        const request = async (message: Message): Promise<Message> => {
+            const id = randomUUID();
+            page.relay({ type: 'request', id, ...message });
+            return page.fromServerNext((answer) => answer['type'] === 'response' && answer['id'] === id);
+        };
+        const body = (source: string): string => JSON.stringify({ source, name: 'Rows.csv', request: { columns: [{ key: 'name', field: 'name', title: 'Name' }] } });
+
+        // Act
+        const path = `/apps/${appId}/export`;
+        const missing = await request({ method: 'POST', path, body: body('$.data.nothing') });
+        const outside = await request({ method: 'POST', path, body: body('$.server.keys') });
+        const notJson = await request({ method: 'POST', path, body: '{' });
+
+        // Assert
+        expect(missing).toMatchObject({ status: 404, json: { error: 'not_found' } });
+        expect(outside).toMatchObject({ status: 400, json: { error: 'invalid_export' } });
+        expect(notJson['status']).toBe(400);
+    });
+
     it('should tell the pages an app is gone when its part goes without the deletion telling them first', async () => {
         // Arrange: a second app, open in a page, removed from storage directly: no ui_delete, so no hub message
         const other = (await createApp(client, 'other')).id;
