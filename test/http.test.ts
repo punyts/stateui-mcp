@@ -284,6 +284,35 @@ describe('request checks', () => {
     it('should answer an unknown path with 404', async () => {
         expect((await fetch(`${origin}/nothing`)).status).toBe(404);
     });
+
+    it('should take a POST from another origin only on a path the embedding server names', async () => {
+        // Arrange
+        const crossData = await tempData();
+        const crossHarness = await httpHarness(crossData.dir, noBrowser, {
+            routes: async (request, response) => {
+                if (!(request.url ?? '').startsWith('/answer')) return false;
+                response.writeHead(204).end();
+                return true;
+            },
+            crossOriginPost: (path) => path === '/answer'
+        });
+        const post = (path: string, method = 'POST'): Promise<Response> => fetch(`${crossHarness.server.origin}${path}`, { method, headers: { origin: 'https://idp.example' } });
+
+        try {
+            // Act
+            const named = await post('/answer?x=1');
+            const deleted = await post('/answer', 'DELETE');
+            const other = await post(`/apps/${appId}/report`);
+
+            // Assert
+            expect(named.status).toBe(204);
+            expect(deleted.status).toBe(403);
+            expect(other.status).toBe(403);
+        } finally {
+            await crossHarness.close();
+            await crossData.cleanup();
+        }
+    });
 });
 
 describe('POST /apps/:appId/files', () => {

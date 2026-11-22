@@ -4,6 +4,7 @@ import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { isBlockingError, isValid } from '../../domain/UiBuildError.js';
 import type { UiPartBodies } from '../../domain/UiPart.js';
 import { loadPartSource } from '../partSource.js';
+import type { InstanceStates } from '../ports/InstanceStates.js';
 import type { UiAppValidator } from '../ports/UiAppValidator.js';
 import type { UiInstanceRepository } from '../ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../ports/UiPartRepository.js';
@@ -27,14 +28,17 @@ export type WritePersonaDataResult =
 
 /**
  * Replaces the default persona's records of one persona binding. They have no part: they are kept with the instance,
- * under the app's id, and checked against the binding's model with the same check a dataset part gets (`checkRecord`)
+ * under the app's id, and checked against the binding's model with the same check a dataset part gets (`checkRecord`).
+ * With `states`, the running instance is stopped first and the records are written while it is stopped, so it does
+ * not save its own over them, and its views reconnect to an instance that has them
  */
 export class WritePersonaData {
     constructor(
         private readonly parts: UiPartRepository,
         private readonly instances: UiInstanceRepository,
         private readonly validator: UiAppValidator,
-        private readonly report: UseCaseReport
+        private readonly report: UseCaseReport,
+        private readonly states?: Pick<InstanceStates, 'stop'>
     ) {}
 
     async execute(input: WritePersonaDataInput): Promise<WritePersonaDataResult> {
@@ -53,7 +57,9 @@ export class WritePersonaData {
             this.report.info('Persona data write', { app, binding, outcome: 'invalid', errorCount: errors.filter(isBlockingError).length });
             return { kind: 'invalid', errors };
         }
-        await this.instances.writeData(part.id, binding, { model, records });
+        const write = (): Promise<void> => this.instances.writeData(part.id, binding, { model, records });
+        if (this.states === undefined) await write();
+        else await this.states.stop(part, write);
         return this.finish({ kind: 'written', app, binding });
     }
 

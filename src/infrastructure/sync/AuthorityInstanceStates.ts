@@ -6,7 +6,8 @@ import type { UiInstanceRepository } from '../../application/ports/UiInstanceRep
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
 import { DEFAULT_PERSONA, instanceKeyText, isPersonaName } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
-import { userStateAddress } from '../../domain/StateAddress.js';
+import { instanceOfAddress, OWNER_IDS, userStateAddress } from '../../domain/StateAddress.js';
+import type { OwnerNames } from '../../domain/StateAddress.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiPart } from '../../domain/UiPart.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
@@ -59,7 +60,9 @@ export class AuthorityInstanceStates implements InstanceStates {
         /** What instances read of other apps (`uses.external`), subscribed while they run */
         private readonly external?: ExternalReads,
         /** Where instances are ordered when several servers share the storage; absent: all of them here */
-        private readonly placement?: InstancePlacement
+        private readonly placement?: InstancePlacement,
+        /** The names owners go by in addresses; their ids by default */
+        private readonly owners: OwnerNames = OWNER_IDS
     ) {}
 
     async shape(app: UiPart<'apps'>): Promise<InstanceShape> {
@@ -150,11 +153,10 @@ export class AuthorityInstanceStates implements InstanceStates {
 
     /** The app and persona of an address of this owner (the owner's own id is its default persona) */
     private instanceAt(address: string): { appId: string; persona: string } | undefined {
-        const [ownerId, appId, scope] = address.split('/');
-        if (ownerId === undefined || appId === undefined || scope !== 'user') return undefined;
-        const persona = ownerId === this.ownerId ? DEFAULT_PERSONA : ownerId;
-        if (persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(persona))) return undefined;
-        return { appId: appId.toLowerCase(), persona };
+        const found = instanceOfAddress(address, this.ownerId, this.owners);
+        if (found === undefined) return undefined;
+        if (found.persona !== DEFAULT_PERSONA && (this.personaInstances === undefined || !isPersonaName(found.persona))) return undefined;
+        return found;
     }
 
     private checkPersona(persona: string): void {
@@ -162,7 +164,7 @@ export class AuthorityInstanceStates implements InstanceStates {
     }
 
     private addressOf(key: InstanceKey): string {
-        return userStateAddress(key.ownerId, key.persona, key.appId);
+        return userStateAddress(key.ownerId, key.persona, key.appId, this.owners);
     }
 
     /** With a placement, makes this server the owner of the instance's namespace, so its authority runs here */

@@ -26,6 +26,17 @@ export interface InstanceWriteFence {
     readonly epoch?: number;
 }
 
+/**
+ * An instance whole, for a repository that keeps it as one stored namespace: its diff, the records of its persona
+ * bindings, and what the authority keeps beside its state (the revision it reached and the change ids it applied)
+ */
+export interface WholeInstance {
+    readonly diff: InstanceDiff;
+    readonly datasets: Readonly<Record<string, PersonaDataset>>;
+    readonly applied: ReadonlyArray<{ id: string; revision: number }>;
+    readonly revision: number;
+}
+
 export interface InstanceRead<T> {
     readonly value: T;
     readonly problem?: string;
@@ -54,4 +65,16 @@ export interface UiInstanceRepository {
 
     /** Removes the instance and every persona binding's records of the app, so the next read is the definition */
     reset(appId: string): Promise<void>;
+
+    /**
+     * The instance whole, in one read. A repository that has this and `saveWhole` keeps each instance as one stored
+     * namespace (docs/design/statenet-network.md): a running instance then loads and saves through these two alone
+     */
+    loadWhole?(appId: string): Promise<InstanceRead<WholeInstance>>;
+
+    /**
+     * Stores the instance whole, in one write: the diff of `current` over `definition` as `write` takes them, the
+     * records of every persona binding, and what the authority keeps beside its state. Returns the diff stored
+     */
+    saveWhole?(appId: string, definition: JsonObject, current: JsonObject, datasets: Readonly<Record<string, PersonaDataset>>, kept: Pick<WholeInstance, 'applied' | 'revision'>, fence?: InstanceWriteFence): Promise<InstanceDiff>;
 }

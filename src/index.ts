@@ -2,8 +2,8 @@ export { parseOptions, HELP_TEXT } from './config/options.js';
 export type { CliOptions } from './config/options.js';
 export { DEFAULT_STATENET_URL, DEFAULT_VIEW_URL, loadHostScript, startServer, statenetViewPage } from './config/startServer.js';
 export { installShowcase, SHOWCASE_APP } from './config/showcase.js';
-export { HttpError, startHttpServer } from './infrastructure/http/HttpServer.js';
-export type { HttpServerOptions, HttpTenant, PublicOrigins, RunningHttpServer, TenantAnswer } from './infrastructure/http/HttpServer.js';
+export { HttpError, isNetworkRequest, startHttpServer } from './infrastructure/http/HttpServer.js';
+export type { HttpServerOptions, HttpTenant, NetworkListener, PublicOrigins, RunningHttpServer, TenantAnswer } from './infrastructure/http/HttpServer.js';
 export { escapeHtml, PAGE_CSS } from './infrastructure/http/pages.js';
 export { APP_PAGE_CSP, COMMON_HEADERS, hostPageCsp, isSameOrigin, requestHostName } from './infrastructure/http/security.js';
 export { loadChunk3d, loadRuntimeBundle } from './infrastructure/http/runtimeBundle.js';
@@ -17,6 +17,10 @@ export type { Services, ServicesOptions } from './config/createServices.js';
 export { createStateUiMcpServer, createStateUiTools, STATEUI_MCP_SERVER_NAME } from './infrastructure/mcp/StateUiMcpServer.js';
 export type { StateUiToolDependencies } from './infrastructure/mcp/StateUiMcpServer.js';
 export { buildServerInstructions } from './infrastructure/mcp/instructions.js';
+export { NodeClient, NODE_SIGN_IN_MS, NODE_TOKENS_FILE, SignedOut } from './infrastructure/statenet/NodeClient.js';
+export type { NodeClientOptions, NodeTool, NodeTools } from './infrastructure/statenet/NodeClient.js';
+export { startNodeServer } from './config/startNodeServer.js';
+export type { NodeServerOptions, RunningNodeServer } from './config/startNodeServer.js';
 export type { ToolOutcome, UiToolDefinition } from './infrastructure/mcp/toolKit.js';
 export { copyAppParts } from './application/copyAppParts.js';
 export type { CopiedPart, CopyAppOptions, CopyAppResult } from './application/copyAppParts.js';
@@ -55,7 +59,7 @@ export type {
     UiPartSummary,
     UiPartWriteResult
 } from './application/ports/UiPartRepository.js';
-export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository } from './application/ports/UiInstanceRepository.js';
+export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository, WholeInstance } from './application/ports/UiInstanceRepository.js';
 export type { InstancePlacement } from './application/ports/InstancePlacement.js';
 export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
 export type { SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
@@ -72,7 +76,9 @@ export { PART_KINDS } from './domain/partName.js';
 export type { PartKind } from './domain/partName.js';
 export { isRevisionCurrent } from './domain/revision.js';
 export { isAppId } from './infrastructure/storage/PartFolders.js';
+export { NamespaceUiInstanceRepository } from './infrastructure/storage/NamespaceUiInstanceRepository.js';
+export type { InstanceNamespaceStore } from './infrastructure/storage/NamespaceUiInstanceRepository.js';
 export { diffInstance } from '@punyts/stateui-app/core';
 /** Statenet addresses: `<ownerId>/<appId>/<scope>` */
-export { appStateAddress, formatAddress, parseAddress, userStateAddress } from './domain/StateAddress.js';
-export type { StateAddress, StateScope } from './domain/StateAddress.js';
+export { formatAddress, instanceOfAddress, OWNER_IDS, parseAddress, userStateAddress } from './domain/StateAddress.js';
+export type { OwnerNames, StateAddress, StateBranch } from './domain/StateAddress.js';

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
+import { createMemoryEpochStorage, FencedError } from '@punyts/state-sync/authority';
 import type { StoredNamespace } from '@punyts/state-sync/authority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
@@ -13,6 +14,7 @@ import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
 import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
 import { FileUiInstanceRepository } from '../infrastructure/storage/FileUiInstanceRepository.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
+import { NamespaceUiInstanceRepository } from '../infrastructure/storage/NamespaceUiInstanceRepository.js';
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
@@ -292,6 +294,94 @@ describe('InstanceNamespaceStorage', () => {
         expect(loaded.state['route']).toEqual({ screen: 'product', params: { id: 'p1' } });
         expect(loaded.state['data']).toMatchObject({ products: { p1: { name: 'Lamp', price: 30 } }, bag: LINES, note: 'mine' });
         expect(JSON.stringify(await readFile(folders.instanceFile(OWNER, appId), 'utf8'))).not.toContain('secret');
+    });
+
+    describe('kept as one stored namespace', () => {
+        const ADDRESS = (id: string): string => `${OWNER}/apps/${id}`;
+        function namespaces(clock = { now: 5000 }) {
+            const memory = createMemoryEpochStorage();
+            const saves: number[] = [];
+            const removed: string[] = [];
+            const store = {
+                load: (address: string) => memory.load(address),
+                save: async (address: string, stored: StoredNamespace, epoch: number) => {
+                    await memory.save(address, stored, epoch);
+                    saves.push(stored.revision);
+                },
+                remove: async (address: string) => {
+                    removed.push(address);
+                }
+            };
+            return { memory, saves, removed, clock, repository: new NamespaceUiInstanceRepository(store, ADDRESS, () => 3, () => clock.now) };
+        }
+
+        it('should save an instance in one write: its diff, its unbound data as localData, its changed persona records with their models, and the applied ids', async () => {
+            // Arrange
+            const begun = await start();
+            const { memory, saves, repository } = namespaces();
+            const storage = new InstanceNamespaceStorage(begun, repository, () => undefined, () => 5000, 3);
+            const state = {
+                app: {},
+                screens: {},
+                route: { screen: 'product', params: { id: 'p1' } },
+                data: { products: { p1: { name: 'Changed' } }, bag: LINES, totals: { net: 0, gross: 0, currency: 'USD' }, note: 'mine' },
+                server: { token: 'secret' }
+            } as unknown as StoredNamespace['state'];
+            const first = await storage.load(appNamespace(begun.key));
+
+            // Act
+            await storage.save(appNamespace(begun.key), { state, revision: first.revision + 4, log: [], applied: [{ id: 'c1', revision: first.revision + 4 }] });
+            const loaded = await new InstanceNamespaceStorage(begun, repository, () => undefined, () => 100, 3).load(appNamespace(begun.key));
+
+            // Assert
+            const stored = await memory.load(ADDRESS(appId));
+            expect(saves).toEqual([5004]);
+            expect(stored?.state).toEqual({ route: { screen: 'product', params: { id: 'p1' } }, localData: { note: 'mine' }, data: { bag: LINES }, models: { bag: 'bag-line' } });
+            expect(stored?.applied).toEqual([{ id: 'c1', revision: 5004 }]);
+            expect(memory.epochOf(ADDRESS(appId))).toBe(3);
+            expect(JSON.stringify(stored)).not.toContain('secret');
+            // the revision never goes back, though the clock here is behind: an aggregate tells a save sent again by it
+            expect(loaded.revision).toBe(5005);
+            expect(loaded.applied).toEqual([{ id: 'c1', revision: 5004 }]);
+            expect(loaded.log).toEqual([]);
+            expect(loaded.state['route']).toEqual({ screen: 'product', params: { id: 'p1' } });
+            expect(loaded.state['data']).toMatchObject({ products: { p1: { name: 'Lamp', price: 30 } }, bag: LINES, note: 'mine' });
+        });
+
+        it('should read and change the parts of a stopped instance one at a time, keeping the rest, and remove it on a reset', async () => {
+            // Arrange
+            const { memory, removed, clock, repository } = namespaces();
+            await repository.saveWhole(appId, { app: {}, screens: {}, data: {} }, { app: {}, screens: {}, theme: { active: { mode: 'dark' } }, data: { note: 'mine' } }, { bag: { model: 'bag-line', records: LINES } }, { applied: [{ id: 'c1', revision: 7 }], revision: 7 });
+
+            // Act
+            clock.now = 2;
+            await repository.writeData(appId, 'totals', { model: 'cart-totals', records: { t: { net: 1, gross: 1, currency: 'EUR' } } as unknown as JsonObject });
+            await repository.write(appId, { app: {}, screens: {}, data: {} }, { app: {}, screens: {}, data: {}, route: { screen: 'product', params: { id: 'p2' } } });
+            const diff = (await repository.get(appId)).value;
+            const bag = (await repository.getData(appId, 'bag')).value;
+            const stored = await memory.load(ADDRESS(appId));
+            await repository.reset(appId);
+
+            // Assert
+            expect(diff).toEqual({ route: { screen: 'product', params: { id: 'p2' } } });
+            expect(bag).toEqual({ model: 'bag-line', records: LINES });
+            expect(stored?.state['models']).toEqual({ bag: 'bag-line', totals: 'cart-totals' });
+            expect(stored?.revision).toBe(9);
+            expect(stored?.applied).toEqual([{ id: 'c1', revision: 7 }]);
+            expect(removed).toEqual([ADDRESS(appId)]);
+        });
+
+        it('should refuse a save under an epoch older than the one the namespace was saved under', async () => {
+            // Arrange
+            const { repository } = namespaces();
+            await repository.saveWhole(appId, {}, { app: {} }, {}, { applied: [], revision: 1 }, { epoch: 5 });
+
+            // Act
+            const refused = await repository.saveWhole(appId, {}, { app: {} }, {}, { applied: [], revision: 2 }, { epoch: 4 }).catch((error: unknown) => error);
+
+            // Assert
+            expect(refused).toBeInstanceOf(FencedError);
+        });
     });
 
     it('should drop a stored route to a screen the app no longer has and report it', async () => {

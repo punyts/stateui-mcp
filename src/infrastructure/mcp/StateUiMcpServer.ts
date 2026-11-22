@@ -1,4 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { isReported, report as reportArea } from '@punyts/core';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { FunctionEntry } from '@punyts/stateui-app/core';
 import type { CategoryIndexEntry } from '../../application/ports/ComponentCatalog.js';
@@ -13,6 +14,7 @@ import type { AppCalls } from '../sync/AppCalls.js';
 import type { AppEffects } from '../sync/AppEffects.js';
 import type { AppAuthorities } from '../sync/AppAuthorities.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
+import type { NodeClient, NodeTools } from '../statenet/NodeClient.js';
 import { createAppTools } from './appTools.js';
 import { createCatalogTools } from './catalogTools.js';
 import { createFileTools } from './fileTools.js';
@@ -27,6 +29,7 @@ import { createLogicTools } from './logicTools.js';
 import { createComposedTools } from './composedTools.js';
 import { createPatternTools } from './patternTools.js';
 import { createPartAppTools } from './partAppTools.js';
+import { msSince } from '../msSince.js';
 import { createPartTools } from './partTools.js';
 import { createStateTools } from './stateTools.js';
 import { fail } from './toolKit.js';
@@ -89,7 +92,36 @@ export function createStateUiTools(dependencies: StateUiToolDependencies): reado
         ...createLiveTools({ useCases, hub, liveViews, browser, viewUrl, calls, ...(effects !== undefined && { effects }), instanceViews, ...(authorities !== undefined && { logic: authorities }) }),
         ...createFileTools({ useCases, instanceViews })
     ];
-    return tools.map((tool) => (START_HERE_TOOLS.has(tool.name) ? { ...tool, description: `${tool.description} ${START_HERE}` } : tool));
+    return tools.map((tool) => reportedTool(START_HERE_TOOLS.has(tool.name) ? { ...tool, description: `${tool.description} ${START_HERE}` } : tool));
+}
+
+const TOOL_CATEGORY = 'stateui-mcp.tool';
+
+/** The outcome of a tool call as a report names it: ok, or refused with the error code of the body; never the body */
+function outcomeOf(outcome: ToolOutcome): { readonly outcome: 'ok' | 'refused'; readonly code?: string } {
+    if (!outcome.isError) return { outcome: 'ok' };
+    const code = (outcome.body as Record<string, unknown>)['error'];
+    return { outcome: 'refused', ...(typeof code === 'string' && { code }) };
+}
+
+/**
+ * The tool, its run reported under `stateui-mcp.tool`: the tool's name, the duration and the outcome (ok, refused with
+ * the error code, or failed when it threw). Never its arguments or its answer. Off, it adds one check per call
+ */
+function reportedTool(tool: UiToolDefinition): UiToolDefinition {
+    const run = async (args: Readonly<Record<string, unknown>>): Promise<ToolOutcome> => {
+        if (!isReported(TOOL_CATEGORY)) return tool.run(args);
+        const start = performance.now();
+        try {
+            const outcome = await tool.run(args);
+            reportArea(TOOL_CATEGORY, 'Tool call', { tool: tool.name, ms: msSince(start), ...outcomeOf(outcome) });
+            return outcome;
+        } catch (error) {
+            reportArea(TOOL_CATEGORY, 'Tool call', { tool: tool.name, ms: msSince(start), outcome: 'failed' });
+            throw error;
+        }
+    };
+    return { ...tool, run };
 }
 
 const MAX_TARGET = 80;
@@ -127,7 +159,7 @@ interface CallContent {
     isError: boolean;
 }
 
-function toContent(outcome: ToolOutcome): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; isError: boolean } {
+export function toContent(outcome: ToolOutcome): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; isError: boolean } {
     return {
         content: [
             { type: 'text', text: JSON.stringify(outcome.body) },
@@ -182,5 +214,33 @@ export function createStateUiMcpServer(dependencies: StateUiToolDependencies): S
         }
     }
 
+    return server;
+}
+
+/**
+ * The MCP server of a stateui-mcp signed in to a node (docs/design/statenet-network.md, S10b): the node's tools and
+ * instructions, each call run at the node as the person. It holds no apps of its own
+ */
+export function createNodeMcpServer(client: Pick<NodeClient, 'call'>, node: NodeTools, report: UseCaseReport): Server {
+    const server = new Server({ name: STATEUI_MCP_SERVER_NAME, version: STATEUI_MCP_VERSION }, { capabilities: { tools: {} }, instructions: node.instructions });
+    const names = new Set(node.tools.map((tool) => tool.name));
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: node.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema, ...(tool.annotations !== undefined && { annotations: tool.annotations }) }))
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const { name } = request.params;
+        if (!names.has(name)) return toContent(fail('unknown-tool', `Unknown tool: ${name}`));
+        const start = performance.now();
+        try {
+            const outcome = await client.call(name, request.params.arguments ?? {});
+            if (isReported(TOOL_CATEGORY)) reportArea(TOOL_CATEGORY, 'Tool call at the node', { tool: name, ms: msSince(start), ...outcomeOf(outcome) });
+            return toContent(outcome);
+        } catch (error) {
+            if (isReported(TOOL_CATEGORY)) reportArea(TOOL_CATEGORY, 'Tool call at the node', { tool: name, ms: msSince(start), outcome: 'failed' });
+            const message = error instanceof Error ? error.message : String(error);
+            report.info('Tool call to the node failed', { tool: name, error: message });
+            return toContent(fail('node-unreachable', `The node did not answer: ${message}`));
+        }
+    });
     return server;
 }

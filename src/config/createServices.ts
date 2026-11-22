@@ -32,7 +32,8 @@ import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js'
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
-import { parseAddress } from '../domain/StateAddress.js';
+import { instanceOfAddress, OWNER_IDS } from '../domain/StateAddress.js';
+import type { OwnerNames } from '../domain/StateAddress.js';
 import { ExternalReads } from '../infrastructure/sync/ExternalReads.js';
 import type { SharedData } from '../infrastructure/sync/ExternalReads.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
@@ -90,6 +91,11 @@ export interface ServicesOptions {
      * instance runs in this process
      */
     readonly placement?: InstancePlacement;
+    /**
+     * The names owners go by in the addresses of their state (docs/design/statenet-network.md, "`$` is the owner"):
+     * their numbers, where a statenet issues them. By default an owner goes by its id
+     */
+    readonly owners?: OwnerNames;
     /** Datasets other owners shared with this owner, read by `uses.external` aliases that name one */
     readonly sharedData?: SharedData;
 }
@@ -113,7 +119,7 @@ export interface Services {
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
     /**
-     * The authority of the instance at an address of this owner (`<persona>/<appId>/user`), started here: for the owner
+     * The authority of the instance at an address of this owner (`<owner>/apps/<appId>`), started here: for the owner
      * node of a placement when this server takes the namespace. Undefined when it is not one of this owner's apps
      */
     hostInstance(address: string): Promise<Authority | undefined>;
@@ -212,24 +218,25 @@ export function createServices(options: ServicesOptions): Services {
         datasets
     );
     const instances = instancesOf(DEFAULT_PERSONA);
+    const owners = options.owners ?? OWNER_IDS;
     /**
      * The in-process relay (docs/design/statenet-relays.md, S3): it serves the namespaces of this workspace's running
-     * instances by address, a person's state of an app at `<persona>/<appId>/user`, and caches each subscribed path
+     * instances by address, a person's state of an app at `<owner>/apps/<appId>`, and caches each subscribed path
      * once for every instance that reads it (`uses.external`)
      */
     let states: AuthorityInstanceStates | undefined;
     const relay: Upstream = options.placement?.upstream ?? createRelay(
         createAuthorityUpstream(async (address) => {
-            const parsed = parseAddress(address);
-            if (parsed === undefined || parsed.scope !== 'user' || states === undefined) return undefined;
-            const app = await parts.findById('apps', parsed.appId);
+            const found = instanceOfAddress(address, ownerId, owners);
+            if (found === undefined || states === undefined) return undefined;
+            const app = await parts.findById('apps', found.appId);
             if (app === undefined) return undefined;
-            return states.authority(app, parsed.ownerId === ownerId ? DEFAULT_PERSONA : parsed.ownerId).catch(() => undefined);
+            return states.authority(app, found.persona).catch(() => undefined);
         })
     );
-    const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { report: (message, fields) => options.report.info(message, fields), ...(options.sharedData !== undefined && { sharedData: options.sharedData }) });
+    const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { owners, report: (message, fields) => options.report.info(message, fields), ...(options.sharedData !== undefined && { sharedData: options.sharedData }) });
     authorities.onClose(() => external.detachAll());
-    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external, options.placement);
+    const instanceStates = new AuthorityInstanceStates(parts, instances, authorities, ownerId, (message, fields) => options.report.info(message, fields), datasets, instancesOf, external, options.placement, owners);
     states = instanceStates;
     const fileRepository = storage.files;
     const fileStore = storage.fileStore;

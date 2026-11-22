@@ -21,19 +21,26 @@ const SOURCE_KEYS: Partial<Record<PartKind, keyof PartSource>> = {
 export async function loadPartSource(parts: UiPartRepository, start: readonly PartRef[]): Promise<PartSource> {
     const source: Record<string, Record<string, unknown>> = {};
     const seen = new Set<string>();
-    const listed = new Set<PartKind>();
+    // The names of each kind, listed once: a name the owner has no part of is known without reading it
+    const names = new Map<PartKind, ReadonlySet<string>>();
+    const missed = new Set<PartKind>();
     const queue = [...start];
     for (let ref = queue.shift(); ref !== undefined; ref = queue.shift()) {
         const key = SOURCE_KEYS[ref.kind];
         const id = `${ref.kind}/${ref.name}`;
         if (key === undefined || seen.has(id)) continue;
         seen.add(id);
-        const part = await parts.findByName(ref.kind, ref.name);
+        let owned = names.get(ref.kind);
+        if (owned === undefined) {
+            owned = new Set((await parts.list(ref.kind)).map(({ name }) => name));
+            names.set(ref.kind, owned);
+        }
+        const part = owned.has(ref.name) ? await parts.findByName(ref.kind, ref.name) : undefined;
         if (part === undefined) {
             // A library component is not missing, but the kind's names are what a misspelt owner component is near too
-            if (!listed.has(ref.kind)) {
-                listed.add(ref.kind);
-                for (const { name } of await parts.list(ref.kind)) queue.push({ kind: ref.kind, name });
+            if (!missed.has(ref.kind)) {
+                missed.add(ref.kind);
+                for (const name of owned) queue.push({ kind: ref.kind, name });
             }
             continue;
         }

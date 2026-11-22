@@ -1,44 +1,65 @@
 import { DEFAULT_PERSONA } from './InstanceKey.js';
 
-/** Whose state a namespace holds within an app: the app's own, shared by everyone using it, or one user's */
-export type StateScope = 'app' | 'user';
+/** The branch of an owner's tree a namespace is under: its state of apps (`$.apps`), or its data (`$.data`) */
+export type StateBranch = 'apps' | 'data';
 
 /**
- * Where a namespace lives in the statenet (docs/design/statenet-relays.md, "Addresses"): `<ownerId>/<appId>/<scope>`.
- * The app's state is owned by whoever owns the app; a user's state in an app is owned by the user, whoever owns the app
+ * Where a namespace lives in the statenet (docs/design/statenet-network.md, "`$` is the owner"): an owner and a path
+ * under its `$`, written `<owner>/<branch>/<key>`. `<owner>/apps/<appId>` is `$.apps.<appId>` of that owner's tree, the
+ * owner's state of the app; `<owner>/data/<dataset>` is `$.data.<dataset>`. The owner is its number where owners have
+ * numbers (`OwnerNames`), and its id where they do not (a stateui-mcp by itself)
  */
 export interface StateAddress {
-    readonly ownerId: string;
-    readonly appId: string;
-    readonly scope: StateScope;
+    readonly owner: string;
+    readonly branch: StateBranch;
+    /** The app's id under `apps`, the dataset under `data` */
+    readonly key: string;
 }
 
-/** An owner or app id in an address: no slash, no space, not empty */
+/**
+ * The names owners go by in addresses: a number each, from one sequence, where a statenet issues them. `of` is the
+ * name of an owner's id (a user's, or a workspace's, which goes by its user's or its org's); `idOf` the id a name
+ * stands for, undefined when it is not known here. Both answer at once, so whoever gives one has the owners it is
+ * asked about at hand
+ */
+export interface OwnerNames {
+    of(id: string): string;
+    idOf(owner: string): string | undefined;
+}
+
+/** Owners named by their ids: a statenet where no numbers are issued */
+export const OWNER_IDS: OwnerNames = { of: (id) => id, idOf: (owner) => owner };
+
+/** An owner or key in an address: no slash, no space, not empty */
 const SEGMENT = /^[^/\s]{1,200}$/;
 
 export function formatAddress(address: StateAddress): string {
-    if (!SEGMENT.test(address.ownerId) || !SEGMENT.test(address.appId)) throw new Error('An address names an owner and an app, each without a slash or a space');
-    return `${address.ownerId}/${address.appId.toLowerCase()}/${address.scope}`;
+    if (!SEGMENT.test(address.owner) || !SEGMENT.test(address.key)) throw new Error('An address names an owner and an app or a dataset, each without a slash or a space');
+    return `${address.owner}/${address.branch}/${address.branch === 'apps' ? address.key.toLowerCase() : address.key}`;
 }
 
 /** The address a text names, or undefined when it is not one */
 export function parseAddress(text: string): StateAddress | undefined {
-    const [ownerId, appId, scope, ...rest] = text.split('/');
-    if (rest.length > 0 || ownerId === undefined || appId === undefined || !SEGMENT.test(ownerId) || !SEGMENT.test(appId)) return undefined;
-    if (scope !== 'app' && scope !== 'user') return undefined;
-    return { ownerId, appId, scope };
+    const [owner, branch, key, ...rest] = text.split('/');
+    if (rest.length > 0 || owner === undefined || key === undefined || !SEGMENT.test(owner) || !SEGMENT.test(key)) return undefined;
+    if (branch !== 'apps' && branch !== 'data') return undefined;
+    return { owner, branch, key };
 }
 
 /**
- * The address of a persona's own state in an app of a workspace: `<persona>/<appId>/user`. The workspace's default
- * persona (its builders' preview, and the person themself in their own workspace) is the workspace, so a person's state
- * in their own app is at their own id, and stays there when the app moves into an org
+ * The address of a persona's own state of an app of a workspace: `<owner>/apps/<appId>`, the app's place in that
+ * owner's tree. The workspace's default persona (its builders' preview, and the person themself in their own
+ * workspace) is the workspace's owner, so a person's state of their own app is in their own tree, and stays there when
+ * the app moves into an org; any other persona is the person it names
  */
-export function userStateAddress(workspaceId: string, persona: string, appId: string): string {
-    return formatAddress({ ownerId: persona === DEFAULT_PERSONA ? workspaceId : persona, appId, scope: 'user' });
+export function userStateAddress(workspaceId: string, persona: string, appId: string, owners: OwnerNames = OWNER_IDS): string {
+    return formatAddress({ owner: owners.of(persona === DEFAULT_PERSONA ? workspaceId : persona), branch: 'apps', key: appId });
 }
 
-/** The address of an app's own state: `<ownerId>/<appId>/app` */
-export function appStateAddress(ownerId: string, appId: string): string {
-    return formatAddress({ ownerId, appId, scope: 'app' });
+/** The persona and app of an address in a workspace: its default persona when the owner is the workspace's own */
+export function instanceOfAddress(address: string, workspaceId: string, owners: OwnerNames = OWNER_IDS): { readonly appId: string; readonly persona: string } | undefined {
+    const parsed = parseAddress(address);
+    const id = parsed === undefined || parsed.branch !== 'apps' ? undefined : owners.idOf(parsed.owner);
+    if (parsed === undefined || id === undefined) return undefined;
+    return { appId: parsed.key.toLowerCase(), persona: id === workspaceId ? DEFAULT_PERSONA : id };
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
+import { isReported, report } from '@punyts/core';
 import type {
     CreateUiPartInput,
     CreateUiPartResult,
@@ -34,6 +35,8 @@ interface PartFile {
     readonly body: object;
 }
 
+/** The category of the part store's reports: a part read, created, written, deleted or renamed, by kind, id and revision */
+const STORAGE_CATEGORY = 'stateui-mcp.storage';
 const NAMES_LOCK = 'names.json';
 /** Taken first by every rename, so two renames never wait on each other's part locks */
 const RENAME_LOCK = '*rename';
@@ -156,6 +159,7 @@ export class FilePartRepository implements UiPartRepository {
             await writeJsonAtomic(this.folders.partFile(part.kind, part.id), toFile(part as UiPart));
             names.set(part.name, part.id);
             await this.saveNames();
+            report(STORAGE_CATEGORY, 'Part created', { kind: part.kind, id: part.id, revision: part.revision });
             return { kind: 'created', part: { ...part, body: structuredClone(part.body) } };
         });
     }
@@ -190,9 +194,13 @@ export class FilePartRepository implements UiPartRepository {
             const id = names.get(name);
             const part = id === undefined ? undefined : await this.read<K>(kind, id);
             if (part === undefined) return { kind: 'not-found' };
-            if (!isRevisionCurrent(part.revision, expectedRevision)) return { kind: 'conflict', currentRevision: part.revision };
+            if (!isRevisionCurrent(part.revision, expectedRevision)) {
+                report(STORAGE_CATEGORY, 'Part write refused: an older revision', { kind, id: part.id, revision: part.revision, expectedRevision });
+                return { kind: 'conflict', currentRevision: part.revision };
+            }
             const written = reviseUiPart(part, body, this.now());
             await writeJsonAtomic(this.folders.partFile(kind, written.id), toFile(written as UiPart));
+            report(STORAGE_CATEGORY, 'Part written', { kind, id: written.id, revision: written.revision });
             return { kind: 'written', revision: written.revision };
         });
     }
@@ -209,6 +217,7 @@ export class FilePartRepository implements UiPartRepository {
                 await rm(this.folders.partFile(kind, part.id), { force: true });
                 names.delete(name);
                 await this.saveNames();
+                report(STORAGE_CATEGORY, 'Part deleted', { kind, id: part.id, revision: part.revision });
                 return { kind: 'deleted' };
             })
         );
@@ -250,6 +259,7 @@ export class FilePartRepository implements UiPartRepository {
                 names.set(to, renamed.id);
             });
             const rewritten: UiPartRewritten[] = revised.map(({ kind: of, name, revision }) => ({ kind: of, name, revision }));
+            report(STORAGE_CATEGORY, 'Part renamed', { kind, id: renamed.id, revision: renamed.revision, rewritten: rewritten.length, journal: files.length > 1 });
             return { kind: 'renamed', revision: renamed.revision, rewritten };
         });
     }
@@ -262,6 +272,7 @@ export class FilePartRepository implements UiPartRepository {
     async recover(): Promise<boolean> {
         const finished = await this.lock.run(RENAME_LOCK, () => this.finishJournal());
         if (finished) {
+            report(STORAGE_CATEGORY, 'Finished a rename from its journal', {});
             // the names are read from the part files again, which rewrites names.json when it disagrees
             this.loading = undefined;
             await this.names();
@@ -304,6 +315,8 @@ export class FilePartRepository implements UiPartRepository {
         const parsed = await readJson(this.folders.partFile(kind, id));
         if (parsed === undefined) return undefined;
         if (!isPartFile(parsed) || parsed.kind !== kind || parsed.id !== id.toLowerCase()) throw new Error(`${kind}/${id}.json is damaged`);
+        // A list reads every part of a kind: built only when reported
+        if (isReported(STORAGE_CATEGORY)) report(STORAGE_CATEGORY, 'Part read', { kind, id: parsed.id, revision: parsed.revision });
         return toPart<K>(parsed);
     }
 
@@ -338,6 +351,7 @@ export class FilePartRepository implements UiPartRepository {
                 names.set(part.name, part.id);
             }
         }
+        if (isReported(STORAGE_CATEGORY)) report(STORAGE_CATEGORY, 'Part names loaded', { parts: [...index.values()].reduce((count, names) => count + names.size, 0) });
         const stored = await readJson(this.folders.namesFile());
         if (JSON.stringify(stored) !== JSON.stringify(this.namesSnapshot(index))) {
             await this.lock.run(NAMES_LOCK, () => writeJsonAtomic(this.folders.namesFile(), this.namesSnapshot(index)));
