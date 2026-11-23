@@ -2233,3 +2233,67 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.close();
     });
 });
+
+describe.skipIf(!installed)('a mediaPlayer of an uploaded clip, read by the runtime frame at /paths with the grant (Chromium through Playwright)', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+    let browser: Browser;
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir);
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser.close();
+        await harness.close();
+        await data.cleanup();
+    });
+
+    /** A WAV of one second of silence: 8 kHz, mono, 8 bits */
+    function silentWav(): Buffer {
+        const samples = 8000;
+        const header = Buffer.alloc(44);
+        header.write('RIFF', 0);
+        header.writeUInt32LE(36 + samples, 4);
+        header.write('WAVEfmt ', 8);
+        header.writeUInt32LE(16, 16);
+        header.writeUInt16LE(1, 20);
+        header.writeUInt16LE(1, 22);
+        header.writeUInt32LE(8000, 24);
+        header.writeUInt32LE(8000, 28);
+        header.writeUInt16LE(1, 32);
+        header.writeUInt16LE(8, 34);
+        header.write('data', 36);
+        header.writeUInt32LE(samples, 40);
+        return Buffer.concat([header, Buffer.alloc(samples, 128)]);
+    }
+
+    it('should load the clip in the frame from the app files URL with the page grant', { timeout: 60_000 }, async () => {
+        // Arrange
+        const app = await createApp(harness.client, 'clips', rootOf({}));
+        const form = new FormData();
+        form.append('file', new Blob([new Uint8Array(silentWav())], { type: 'audio/wav' }), 'briefing.wav');
+        const uploaded = await fetch(`${harness.server.origin}/apps/${app.id}/files`, { method: 'POST', body: form });
+        const reference = (await uploaded.json()) as { id: string; name: string; size: number; type: string };
+        const written = await writeShell(harness, 'clips', 1, [{ op: 'set', path: 'root.children.clip', value: { component: 'mediaPlayer', kind: 'audio', file: reference, _label: 'Briefing' } }]);
+        const page = await browser.newPage();
+
+        // Act
+        await page.goto(`${harness.server.origin}/apps/${app.id}`);
+        await page.waitForSelector('body[data-status="ready"]');
+        const grant = await page.evaluate(() => document.body.dataset['grant'] ?? '');
+        const audio = page.frameLocator('iframe').locator('audio.media');
+        await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.duration), { timeout: 15_000 }).toBeCloseTo(1, 1);
+        const src = await audio.evaluate((element: HTMLAudioElement) => element.currentSrc);
+
+        // Assert
+        expect(uploaded.status).toBe(201);
+        expect(written.isError).toBe(false);
+        expect(grant).not.toBe('');
+        expect(src.startsWith(`${harness.server.origin}/paths/`)).toBe(true);
+        expect(src).toContain(`/apps/${app.id.toLowerCase()}/files/${reference.id.toLowerCase()}?g=${grant}`);
+        await page.close();
+    });
+});
