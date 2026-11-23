@@ -24,11 +24,15 @@ export class IndexedUiPartRepository implements UiPartRepository {
     private building: Promise<UsageIndex> | undefined;
     private readonly listeners = new Set<PartChangeListener>();
 
-    constructor(private readonly inner: UiPartRepository) {}
+    constructor(
+        private readonly inner: UiPartRepository,
+        /** What the index reads parts from, when reading them through `inner` costs more (a dataset's records); default `inner` */
+        private readonly indexed: UiPartRepository = inner
+    ) {}
 
     /** The usage index, built from the stored parts at the first call */
     usage(): Promise<UsageIndex> {
-        this.building ??= UsageIndex.build(this.inner).catch((error: unknown) => {
+        this.building ??= UsageIndex.build(this.indexed).catch((error: unknown) => {
             this.building = undefined;
             throw error;
         });
@@ -48,7 +52,7 @@ export class IndexedUiPartRepository implements UiPartRepository {
     async changedElsewhere(kind: PartKind, name: string): Promise<void> {
         if (this.building !== undefined) {
             const index = await this.usage();
-            const part = await this.inner.findByName(kind, name);
+            const part = await this.indexed.findByName(kind, name);
             if (part === undefined) index.remove(kind, name);
             else index.set(kind, name, part.body);
         }

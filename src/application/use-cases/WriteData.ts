@@ -77,7 +77,8 @@ function underRecords(operation: WriteOperation): WriteOperation {
 
 /**
  * Changes the records of a dataset part with record operations, checks every record they touch against the dataset's
- * model (`checkRecord`, through the validator's dataset check) and writes the dataset one revision up, or nothing. A
+ * model (`checkRecord`, through the validator's dataset check) and writes what changed, or nothing; the dataset's revision
+ * (its namespace's) rises once for each path the write changed. A
  * record the write does not touch is not checked, so records left invalid by a model change do not block other edits.
  * Without `expectedRevision` a write that loses a race is applied again to the newest records
  */

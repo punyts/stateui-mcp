@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authority';
 import type { Authority } from '@punyts/state-sync/authority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
@@ -9,6 +10,8 @@ import type { DataOperation } from '../application/use-cases/WriteData.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
 import type { JsonValue } from '../domain/JsonValue.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
+import { DatasetParts } from '../infrastructure/storage/DatasetParts.js';
+import { FileNamespaceStore } from '../infrastructure/storage/FileNamespaceStore.js';
 import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
 import { FileUiInstanceRepository } from '../infrastructure/storage/FileUiInstanceRepository.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
@@ -16,6 +19,7 @@ import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
+import { DatasetNamespaces } from '../infrastructure/sync/DatasetNamespaces.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 
 function deepFreeze<T>(value: T): T {
@@ -80,7 +84,7 @@ interface Message {
 }
 
 let dir: string;
-let folders: PartFolders;
+let namespaces: DatasetNamespaces;
 let parts: IndexedUiPartRepository;
 let writeData: WriteData;
 let failWrites: boolean;
@@ -100,11 +104,11 @@ async function part(name: string): Promise<UiPart<'apps'>> {
     return found;
 }
 
-/** The catalog as stored on disk, read by a repository of its own */
+/** The catalog as its namespace stored it on disk, read by a store of its own */
 async function stored(): Promise<{ revision: number; records: JsonValue }> {
-    const found = await new FilePartRepository(folders, new KeyedLock()).findByName('data', 'catalog');
+    const found = await new FileNamespaceStore(dir).load(namespaces.address('catalog'));
     if (found === undefined) throw new Error('no catalog');
-    return { revision: found.revision, records: (found.body as unknown as { records: JsonValue }).records };
+    return { revision: found.revision, records: (found.state as { data: { records: JsonValue } }).data.records };
 }
 
 let counter = 0;
@@ -123,9 +127,12 @@ function view(authority: Authority): { change(path: string, value: unknown): voi
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-dataset-hub-'));
-    folders = new PartFolders(dir);
+    const folders = new PartFolders(dir);
     const lock = new KeyedLock();
-    parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock));
+    const files = new FilePartRepository(folders, lock);
+    namespaces = new DatasetNamespaces(new FileNamespaceStore(dir), OWNER);
+    parts = new IndexedUiPartRepository(new DatasetParts(files, namespaces), files);
+    const relay = createRelay(createAuthorityUpstream((address) => namespaces.hosted(address)));
     const writePart = new WritePart(parts, parts, validator, QUIET);
     for (const [kind, name, body] of [...PARTS, ['apps', 'shop-a', shop(SAVE_BAD)], ['apps', 'shop-b', shop()], ['apps', 'shop-c', shop()]] as const) {
         const written = await writePart.execute({ kind, name, body } as never);
@@ -137,8 +144,10 @@ beforeEach(async () => {
     hold = undefined;
     report = vi.fn<(message: string, details?: unknown) => void>();
     hub = new DatasetHub(
-        parts,
+        { findByName: (kind, name) => files.findByName(kind, name), onChange: (listener) => parts.onChange(listener) },
         (name: string, operations: readonly DataOperation[]) => (failWrites ? Promise.reject(new Error('EIO: disk error')) : (hold ?? Promise.resolve()).then(() => writeData.execute({ name, operations }))),
+        relay,
+        (name) => namespaces.address(name),
         { info: report }
     );
     authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET }, hub);
@@ -148,6 +157,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
     await authorities?.close();
+    await namespaces?.close();
     await rm(dir, { recursive: true, force: true });
 });
 
