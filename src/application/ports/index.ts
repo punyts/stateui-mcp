@@ -10,3 +10,4 @@ export type * from './AppFolderStore.js';
 export type * from './UiPreviewLog.js';
 export type * from './UseCaseReport.js';
 export type * from './ToolCallLog.js';
+export type * from './PermissionStore.js';
