@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authority';
-import type { Authority, Upstream } from '@punyts/state-sync/authority';
+import type { Access, Authority, GrantContext, RequestOptions, Upstream } from '@punyts/state-sync/authority';
 import type { InstancePlacement } from '../application/ports/InstancePlacement.js';
 import type { CatalogMeanings } from '../application/ports/CatalogMeanings.js';
 import { COMPONENT_FUNCTIONS, CORE_ICON_NAMES } from '@punyts/stateui-components';
@@ -13,7 +13,6 @@ import type { UseCaseReport } from '../application/ports/UseCaseReport.js';
 import type { UiPartRepository } from '../application/ports/UiPartRepository.js';
 import type { UiPart } from '../domain/UiPart.js';
 import type { PartKind } from '../domain/partName.js';
-import { WriteData } from '../application/use-cases/WriteData.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 import { createUiBuilderUseCases } from './createUiBuilder.js';
 import type { UiBuilderUseCases } from './createUiBuilder.js';
@@ -44,6 +43,9 @@ import type { SharedData } from '../infrastructure/sync/ExternalReads.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
+import { DatasetModels } from '../infrastructure/sync/DatasetModels.js';
+import { DatasetSession } from '../infrastructure/sync/DatasetSession.js';
+import type { NamespaceConnect } from '../infrastructure/sync/DatasetSession.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
 import type { AppEffects } from '../infrastructure/sync/AppEffects.js';
 import type { AppLogicLimits } from '../infrastructure/sync/AppLogic.js';
@@ -105,6 +107,22 @@ export interface ServicesOptions {
     readonly owners?: OwnerNames;
     /** Datasets other owners shared with this owner, read by `uses.external` aliases that name one */
     readonly sharedData?: SharedData;
+    /**
+     * Who may write the owner's datasets (docs/design/statenet-requests.md, R3b): each dataset's authority checks a
+     * session's access with `context`, and an instance's binding connects as `accessFor` its persona. Absent, sessions
+     * are not checked
+     */
+    readonly datasetAccess?: DatasetAccess;
+}
+
+/** The access an app server gives its datasets' sessions */
+export interface DatasetAccess {
+    /** The grants' keys, the clock and revocations, read at each change */
+    context(): GrantContext;
+    /** The access of the person an instance acts for (`default` is the owner) to one dataset of the owner */
+    accessFor(persona: string, dataset: string): Promise<Access>;
+    /** Requests of people who may request and not write */
+    readonly requests?: RequestOptions;
 }
 
 /** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
@@ -214,16 +232,36 @@ export function createServices(options: ServicesOptions): Services {
         functions: catalogs
     });
     const owners = options.owners ?? OWNER_IDS;
-    /** Each dataset's records, in its namespace; the parts serve them with the dataset (docs/design/statenet-requests.md, R3a) */
-    const datasetNamespaces = new DatasetNamespaces(storage.datasets, ownerId, owners, options.placement);
+    /**
+     * Each dataset's records, in its namespace, checked against its model by its authority; the parts serve them with
+     * the dataset (docs/design/statenet-requests.md, R3a, R3b)
+     */
+    const models = new DatasetModels(storage.parts);
+    const access = options.datasetAccess;
+    const datasetNamespaces = new DatasetNamespaces(storage.datasets, ownerId, {
+        owners,
+        models,
+        ...(options.placement !== undefined && { placement: options.placement }),
+        ...(access !== undefined && { context: () => access.context() }),
+        ...(access?.requests !== undefined && { requests: access.requests })
+    });
     const parts = new IndexedUiPartRepository(new DatasetParts(storage.parts, datasetNamespaces), storage.parts);
-    // Instances bound to one shared dataset see each other's changes (Full mode)
-    const writeData = new WriteData(parts, validator, randomUUID, options.report);
+    models.watch((listener) => parts.onChange(listener));
+    /** A session with a dataset's namespace, here or tunnelled to the server that holds it */
+    const connectDataset: NamespaceConnect = async (address, connection, as) => {
+        const here = async (): Promise<Authority> => {
+            const authority = await datasetNamespaces.hosted(address);
+            if (authority === undefined) throw new Error('No such dataset');
+            return authority;
+        };
+        return options.placement === undefined ? (await here()).connect(connection, as) : options.placement.connect(address, ownerId, connection, as, here);
+    };
+    // Instances bound to one shared dataset see each other's changes (Full mode), each as the person it acts for
     const datasets = new DatasetHub(
-        { findByName: (kind, name) => storage.parts.findByName(kind, name), onChange: (listener) => parts.onChange(listener) },
-        (name, operations) => writeData.execute({ name, operations }),
-        { subscribe: (...args) => relay.subscribe(...args) },
-        (name) => datasetNamespaces.address(name),
+        models,
+        async (name) => (await storage.parts.findByName('data', name)) !== undefined,
+        async (persona, name, handlers) =>
+            new DatasetSession({ address: datasetNamespaces.address(name), access: await access?.accessFor(persona, name), connect: connectDataset, ...handlers }),
         options.report
     );
     const authorities = new AppAuthorities(
