@@ -44,7 +44,7 @@ import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
 import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
 import { DatasetModels } from '../infrastructure/sync/DatasetModels.js';
-import { DatasetRequests } from '../infrastructure/sync/DatasetRequests.js';
+import { DatasetSessions } from '../infrastructure/sync/DatasetSessions.js';
 import { DatasetSession } from '../infrastructure/sync/DatasetSession.js';
 import type { NamespaceConnect } from '../infrastructure/sync/DatasetSession.js';
 import type { AppCalls, AppProcedure } from '../infrastructure/sync/AppCalls.js';
@@ -174,7 +174,7 @@ export interface Services {
     /** Records every tool call, when `toolLog` is set */
     readonly toolCallLog?: ToolCallLog;
     /** The pending requests of the owner's datasets, listed and decided as a given person (R3c) */
-    readonly datasetRequests: DatasetRequests;
+    readonly datasetSessions: DatasetSessions;
 }
 
 /**
@@ -357,7 +357,7 @@ export function createServices(options: ServicesOptions): Services {
         report: options.report,
         viewUrl: viewPage,
         onPartChange: (listener) => parts.onChange(listener),
-        datasetRequests: new DatasetRequests(
+        datasetSessions: new DatasetSessions(
             (name) => datasetNamespaces.address(name),
             async (name) => (await storage.parts.findByName('data', name)) !== undefined,
             connectDataset

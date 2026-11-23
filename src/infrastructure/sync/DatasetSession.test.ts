@@ -2,7 +2,7 @@ import { createAuthority, createMemoryNamespaceStorage, generateGrantKey, signGr
 import type { Access, Authority, GrantKey, GrantRight } from '@punyts/state-sync/authority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { syncNamespaceOf } from './DatasetNamespaces.js';
-import { DatasetRequests } from './DatasetRequests.js';
+import { DatasetSessions } from './DatasetSessions.js';
 import { DatasetSession } from './DatasetSession.js';
 
 const OWNER = '00000000-0000-4000-8000-0000000000cc';
@@ -106,7 +106,7 @@ describe('DatasetSession', () => {
     }, 10_000);
 });
 
-describe('DatasetRequests', () => {
+describe('DatasetSessions', () => {
     it('should list a pending request to the owner with the records, and apply it on approval', async () => {
         // Arrange: a person who may only request suggests a record
         const grant = grantUntil(Date.now() + 3_600_000, ['read', 'request']);
@@ -114,7 +114,7 @@ describe('DatasetRequests', () => {
         await session.ready(1_000);
         session.write([{ key: 'p1', value: { name: 'Lamp' } }]);
         await session.settled();
-        const requests = new DatasetRequests(() => ADDRESS, async (dataset) => dataset === 'catalog', async (_address, connection, as) => authority.connect(connection, as));
+        const requests = new DatasetSessions(() => ADDRESS, async (dataset) => dataset === 'catalog', async (_address, connection, as) => authority.connect(connection, as));
 
         // Act
         const listed = await requests.list('catalog', { subject: OWNER });
@@ -130,4 +130,24 @@ describe('DatasetRequests', () => {
         expect(missing).toBeUndefined();
         expect(await requests.decide('catalog', { subject: OWNER }, 'reject', 'no-such-request')).toBeUndefined();
     }, 15_000);
+
+    it("should follow a dataset's records from the authority, and stop when closed", async () => {
+        // Arrange
+        authority.write({ path: '$.data.records', op: 'set', value: { p1: { name: 'Lamp' } } });
+        const sessions = new DatasetSessions(() => ADDRESS, async (dataset) => dataset === 'catalog', async (_address, connection, as) => authority.connect(connection, as));
+        const seen: unknown[] = [];
+
+        // Act
+        const follow = await sessions.follow('catalog', async () => ({ subject: OWNER }), (records) => seen.push(records));
+        await vi.waitFor(() => expect(seen).toHaveLength(1));
+        authority.write({ path: '$.data.records.p2', op: 'set', value: { name: 'Desk' } });
+        await vi.waitFor(() => expect(seen).toHaveLength(2));
+        follow?.close();
+        authority.write({ path: '$.data.records.p3', op: 'set', value: { name: 'Chair' } });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Assert
+        expect(seen).toEqual([{ p1: { name: 'Lamp' } }, { p1: { name: 'Lamp' }, p2: { name: 'Desk' } }]);
+        expect(await sessions.follow('other', async () => ({ subject: OWNER }), () => undefined)).toBeUndefined();
+    });
 });

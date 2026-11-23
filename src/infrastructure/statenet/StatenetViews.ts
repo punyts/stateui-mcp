@@ -12,6 +12,7 @@ import type { DirectoryEntry } from '../../domain/viewRelay.js';
 import type { ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { takeViewReport } from '../preview/viewReports.js';
 import { isAppId } from '../storage/PartFolders.js';
+import { DECIDE_EMIT, REQUESTS_EMIT } from '../sync/DatasetHub.js';
 import { diffState, diffWrites, StatenetLink } from './StatenetLink.js';
 
 /** The emit a statenet sends when a client of the namespace left (`@punyts/statenet`'s `LEFT_EMIT`) */
@@ -241,6 +242,10 @@ class AppBridge {
             case 'welcome':
                 if (typeof message['revision'] === 'number') this.revision = message['revision'];
                 return;
+            case 'emit':
+                // the instance's emits (the requests of its shared bindings, `sync.requests`) go to its pages
+                if (typeof message['name'] === 'string') this.link.emit(message['name'], message['value'] as JsonValue | undefined);
+                return;
             case 'changes': {
                 const changes = Array.isArray(message['changes']) ? (message['changes'] as Record<string, unknown>[]) : [];
                 this.link.write(
@@ -281,6 +286,12 @@ class AppBridge {
     private onEmit(name: string, value: JsonValue | undefined): void {
         if (name === LEFT_EMIT) {
             if (isJsonObject(value) && typeof value['clientId'] === 'string') this.detach(value['clientId']);
+            return;
+        }
+        // A page decides a request of the instance's bindings, or asks for them again (with no value: the instance's
+        // own `sync.requests` carry the list and are not sent back)
+        if (name === DECIDE_EMIT || (name === REQUESTS_EMIT && value === undefined)) {
+            this.session?.receive(JSON.stringify(value === undefined ? { type: 'emit', name } : { type: 'emit', name, value }));
             return;
         }
         if (name !== VIEW_EMIT || !isRelayEnvelope(value) || value.from === undefined || !isAppId(value.from)) return;
