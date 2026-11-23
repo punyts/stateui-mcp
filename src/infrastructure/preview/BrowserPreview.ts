@@ -2,6 +2,7 @@ import type { Browser, ElementHandle, Frame, Page } from 'playwright';
 import { report } from '@punyts/core';
 import type { UiBuildError } from '../../domain/UiBuildError.js';
 import { KeyedLock } from '../storage/KeyedLock.js';
+import type { PageSource } from './SharedChromium.js';
 import { msSince } from '../msSince.js';
 import type { PreviewHub, UiEvent } from './PreviewHub.js';
 import { DRAG_OFFSET_FORM, dragTargetOf, formatDragOffset } from './dragTarget.js';
@@ -157,10 +158,20 @@ type ShapeTarget = { readonly kind: string; readonly via: 'svg' | 'proxy' };
 const PREVIEW_CATEGORY = 'stateui-mcp.preview';
 
 /**
- * One headless Chromium, started on first use and closed with the server, and one page per app that was asked
- * for. A page loads the same view page a human opens, so what it renders and reports is what a person
- * sees. Tool calls on one app run one at a time
+ * One page per app that was asked for, from a headless Chromium of its own (started on first use and closed with the
+ * server) or from a `PageSource`, such as a context of a `SharedChromium`. A page loads the same view page a human
+ * opens, so what it renders and reports is what a person sees. Tool calls on one app run one at a time
  */
+export interface BrowserPreviewOptions {
+    /**
+     * Extra Chromium arguments, for tests (such as `--disable-3d-apis` for a browser without WebGL). The server
+     * passes none: G3.1 found that headless Chromium draws WebGL2 on SwiftShader without any (G3.10). Unused with `pages`
+     */
+    readonly launchArgs?: readonly string[];
+    /** Where the pages come from; default a Chromium of this preview's own */
+    readonly pages?: PageSource;
+}
+
 export class BrowserPreview {
     private browser: Promise<Browser> | undefined;
     private readonly pages = new Map<string, Page>();
@@ -175,12 +186,14 @@ export class BrowserPreview {
          * port may be chosen at listen time
          */
         private readonly pageUrl: (appId: string) => string,
-        /**
-         * Extra Chromium arguments, for tests (such as `--disable-3d-apis` for a browser without WebGL). The server
-         * passes none: G3.1 found that headless Chromium draws WebGL2 on SwiftShader without any (G3.10)
-         */
-        private readonly launchArgs: readonly string[] = []
+        private readonly options: BrowserPreviewOptions = {}
     ) {}
+
+    /** Runs a tool call on an app, one at a time per app, marking the page source as in use */
+    private run<T>(appId: string, work: () => Promise<T>): Promise<T> {
+        this.options.pages?.touch();
+        return this.lock.run(appId, work);
+    }
 
     /** True when a Chromium build is installed for Playwright. It does not start one */
     static async isInstalled(): Promise<boolean> {
@@ -199,7 +212,7 @@ export class BrowserPreview {
      * screens opens on the screen its instance is on (its `start` screen at first), or on `at` when given
      */
     async open(appId: string, revision: number, at?: PreviewScreen): Promise<PreviewOpenResult> {
-        return this.lock.run(appId, async () => {
+        return this.run(appId, async () => {
             const start = performance.now();
             const existing = this.pages.get(appId);
             if (existing !== undefined && !existing.isClosed()) {
@@ -216,7 +229,7 @@ export class BrowserPreview {
     }
 
     async screenshot(appId: string, revision: number, options: ScreenshotOptions): Promise<ScreenshotResult> {
-        return this.lock.run(appId, async () => {
+        return this.run(appId, async () => {
             const start = performance.now();
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
@@ -269,7 +282,7 @@ export class BrowserPreview {
      * `…rows.<recordKey>` for a repeat copy)
      */
     async rendered(appId: string, revision: number, under: string): Promise<RenderedNode[]> {
-        return this.lock.run(appId, async () => {
+        return this.run(appId, async () => {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             await this.waitDrawn(page);
@@ -309,7 +322,7 @@ export class BrowserPreview {
     }
 
     async interact(appId: string, revision: number, steps: readonly InteractStep[]): Promise<InteractResult> {
-        return this.lock.run(appId, async () => {
+        return this.run(appId, async () => {
             const page = await this.pageFor(appId);
             await this.hub.waitRendered(appId, revision, 'headless', RENDER_TIMEOUT_MS);
             await this.waitDrawn(page);
@@ -350,6 +363,7 @@ export class BrowserPreview {
         const launching = this.browser;
         this.browser = undefined;
         this.pages.clear();
+        await this.options.pages?.close();
         if (launching === undefined) return;
         report(PREVIEW_CATEGORY, 'Headless browser closed', {});
         try {
@@ -366,7 +380,8 @@ export class BrowserPreview {
                 const start = performance.now();
                 try {
                     const { chromium } = await import('playwright');
-                    const browser = await chromium.launch({ headless: true, ...(this.launchArgs.length > 0 && { args: [...this.launchArgs] }) });
+                    const args = this.options.launchArgs ?? [];
+                    const browser = await chromium.launch({ headless: true, ...(args.length > 0 && { args: [...args] }) });
                     report(PREVIEW_CATEGORY, 'Headless browser started', { ms: msSince(start) });
                     return browser;
                 } catch (error) {
@@ -388,8 +403,7 @@ export class BrowserPreview {
     private async pageFor(appId: string, at?: PreviewScreen): Promise<Page> {
         const existing = this.pages.get(appId);
         if (existing !== undefined && !existing.isClosed()) return existing;
-        const browser = await this.launch();
-        const page = await browser.newPage({ viewport: DEFAULT_VIEWPORT });
+        const page = this.options.pages !== undefined ? await this.options.pages.newPage(DEFAULT_VIEWPORT) : await (await this.launch()).newPage({ viewport: DEFAULT_VIEWPORT });
         this.pages.set(appId, page);
         page.on('close', () => {
             if (this.pages.get(appId) === page) this.pages.delete(appId);

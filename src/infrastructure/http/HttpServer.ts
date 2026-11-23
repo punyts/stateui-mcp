@@ -32,6 +32,9 @@ import { byteRange } from './byteRange.js';
 import { GRANT_RENEW_MS, PathGrants } from './PathGrants.js';
 import { APP_PAGE_CSP, COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
+/** The host names of this machine itself */
+const LOOPBACK_NAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 /** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
 export interface HttpTenant {
     readonly useCases: UiBuilderUseCases;
@@ -309,10 +312,16 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     };
     /** The scheme a request came over: HTTPS on the network listener */
     const schemeOf = (request: IncomingMessage): string => (isNetworkRequest(request) ? 'https' : 'http');
+    /**
+     * The public origins of a request, or `undefined` for a request to a loopback name: one from this machine, such as
+     * the server's own headless browser, is answered with the loopback origins, so its page and its runtime frame are
+     * this server's and not whichever one the proxy picks
+     */
+    const publicOriginsOf = (request: IncomingMessage): PublicOrigins | undefined => (options.publicOrigins !== undefined && !LOOPBACK_NAMES.has(hostNameOf(request)) ? options.publicOrigins : undefined);
     /** The origin of the pages, as the browser of a request reaches it */
-    const mainOriginOf = (request: IncomingMessage): string => options.publicOrigins?.main ?? `${schemeOf(request)}://${hostNameOf(request)}:${mainPort}`;
+    const mainOriginOf = (request: IncomingMessage): string => publicOriginsOf(request)?.main ?? `${schemeOf(request)}://${hostNameOf(request)}:${mainPort}`;
     /** The origin of the runtime frame, as the browser of a request reaches it */
-    const runtimeOriginOf = (request: IncomingMessage): string => options.publicOrigins?.runtime ?? `${schemeOf(request)}://${hostNameOf(request)}:${runtimePort}`;
+    const runtimeOriginOf = (request: IncomingMessage): string => publicOriginsOf(request)?.runtime ?? `${schemeOf(request)}://${hostNameOf(request)}:${runtimePort}`;
 
     /** The host name the request used, so the other origin is reached by the same name */
     function hostNameOf(request: IncomingMessage): string {

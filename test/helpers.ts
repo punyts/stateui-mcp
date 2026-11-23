@@ -116,6 +116,7 @@ export interface HttpHarnessOptions {
     readonly showcase?: boolean;
     readonly routes?: HttpServerOptions['routes'];
     readonly crossOriginPost?: HttpServerOptions['crossOriginPost'];
+    readonly publicOrigins?: HttpServerOptions['publicOrigins'];
 }
 
 /**
@@ -147,7 +148,8 @@ export async function httpHarness(dataDir: string, browser?: PreviewBrowser, ext
         hostScript: loadHostScript(),
         report: silentReport,
         ...(extra.routes !== undefined && { routes: extra.routes }),
-        ...(extra.crossOriginPost !== undefined && { crossOriginPost: extra.crossOriginPost })
+        ...(extra.crossOriginPost !== undefined && { crossOriginPost: extra.crossOriginPost }),
+        ...(extra.publicOrigins !== undefined && { publicOrigins: extra.publicOrigins })
     });
     origin = http.origin;
     const mcp = createStateUiMcpServer(services);

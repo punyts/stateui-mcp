@@ -11,6 +11,8 @@ export { loadChunk3d, loadRuntimeBundle } from './infrastructure/http/runtimeBun
 export { loadCatalogFile } from './infrastructure/stateUiLibrary.js';
 export { BrowserPreview } from './infrastructure/preview/BrowserPreview.js';
 export type { PreviewBrowser } from './infrastructure/preview/BrowserPreview.js';
+export { SharedChromium } from './infrastructure/preview/SharedChromium.js';
+export type { PageSource, PrepareContext, SharedChromiumOptions, Viewport } from './infrastructure/preview/SharedChromium.js';
 export type { RunningServer, ServerOptions } from './config/startServer.js';
 export { createServices, LOCAL_OWNER_ID } from './config/createServices.js';
 export type { AppLogicLimits } from './infrastructure/sync/AppLogic.js';

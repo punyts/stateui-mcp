@@ -19,6 +19,7 @@ import { createUiBuilderUseCases } from './createUiBuilder.js';
 import type { UiBuilderUseCases } from './createUiBuilder.js';
 import { BrowserPreview } from '../infrastructure/preview/BrowserPreview.js';
 import type { PreviewBrowser } from '../infrastructure/preview/BrowserPreview.js';
+import type { PageSource } from '../infrastructure/preview/SharedChromium.js';
 import { InstanceViews } from '../infrastructure/preview/InstanceViews.js';
 import { LivePreviewLog } from '../infrastructure/preview/LivePreviewLog.js';
 import { LiveViews } from '../infrastructure/preview/LiveViews.js';
@@ -64,8 +65,10 @@ export interface ServicesOptions {
     readonly viewPage?: (appId: string) => string;
     /** Replaces the Playwright browser, for tests */
     readonly browser?: PreviewBrowser;
-    /** Extra arguments for the headless Chromium, for tests (none by default; ignored with `browser`) */
+    /** Extra arguments for the headless Chromium, for tests (none by default; ignored with `browser` and `pages`) */
     readonly browserArgs?: readonly string[];
+    /** Where the headless pages come from, such as a context of a `SharedChromium`; default a Chromium of the workspace's own */
+    readonly pages?: PageSource;
     /** The key that encrypts `$.server` at rest */
     readonly serverKey?: Uint8Array;
     /** The server procedures Full-mode logic `call`s by name; other names wait for the agent */
@@ -251,7 +254,7 @@ export function createServices(options: ServicesOptions): Services {
         { now, newId: randomUUID, report: options.report }
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);
-    const browser = options.browser ?? new BrowserPreview(hub, viewPage, options.browserArgs);
+    const browser = options.browser ?? new BrowserPreview(hub, viewPage, { ...(options.browserArgs !== undefined && { launchArgs: options.browserArgs }), ...(options.pages !== undefined && { pages: options.pages }) });
     const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId, owners.of(ownerId));
     const liveViews = new LiveViews(hub, browser, instanceViews);
     // Every part change reaches the open views of the apps that show it
