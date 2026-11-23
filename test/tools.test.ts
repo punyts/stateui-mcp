@@ -179,7 +179,7 @@ describe('catalog tools', () => {
         expect(scene.isError).toBe(false);
         expect(Object.keys(scene.body['properties'] as object)).toEqual(expect.arrayContaining(['background', 'environment', 'fog', 'controls', '_title', '_description', '_fallback']));
         expect(mesh.body['tier']).toBe('shape');
-        expect(mesh.body['events']).toEqual(['press', 'hover', 'dragEnd']);
+        expect(mesh.body['events']).toEqual(['press', 'hover', 'dragEnd', 'contact']);
         expect(Object.keys(mesh.body['properties'] as object)).toEqual(expect.arrayContaining(['geometry', 'material', 'castShadow', 'receiveShadow', 'position', 'rotation', 'scale', 'interactive', '_label', 'animate']));
         expect(JSON.stringify((mesh.body['properties'] as Record<string, unknown>)['material'])).toContain('"roughness"');
         expect(JSON.stringify((camera.body['properties'] as Record<string, unknown>)['fov'])).toContain('179');
