@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **The 3D guide topic names custom mesh geometry** (docs/design/stateui-mesh-editor.md, V1): `kind` `custom` with
+  `vertices`, `faces` (3 to 32 indices, counter-clockwise, flat and convex), `shading` and the 4,000 limits, so an agent
+  can write a shape of its own. Test: `src/infrastructure/mcp/guide.test.ts` (topic sizes).
 - **`ui_interact` holds a key, and waits for a game to rest** (docs/design/stateui-game-loop.md, F3). A `key` or
   `press` action takes `hold` (1 to `MAX_HOLD_MS`, 5000 ms): the key goes down, stays down that long and comes up, as
   a player steering a scene3d game does. `hold` on any other action is refused before the page opens
