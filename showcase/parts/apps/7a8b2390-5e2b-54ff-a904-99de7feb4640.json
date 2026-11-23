@@ -5062,7 +5062,7 @@
                 "mesh": {
                   "component": "card",
                   "_title": "mesh",
-                  "_subtitle": "A primitive 3D object (box, sphere, cylinder, cone, plane, torus, capsule) with a material",
+                  "_subtitle": "A 3D object with a material: a primitive (box, sphere, cylinder, cone, plane, torus, capsule) or custom faces",
                   "actions": {
                     "component": "badge",
                     "size": "sm",
