@@ -150,6 +150,14 @@ const SCENE3D_BEHAVIOR = [
     '- Check a scene with ui_screenshot of its path: it waits until the scene, its models and textures are drawn and its transitions have arrived (a playing animate or clip does not hold it back).'
 ].join('\n');
 
+/** The game loop of a scene3d (docs/design/stateui-game-loop.md): play, body, velocity, contact, and trying a game */
+const SCENE3D_PLAY = [
+    '- A scene3d game: play { running, gravity } on the scene (gravity [0, -9.8, 0] by default). While running is true, each mesh, group3d, model or repeat3d copy with a body moves itself 60 times a second by its velocity ([x, y, z] per second, a node property beside position), the keys held on body.control ({ "ArrowLeft": [-6, 0, 0] }, scene keys only) and gravity when body.falls. body.solid makes it collide with the solids of the same parent as its box, or as a sphere for a sphere mesh scaled evenly; body.onContact is stop (default), bounce or pass. bounds ({ x, z, width, depth }) keeps it on a board. Walls and floors are solid bodies with no velocity.',
+    '- State is written only when bodies meet (both position and velocity), when one comes to rest and when running turns false; never per frame. Each body that met raises contact { key, with, repeat, side }: with is the other node key, a copy record key (repeat names its repeat3d) or bounds; side is left, right, bottom, top, back or front. on.contact on the node (on the row for a copy, with $row at its record) scores, removes a record or ends the game; it is written to $.raised.<path without $.>.contact for a rule. A set of velocity or position while the game runs is taken up: a jump is set velocity [0, 6, 0] on key Space.',
+    '- A copy that moves needs "<-position": "$row.<field>" (and "<-velocity" to keep its speed) so the game writes its record; without it the copy is no body (SUI-RUN-DRAW). Spawn with after, a repeating machine transition, adding a record.',
+    '- Try a game with ui_interact: focus the scene, then key with value ArrowRight and hold in ms (at most 5000); the call waits for the bodies to rest and lists in moving the scenes still moving. ui_state_get reads where they stopped.'
+].join('\n');
+
 const SAFETY = 'ui_delete cannot be undone, and ui_rename rewrites every part that names the part it renames. Ask the user before you call them, and pass the revision you read as expectedRevision; a conflict means it changed and nothing was deleted or renamed.';
 
 const FUNCTIONS_INTRO = 'The functions this server runs, by path. An expression calls one ({{ $.functions.host.tax($.data.total) }}), a compute or an effect names one in run, by its kind. The operator installs them: a function that is not listed is one to ask the operator for, and an app that names it gets SUI-LOGIC-FUNCTION. A function a component brings sits at $.components.<component>.functions.<name>.';
@@ -217,6 +225,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
     { name: 'scene3d', when: 'a scene3d, its node values and its camera', text: fixed(SCENE3D), alwaysOn: false },
     { name: 'scene3d-models', when: 'a 3D model file, a texture, a repeat3d or a GLB export', text: fixed(SCENE3D_MODELS), alwaysOn: false },
     { name: 'scene3d-behavior', when: 'a pressable 3D node, keys over a scene, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: false },
+    { name: 'scene3d-play', when: 'a real-time game in a scene3d (play, body, velocity, contact)', text: fixed(SCENE3D_PLAY), alwaysOn: false },
     { name: 'safety', when: 'you delete or rename a part', text: fixed(SAFETY), alwaysOn: false }
 ] satisfies GuideTopic[]);
 
