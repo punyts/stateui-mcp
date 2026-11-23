@@ -5422,7 +5422,7 @@
                 "repeat3d": {
                   "component": "card",
                   "_title": "repeat3d",
-                  "_subtitle": "One mesh template drawn once per record ($row links) as a single instanced mesh, up to 20,000 records",
+                  "_subtitle": "A mesh or group3d template drawn once per record ($row links) as instanced meshes, up to 20,000 records",
                   "actions": {
                     "component": "badge",
                     "size": "sm",

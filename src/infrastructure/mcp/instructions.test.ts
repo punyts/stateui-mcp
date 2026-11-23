@@ -279,14 +279,15 @@ describe('scene3dSection', () => {
         expect(text).toContain('neither writes state, an unknown clip is SUI-RUN-3D naming the file\'s clips, and with reduced motion neither plays');
     });
 
-    it('should say repeat3d draws one instanced mesh from records, what varies per record and its cap (G3.6)', () => {
+    it('should say repeat3d draws its row per record, that a row may be a group3d of meshes, what varies per record and its cap (G3.6, group rows)', () => {
         // Act
         const text = scene3dSection();
 
         // Assert
-        expect(text).toContain('repeat3d draws its row (one mesh) once per record of records');
+        expect(text).toContain('repeat3d draws its row once per record of records');
+        expect(text).toContain('The row is a mesh, or a group3d of meshes and groups (a piece of several parts; at most 16 meshes), each mesh drawn as one instanced mesh');
         expect(text).toContain('"<-position": "$row.at"');
-        expect(text).toContain('Each record has its own position, rotation, scale, visible and material.color');
+        expect(text).toContain('Each node of a record has its own position, rotation, scale, visible and material.color');
         expect(text).toContain('SUI-RUN-DRAW');
         expect(text).toContain('At most 20,000 records (more are cut, SUI-RUN-CAP)');
     });
