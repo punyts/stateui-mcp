@@ -1,7 +1,7 @@
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
 import type { RunCommandInput, RunCommandResult } from '../../application/use-cases/RunCommand.js';
 import { NO_PREVIEW_MESSAGE } from '../../application/use-cases/RunCommand.js';
-import { BrowserUnavailableError, INTERACT_ACTIONS, MAX_FULL_PAGE_HEIGHT, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
+import { BrowserUnavailableError, INTERACT_ACTIONS, MAX_FULL_PAGE_HEIGHT, MAX_HOLD_MS, PATHLESS_ACTIONS } from '../preview/BrowserPreview.js';
 import type { InteractStep, PreviewBrowser, PreviewScreen } from '../preview/BrowserPreview.js';
 import { DRAG_OFFSET_FORM, dragTargetOf } from '../preview/dragTarget.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
@@ -68,6 +68,12 @@ const INTERACT = defineInput({
             value: {
                 type: 'string',
                 description: 'The text for fill, the key for press and key (Enter, Tab, Space, ArrowDown), the option value or label for select and choose, for drag the path of the drop target or an offset "+dx,+dy" in page pixels ("+40,-10": 40 right, 10 up)'
+            },
+            hold: {
+                type: 'integer',
+                minimum: 1,
+                maximum: MAX_HOLD_MS,
+                description: `For key and press: hold the key down this many milliseconds (at most ${MAX_HOLD_MS}), as a player steering a scene3d game does; the call then waits for the game's bodies to rest`
             }
         }
     }
@@ -255,6 +261,8 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 if (!parsed.ok) return invalidArgument(parsed);
                 const pathless = parsed.value.actions.findIndex((item) => item.path === undefined && !PATHLESS_ACTIONS.includes(item.action));
                 if (pathless >= 0) return fail('invalid-argument', `Action ${pathless} (${parsed.value.actions[pathless]?.action}) needs a path`, { argument: `actions.${pathless}.path` });
+                const held = parsed.value.actions.findIndex((item) => item.hold !== undefined && item.action !== 'key' && item.action !== 'press');
+                if (held >= 0) return fail('invalid-argument', `Action ${held} (${parsed.value.actions[held]?.action}) cannot hold: only key and press hold a key`, { argument: `actions.${held}.hold` });
                 // A drag value that starts like an offset must be a whole one: refused here, before the page is opened
                 for (const [index, item] of parsed.value.actions.entries()) {
                     if (item.action !== 'drag' || item.value === undefined) continue;
@@ -267,12 +275,13 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 const steps: InteractStep[] = parsed.value.actions.map((item) => ({
                     action: item.action,
                     ...(item.path !== undefined && { path: item.path }),
-                    ...(item.value !== undefined && { value: item.value })
+                    ...(item.value !== undefined && { value: item.value }),
+                    ...(item.hold !== undefined && { hold: item.hold })
                 }));
                 try {
                     const result = await browser.interact(appId, target.viewRevision, steps);
                     const failed = result.results.some((step) => !step.ok);
-                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, emits: result.events, cursor: result.cursor, ...pendingScenes(result.pending) };
+                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, emits: result.events, cursor: result.cursor, ...pendingScenes(result.pending), ...(result.moving !== undefined && { moving: result.moving }) };
                     return failed ? { isError: true, body: { error: 'action-failed', message: 'An action failed; the later actions did not run', ...body } } : succeed(body);
                 } catch (error) {
                     if (error instanceof BrowserUnavailableError) return browserUnavailable(error);

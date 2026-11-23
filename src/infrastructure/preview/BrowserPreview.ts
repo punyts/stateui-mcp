@@ -33,6 +33,11 @@ export const INTERACT_ACTIONS = ['click', 'fill', 'press', 'hover', 'select', 'c
 export const PATHLESS_ACTIONS: readonly InteractAction[] = ['key'];
 export type InteractAction = (typeof INTERACT_ACTIONS)[number];
 
+/** The longest a `key` or `press` may hold its key down, in milliseconds */
+export const MAX_HOLD_MS = 5000;
+/** How long an interaction waits for the games it started to come to rest (`data-play="moving"`) */
+const REST_TIMEOUT_MS = 5000;
+
 export interface InteractStep {
     readonly action: InteractAction;
     /** The state path of a node, such as `$.app.children.form.children.email` (the leading `$.` is optional); `key` takes none */
@@ -42,6 +47,8 @@ export interface InteractStep {
      * and `choose`, the state path of the drop target for `drag` or an offset `+dx,+dy` in page pixels (`dragTarget.ts`)
      */
     readonly value?: string;
+    /** For `key` and `press`: hold the key down this many milliseconds before letting go, as a player steering a game does */
+    readonly hold?: number;
 }
 
 export interface InteractStepResult {
@@ -59,6 +66,8 @@ export interface InteractResult {
     readonly cursor: number;
     /** The drawings and scenes (by state path) still marked `data-render="pending"` when the wait for them ran out */
     readonly pending?: readonly string[];
+    /** The scenes (by state path) whose game still moved when the wait for it to rest ran out */
+    readonly moving?: readonly string[];
 }
 
 export interface ScreenshotOptions {
@@ -343,10 +352,12 @@ export class BrowserPreview {
             }
             // An action may change what a drawing shows (a press that moves a shape): wait for it to draw, then settle
             const pending = await this.waitDrawn(page);
+            // A key held in a game may leave bodies moving (a ball still falling): wait for them to rest
+            const moving = await this.waitResting(page);
             await this.settle(page);
             const { events, cursor } = this.hub.readEvents(appId, eventCursor);
             report(PREVIEW_CATEGORY, 'Interaction run', { appId, revision, steps: steps.length, done: results.filter((result) => result.ok).length, failed: results.some((result) => !result.ok), ms: msSince(start) });
-            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor, ...pendingOf(pending) };
+            return { results, errors: this.hub.errorsSince(appId, errorCursor), events, cursor, ...pendingOf(pending), ...(moving.length > 0 && { moving }) };
         });
     }
 
@@ -673,7 +684,7 @@ export class BrowserPreview {
             case 'key':
                 if (step.value === undefined) throw new InteractionError(`${step.action} needs a key, such as Enter or Space`);
                 await focus();
-                await page.keyboard.press(step.value);
+                await this.pressKey(page, step.value, step.hold);
                 return;
             default:
                 throw new InteractionError(`${step.action} is not done on a shape`);
@@ -684,7 +695,7 @@ export class BrowserPreview {
         if (step.action === 'key' && step.path === undefined) {
             if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
             // The key goes to whatever has focus: a focus action, or the control an earlier action left focused
-            await page.keyboard.press(step.value);
+            await this.pressKey(page, step.value, step.hold);
             return;
         }
         if (step.path === undefined) throw new InteractionError(`${step.action} needs a path`);
@@ -712,7 +723,7 @@ export class BrowserPreview {
             // A key with the path of a node that is not a shape goes to whatever has focus, as without a path
             await element.dispose();
             if (step.value === undefined) throw new InteractionError('key needs a key, such as Space or ArrowRight');
-            await page.keyboard.press(step.value);
+            await this.pressKey(page, step.value, step.hold);
             return;
         }
         if (step.action === 'focus') {
@@ -850,6 +861,48 @@ export class BrowserPreview {
             stillPending = await this.waitSettled(page);
         }
         return stillPending;
+    }
+
+    /** Presses a key, or holds it down `hold` milliseconds and lets go */
+    private async pressKey(page: Page, key: string, hold: number | undefined): Promise<void> {
+        if (hold === undefined) {
+            await page.keyboard.press(key);
+            return;
+        }
+        await page.keyboard.down(key);
+        try {
+            await page.waitForTimeout(Math.min(hold, MAX_HOLD_MS));
+        } finally {
+            await page.keyboard.up(key);
+        }
+    }
+
+    /**
+     * Waits until no scene in the runtime frame is marked `data-play="moving"` (its game loop moves bodies), up to
+     * `REST_TIMEOUT_MS`, and gives the state paths of those still moving then: a game whose bodies never stop
+     */
+    private async waitResting(page: Page): Promise<readonly string[]> {
+        const frame = page.frames().find((candidate) => candidate !== page.mainFrame());
+        if (frame === undefined) return [];
+        const movingPaths = (): string[] => {
+            const found: string[] = [];
+            const walk = (root: ParentNode): void => {
+                for (const element of Array.from(root.querySelectorAll('*')) as ScopedElement[]) {
+                    if (element.getAttribute('data-play') === 'moving') found.push(element.scope?.basePath ?? element.localName);
+                    if (element.shadowRoot) walk(element.shadowRoot);
+                }
+            };
+            walk(document);
+            return found;
+        };
+        try {
+            await frame.waitForFunction(`(${movingPaths.toString()})().length === 0`, undefined, { timeout: REST_TIMEOUT_MS, polling: 'raf' });
+            return [];
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TimeoutError') return frame.evaluate(`(${movingPaths.toString()})()`) as Promise<string[]>;
+            if (error instanceof Error && DETACHED.test(error.message)) return [];
+            throw error;
+        }
     }
 
     /**

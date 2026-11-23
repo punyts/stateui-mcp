@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **`ui_interact` holds a key, and waits for a game to rest** (docs/design/stateui-game-loop.md, F3). A `key` or
+  `press` action takes `hold` (1 to `MAX_HOLD_MS`, 5000 ms): the key goes down, stays down that long and comes up, as
+  a player steering a scene3d game does. `hold` on any other action is refused before the page opens
+  (`invalid-argument`, `actions.N.hold`). After the actions the call waits up to 5 s for no scene to be marked
+  `data-play="moving"`, and lists in `moving` the scene paths still moving then. Tests: `test/tools.test.ts`,
+  `test/chunk3d.integration.test.ts` ("F3").
+- **The guide topic `scene3d-play`**: `play`, `body`, `velocity`, collisions, the writes at contact and rest, `contact`
+  and its `$.raised` path, copies that need a `$row` position, spawning with `after`, and trying a game with
+  `ui_interact`. Tests: `src/infrastructure/mcp/instructions.test.ts`, `test/toolSet.test.ts`.
 - **The view host passes requests that wait for the owner to the app** (docs/design/statenet-requests.md, R2). It
   writes the client's requests to `$.runtime.requests` (on every `onRequests` and with the load), raises `sync.requested`
   once for each own pending request made in this session, and answers the frame's `decide` with `approve`, `reject` or

@@ -208,6 +208,48 @@ describe.skipIf(!installed)('the 3D chunk in the headless browser', () => {
         expect(took).toBeGreaterThan(1_000);
     });
 
+    /** A scene whose game runs, with one body (docs/design/stateui-game-loop.md) */
+    const game = (body: Record<string, unknown>): Record<string, unknown> => ({
+        component: 'scene3d',
+        _title: 'Game',
+        play: { running: true },
+        children: { paddle: { component: 'mesh', geometry: { kind: 'box' }, position: [0, 0, 0], ...body } }
+    });
+
+    it('should hold a key with ui_interact, so the game moves a body while it is down, and come back once it rests (F3)', async () => {
+        // Arrange
+        await createApp(harness.client, 'paddle', rootOf({ viewer: game({ body: { control: { ArrowRight: [4, 0, 0] } } }) }));
+
+        // Act
+        const played = await call(harness.client, 'ui_interact', {
+            app: 'paddle',
+            actions: [
+                { action: 'focus', path: '$.screens.home.children.viewer' },
+                { action: 'key', value: 'ArrowRight', hold: 500 }
+            ]
+        });
+        const state = await call(harness.client, 'ui_state_get', { app: 'paddle' });
+
+        // Assert
+        expect(played.isError).toBe(false);
+        expect(played.body['moving']).toBeUndefined();
+        const position = (state.body['state'] as { screens: { home: { children: { viewer: { children: { paddle: { position: number[] } } } } } } }).screens.home.children.viewer.children.paddle.position;
+        expect(position[0]).toBeGreaterThan(1);
+        expect(position.slice(1)).toEqual([0, 0]);
+    });
+
+    it('should name in moving a scene whose game never comes to rest (F3)', { timeout: 40_000 }, async () => {
+        // Arrange
+        await createApp(harness.client, 'drifts', rootOf({ viewer: game({ velocity: [1, 0, 0], body: {} }) }));
+
+        // Act: the wait for the game to rest runs out after 5 s
+        const played = await call(harness.client, 'ui_interact', { app: 'drifts', actions: [{ action: 'focus', path: '$.screens.home.children.viewer' }] });
+
+        // Assert
+        expect(played.isError).toBe(false);
+        expect(played.body['moving']).toEqual(['$.screens.home.children.viewer']);
+    });
+
     it('should return the capture with scenes: pending and the scene path when a scene never draws (G3.10)', { timeout: 40_000 }, async () => {
         // Arrange
         await createApp(harness.client, 'never-draws', rootOf({ viewer: sceneWith('stuck') }));

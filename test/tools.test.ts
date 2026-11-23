@@ -371,6 +371,17 @@ describe('live tools', () => {
         expect(browser['interact']).not.toHaveBeenCalled();
     });
 
+    it('should refuse hold on an action other than key and press, and pass a held key on to the page', async () => {
+        const app = await createForm();
+
+        const refused = await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'click', path: '$.app', hold: 300 }] });
+        expect(browser['interact']).not.toHaveBeenCalled();
+        await call(harness.client, 'ui_interact', { app: app.name, actions: [{ action: 'key', value: 'ArrowRight', hold: 300 }] });
+
+        expect(refused.body).toMatchObject({ error: 'invalid-argument', argument: 'actions.0.hold' });
+        expect(browser['interact']).toHaveBeenCalledWith(expect.any(String), expect.any(Number), [{ action: 'key', value: 'ArrowRight', hold: 300 }]);
+    });
+
     it('should refuse a malformed drag offset before opening the page, showing the accepted form', async () => {
         const app = await createForm();
 
