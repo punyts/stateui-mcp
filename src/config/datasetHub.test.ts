@@ -185,7 +185,7 @@ beforeEach(async () => {
         async (persona, name, handlers) =>
             new DatasetSession({
                 address: namespaces.address(name),
-                access: accessOf(persona),
+                access: async () => accessOf(persona),
                 connect: async (address, connection, access) => {
                     const authority = await namespaces.hosted(address);
                     if (authority === undefined) throw new Error('no dataset');

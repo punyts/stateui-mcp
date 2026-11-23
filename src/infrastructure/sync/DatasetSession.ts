@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { createSyncClient, randomId } from '@punyts/state-sync';
 import type { JsonValue as SyncJson, LocalChange, StoreBridge, SyncClient, SyncRequest, SyncState, SyncTransport } from '@punyts/state-sync';
+import { readGrant } from '@punyts/state-sync/authority';
 import type { Access, AuthorityConnection, AuthoritySession } from '@punyts/state-sync/authority';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
@@ -59,10 +60,22 @@ export function sessionTransport(open: (connection: AuthorityConnection) => Prom
     };
 }
 
+/** How long before its grant expires a session reconnects with a fresh access, by default */
+export const RENEW_BEFORE_MS = 10 * 60_000;
+
+/** The shortest wait before a renewal, so a grant about to expire does not make the session reconnect in a loop */
+const RENEW_MIN_MS = 1_000;
+
+/** The longest wait a timer takes */
+const TIMER_MAX_MS = 2 ** 31 - 1;
+
 export interface DatasetSessionOptions {
     readonly address: string;
-    readonly access: Access | undefined;
+    /** The person's access, read again on every connection; undefined connects unchecked */
+    readonly access: () => Promise<Access | undefined>;
     readonly connect: NamespaceConnect;
+    /** How long before the grant expires the session reconnects with a fresh access; default `RENEW_BEFORE_MS` */
+    readonly renewBeforeMs?: number;
     /** The records changed: the authority's, or the visible ones after a refusal or a request put them back */
     readonly onRecords: (records: JsonObject) => void;
     readonly onRequests: (requests: readonly SyncRequest[]) => void;
@@ -74,7 +87,8 @@ export interface DatasetSessionOptions {
  * One instance binding's sync session with a dataset's namespace (docs/design/statenet-requests.md, R3b): a sync
  * client in the server, as the person the instance acts for, so the dataset's authority checks their access. Its
  * visible state is the namespace's records with the binding's own changes on top until they are acked; a change kept
- * as a request is taken out again, and so is a refused one
+ * as a request is taken out again, and so is a refused one. Each connection reads the access again, and one made with a
+ * grant closes before the grant expires, so the client reconnects with a fresh one and sends what was unanswered again
  */
 export class DatasetSession {
     private state: SyncState = {};
@@ -106,7 +120,7 @@ export class DatasetSession {
         this.client = createSyncClient({
             namespace: syncNamespaceOf(options.address),
             bridge,
-            transport: sessionTransport((connection) => options.connect(options.address, connection, options.access)),
+            transport: sessionTransport((connection) => this.open(connection)),
             onStatus: (report) => {
                 if (report.waiting === 0 && report.pending === 0) for (const resolve of this.waiters.splice(0)) resolve();
             },
@@ -177,6 +191,24 @@ export class DatasetSession {
         this.client.stop();
         this.loaded();
         for (const resolve of this.waiters.splice(0)) resolve();
+    }
+
+    /** Connects with the access as it is now, and closes the connection before its grant expires */
+    private async open(connection: AuthorityConnection): Promise<AuthoritySession> {
+        const access = await this.options.access();
+        const session = await this.options.connect(this.options.address, connection, access);
+        const expires = access?.grant === undefined ? undefined : readGrant(access.grant)?.expires;
+        if (expires === undefined || !Number.isFinite(expires)) return session;
+        const wait = Math.min(TIMER_MAX_MS, Math.max(RENEW_MIN_MS, expires - Date.now() - (this.options.renewBeforeMs ?? RENEW_BEFORE_MS)));
+        const timer = setTimeout(() => connection.close(), wait);
+        timer.unref?.();
+        return {
+            receive: (text) => session.receive(text),
+            close: () => {
+                clearTimeout(timer);
+                session.close();
+            }
+        };
     }
 
     private apply(path: string, value: JsonValue | undefined): void {

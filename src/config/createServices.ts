@@ -261,7 +261,12 @@ export function createServices(options: ServicesOptions): Services {
         models,
         async (name) => (await storage.parts.findByName('data', name)) !== undefined,
         async (persona, name, handlers) =>
-            new DatasetSession({ address: datasetNamespaces.address(name), access: await access?.accessFor(persona, name), connect: connectDataset, ...handlers }),
+            new DatasetSession({
+                address: datasetNamespaces.address(name),
+                access: async () => access?.accessFor(persona, name),
+                connect: connectDataset,
+                ...handlers
+            }),
         options.report
     );
     const authorities = new AppAuthorities(
