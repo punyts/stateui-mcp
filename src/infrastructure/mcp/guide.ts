@@ -138,7 +138,7 @@ const SCENE3D = [
 ].join('\n');
 
 const SCENE3D_MODELS = [
-    '- model.src is the file reference { id, name, size, type } of a GLB (model/gltf-binary, binary glTF 2.0, at most 10 MiB) a person uploaded to the app\'s files, as listed by ui_state_get. Its embedded textures draw; a .gltf, a Draco, Meshopt or KTX2 compressed model or one with external files is refused (SUI-RUN-3D), a file that cannot be read is SUI-RUN-FILE, and the other nodes still draw.',
+    '- model.src is the file reference { id, name, size, type } of a GLB (model/gltf-binary, binary glTF 2.0, at most 10 MiB) a person uploaded to the app\'s files, as listed by ui_state_get. Its embedded textures draw; a .gltf, a Draco, Meshopt or KTX2 compressed model or one with external files is refused (SUI-RUN-3D), a file that cannot be read is SUI-RUN-FILE, and the other nodes still draw. A set exportRequest on a scene3d (any value, such as a counter or the turn, set by logic) saves what the scene draws as <_title>.glb in the app\'s files once per new value (meshes, repeat copies and models with world positions and plain colours; no textures, lights or labels). The scene writes exported { request, file } and raises exported with { file }, or writes exported { request, error } (too_large, quota, offline).',
     '- material.map is the file reference of an uploaded png, jpeg, gif or webp image, wrapped around the mesh and tinted by its color; another type is SUI-STATE-INVALID, and a file that cannot be read is SUI-RUN-FILE with the colour drawn.',
     '- repeat3d draws its row once per record of records (a list or a keyed map), linked like a list row ("<-position": "$row.at", "<-material": "$row.paint"). The row is a mesh, or a group3d of meshes and groups (a piece of several parts; at most 16 meshes), each mesh drawn as one instanced mesh. Each node of a record has its own position, rotation, scale, visible and material.color; geometry and the rest of material are shared, so records that differ there are SUI-RUN-DRAW. At most 20,000 records (more are cut, SUI-RUN-CAP); keep them small, as an app\'s data is at most 512 KiB.'
 ].join('\n');
@@ -215,7 +215,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
     { name: 'drawing', when: 'a drawing and its shapes', text: fixed(DRAWING), alwaysOn: false },
     { name: 'paint-field', when: 'a paintField (a painted signature or sketch)', text: fixed(PAINT_FIELD), alwaysOn: false },
     { name: 'scene3d', when: 'a scene3d, its node values and its camera', text: fixed(SCENE3D), alwaysOn: false },
-    { name: 'scene3d-models', when: 'a 3D model file, a texture or a repeat3d', text: fixed(SCENE3D_MODELS), alwaysOn: false },
+    { name: 'scene3d-models', when: 'a 3D model file, a texture, a repeat3d or a GLB export', text: fixed(SCENE3D_MODELS), alwaysOn: false },
     { name: 'scene3d-behavior', when: 'a pressable 3D node, keys over a scene, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: false },
     { name: 'safety', when: 'you delete or rename a part', text: fixed(SAFETY), alwaysOn: false }
 ] satisfies GuideTopic[]);
