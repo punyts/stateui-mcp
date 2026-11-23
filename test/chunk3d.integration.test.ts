@@ -57,6 +57,7 @@ const CHUNK_SCRIPT = `globalThis.__stateui3d = { version: 'fake-chunk', createSc
             return new Promise(function (resolve) { requestAnimationFrame(function () { resolve(); }); });
         },
         hit: function () { return undefined; },
+        info: function () { return { editing: 0 }; },
         boundsOf: function () { return undefined; },
         elementOf: function () { return undefined; },
         setReducedMotion: function () {},
