@@ -85,9 +85,10 @@ import { forgetListed } from './forgetListed.js';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { createReleaseGate } from './fileRelease.js';
+import { newRequests, requestEntries } from './requestsView.js';
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { ServerMessage, ViewChannel } from './viewChannel.js';
-import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncState, SyncStatusReport } from '@punyts/state-sync';
+import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncRequest, SyncState, SyncStatusReport } from '@punyts/state-sync';
 import type { AppAsk, AppDocument, AppHost, AppOpenRequest, AttachedApp, EmbeddedApp, OpenedApp, RuntimeCore, StateuiPage } from '@punyts/stateui-app';
 
 /** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
@@ -361,6 +362,10 @@ export class LiveView {
     private shown: ViewState = { data: {}, app: {}, screens: {} };
     private readonly listeners = new Set<(changes: LocalChange[]) => void>();
     private syncStatus: { mode: 'full'; status: string; waiting: number };
+    /** The requests the sync client knows, as the runtime's `$.runtime.requests` (docs/design/statenet-requests.md) */
+    private requests: JsonRecord = {};
+    /** The ids of this view's own requests it has told the app of with `sync.requested`, or found in a welcome */
+    private readonly announced = new Set<string>();
     private readonly sentIcons = new Set<string>();
     private revision = 0;
     /** Counts the loads and in-place renders, so the server can drop the errors an earlier one reported */
@@ -454,6 +459,7 @@ export class LiveView {
             onRejected: (rejection) => {
                 if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: rejection.path, reason: rejection.reason, ...(rejection.code === undefined ? {} : { code: rejection.code }) } });
             },
+            onRequests: (requests) => this.onRequests(requests),
             // The client has deleted its parts already; the frame still shows the app
             onRevoked: (message) => this.forget(message)
         });
@@ -549,6 +555,28 @@ export class LiveView {
         this.frame?.remove();
         this.frame = undefined;
         this.unmount();
+    }
+
+    /**
+     * The requests the sync client knows changed: the runtime gets them all at `$.runtime.requests`, and each of this
+     * view's own that is new and pending raises `sync.requested`, so the app says it was sent for approval. A list that
+     * comes before the client is online is a welcome's: those were made in an earlier session and raise nothing
+     */
+    private onRequests(requests: readonly SyncRequest[]): void {
+        this.requests = requestEntries(requests);
+        if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.requests', value: this.requests }] });
+        for (const payload of newRequests(requests, this.announced, this.syncStatus.status !== 'online')) {
+            if (this.loaded) this.post({ type: 'event', name: 'sync.requested', payload });
+        }
+    }
+
+    /** A `request.*` command of the app: the sync client sends the decision, or drops it while offline */
+    private onDecide(message: Record<string, unknown>): void {
+        const id = message['id'];
+        if (this.client === undefined || typeof id !== 'string') return;
+        if (message['action'] === 'approve') this.client.approve(id);
+        else if (message['action'] === 'reject') this.client.reject(id, typeof message['note'] === 'string' ? message['note'] : undefined);
+        else if (message['action'] === 'withdraw') this.client.withdraw(id);
     }
 
     private onSyncStatus(report: SyncStatusReport): void {
@@ -677,7 +705,7 @@ export class LiveView {
             ...(at !== undefined && { open: at }),
             ...(files !== undefined && { files })
         });
-        this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
+        this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }, { path: '$.runtime.requests', value: this.requests }] });
         this.loaded = true;
         this.sentDocument = app.document;
         this.sentIcons.clear();
@@ -732,6 +760,9 @@ export class LiveView {
                 break;
             case 'change':
                 this.onChange(message['change']);
+                break;
+            case 'decide':
+                this.onDecide(message);
                 break;
             case 'emit':
                 if (typeof message['name'] === 'string') {

@@ -53,6 +53,17 @@ describe('the guide topics', () => {
         expect(new Set(GUIDE_TOPIC_NAMES).size).toBe(GUIDE_TOPICS.length);
     });
 
+    it('should teach in the saving topic how a change waits for the owner and how an app lists and decides requests', () => {
+        // Act
+        const text = guideText('saving', NO_CATALOG);
+
+        // Assert
+        expect(text).toContain('sends ordinary changes that wait for the owner');
+        expect(text).toContain('an on entry for sync.requested on $.app replaces that');
+        expect(text).toContain('$.runtime.requests lists the requests by id');
+        expect(text).toContain('request.approve, request.reject or request.withdraw with "value": "$row.id"');
+    });
+
     it.each(GUIDE_TOPICS.map((topic) => [topic.name, topic] as const))('should keep %s under the cap with a when line, with and without a catalog', (_name, topic) => {
         // Act
         const texts = [topic.text(CATALOG), topic.text(NO_CATALOG)];
