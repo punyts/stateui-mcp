@@ -8,8 +8,8 @@ import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { report as reportArea } from '@punyts/core';
-import { compilePattern, matchPattern } from '@punyts/stateui-app/core';
-import type { PathPattern } from '@punyts/stateui-app/core';
+import { compilePattern, matchPattern } from '@punyts/state';
+import type { PathPattern } from '@punyts/state';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import type { ByteRange } from '../../application/ports/UiFileStore.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
@@ -29,7 +29,7 @@ import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
 import { byteRange } from './byteRange.js';
-import { GRANT_RENEW_MS, PathGrants } from './PathGrants.js';
+import { appFilesPattern, MemoryGrantKeys, PATH_TOKEN_RENEW_MS, PathTokens, type GrantKeys, type PathReader } from './PathTokens.js';
 import { APP_PAGE_CSP, COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
 /** The host names of this machine itself */
@@ -59,6 +59,8 @@ export interface HttpTenant {
      * (`ack` `rejected`) and its events are dropped
      */
     readonly access?: 'owner' | 'use' | 'view';
+    /** Who reads the owner's apps through this tenant, as the subject of a `/paths` token; absent: the owner */
+    readonly reader?: PathReader;
     /**
      * Sync namespaces the browser deletes before it opens the app (`data-forget`): what it kept of an instance the
      * person no longer has, such as their own after a move from `use` to `view`
@@ -103,12 +105,15 @@ export interface HttpServerOptions {
     /** The one owner of a local server, or how a request finds its owner on a server with many */
     readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
     /**
-     * The tenant of an owner named in a `/paths` URL (`HttpTenant.instances.owner`), for a read with a grant and no
+     * The tenant of an owner named in a `/paths` URL (`HttpTenant.instances.owner`), for a read with a token and no
      * cookie; undefined when there is none. Absent: the one tenant of a local server, when it is that owner
      */
     readonly ownerTenant?: (owner: string) => Promise<HttpTenant | undefined>;
-    /** The key of the read grants of `/paths` (`pathGrantKey`), the same on every server of a host. Absent: a random one */
-    readonly pathGrantKey?: Uint8Array;
+    /**
+     * The owners' signing keys and the revocations the tokens of `/paths` are signed and checked with, the same on every
+     * server of a host. Absent: keys this server makes and keeps in memory (`MemoryGrantKeys`)
+     */
+    readonly grantKeys?: GrantKeys;
     /**
      * Routes of the embedding server, tried before the endpoint's own and after the host and origin checks: true when
      * they answered the request. A thrown `HttpError` is answered with its status and code
@@ -239,7 +244,7 @@ interface PathRead {
     readonly response: ServerResponse;
     /** A `HEAD`: the headers only */
     readonly head: boolean;
-    /** The read grant of the query, `g` */
+    /** The read token of the query, `g` (a `/paths` token, `PathTokens`) */
     readonly grant?: string;
 }
 
@@ -266,7 +271,7 @@ const PREVIEW_CATEGORY = 'stateui-mcp.preview';
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
  * | `POST /apps/:appId/export` | a CSV file of records in the persona's own instance: `{ source, name, request }` (`RecordExportRequest`), filtered and sorted here; never rows from the browser |
  * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
- * | `GET /paths/<owner>/apps/:appId/files/:fileId` | the bytes of an upload by its statenet path (`pathsRoute`): byte ranges, inline for pictures, audio and video, read with the session or a read grant `?g=` |
+ * | `GET /paths/<owner>/apps/:appId/files/:fileId` | the bytes of an upload by its statenet path (`pathsRoute`): byte ranges, inline for pictures, audio and video, read with the session or a `/paths` token `?g=` (`PathTokens`) |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
  *
  * A second listener on `runtimePort` is the runtime origin. It serves only the app frame:
@@ -297,7 +302,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (answer.refuse === 404) throw new HttpError(404, 'Not found', 'not_found');
         throw new HttpError(answer.refuse, answer.refuse === 401 ? 'Sign in first' : 'Not allowed', answer.refuse === 401 ? 'unauthorized' : 'forbidden');
     }
-    const grants = new PathGrants(options.pathGrantKey);
+    const grants = new PathTokens(options.grantKeys ?? new MemoryGrantKeys());
     const ownerTenant = options.ownerTenant ?? (async (owner: string): Promise<HttpTenant | undefined> => (fixed !== undefined && fixed.tenant.instances.owner === owner ? fixed.tenant : undefined));
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
@@ -430,7 +435,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         );
     }
 
-    async function appRoute({ instances, persona, forget }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function appRoute({ instances, persona, forget, reader }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
@@ -452,7 +457,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 namespace: instances.namespace(part, persona),
                 ...(forget !== undefined && forget.length > 0 && { forget }),
                 paths: appPaths(instances.owner, part.id),
-                grant: grants.issue(instances.owner, part.id)
+                grant: await grants.issue(instances.owner, part.id, reader)
             }),
             { 'Content-Security-Policy': inPage === undefined ? hostPageCsp(runtimeOrigin) : APP_PAGE_CSP, 'Cache-Control': 'no-store' }
         );
@@ -526,7 +531,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     /**
      * `GET` or `HEAD` of `/paths/<segments>`: the statenet path `$.<segment>.<segment>…`, read by the first source whose
      * pattern it matches exactly (no deeper or shallower path). A path no source matches, and one the reader may not read,
-     * are both `404`, so the route does not tell which paths exist. The query is only a grant, `g`
+     * are both `404`, so the route does not tell which paths exist. The query is only a token, `g`
      */
     async function pathsRoute(request: IncomingMessage, response: ServerResponse, url: URL, segments: readonly string[], head: boolean): Promise<void> {
         if (segments.length === 0 || !segments.every((segment) => PATH_SEGMENT.test(segment))) throw new HttpError(404, 'Not found', 'not_found');
@@ -542,11 +547,11 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     }
 
     /**
-     * Who reads `app` of `owner`: with a grant, the owner's tenant when the grant is good for the app; without, the
-     * tenant of the request's session, when it is that owner's (the owner, an org member, a person given the app)
+     * Who reads `path` of `owner`: with a token, the owner's tenant when the token lets its holder read the path; without,
+     * the tenant of the request's session, when it is that owner's (the owner, an org member, a person given the app)
      */
-    async function readerOf(request: IncomingMessage, owner: string, app: string, grant: string | undefined): Promise<HttpTenant | undefined> {
-        if (grant !== undefined) return grants.allows(grant, owner, app) ? ownerTenant(owner) : undefined;
+    async function readerOf(request: IncomingMessage, owner: string, path: string, grant: string | undefined): Promise<HttpTenant | undefined> {
+        if (grant !== undefined) return (await grants.allows(grant, owner, path)) ? ownerTenant(owner) : undefined;
         const answer = await findTenant(request);
         return 'tenant' in answer && answer.tenant.instances.owner === owner ? answer.tenant : undefined;
     }
@@ -558,7 +563,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
      */
     async function fileSource({ owner, app, file }: Readonly<Record<string, string>>, { request, response, head, grant }: PathRead): Promise<void> {
         if (owner === undefined || app === undefined || file === undefined || !isAppId(app) || !isAppId(file)) throw new HttpError(404, 'Not found', 'not_found');
-        const tenant = await readerOf(request, owner, app, grant);
+        const tenant = await readerOf(request, owner, `${appFilesPattern(app)}.${file.toLowerCase()}`, grant);
         if (tenant === undefined || (await tenant.instances.find(app)) === undefined) throw new HttpError(404, 'Not found', 'not_found');
         let status = 200 as 200 | 206 | 304 | 416;
         let range: ByteRange | undefined;
@@ -702,7 +707,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             return;
         }
         if (!('tenant' in answer)) return refuseUpgrade(socket, answer.refuse, answer.refuse === 404 ? 'Not Found' : answer.refuse === 401 ? 'Unauthorized' : 'Forbidden');
-        const { instances, liveViews, hub, retain, persona } = answer.tenant;
+        const { instances, liveViews, hub, retain, persona, reader } = answer.tenant;
         const readOnly = answer.tenant.access === 'view';
         const part = await instances.find(appId);
         if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
@@ -744,8 +749,13 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     }
                 );
             const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
-            // The view reads its files with a grant that lasts minutes: a new one before it runs out, while the socket is open
-            const renew = setInterval(() => sendView({ type: 'grant', grant: grants.issue(instances.owner, part.id) }), GRANT_RENEW_MS);
+            // The view reads its files with a token that lasts minutes: a new one before it runs out, while the socket is open
+            const renew = setInterval(() => {
+                grants.issue(instances.owner, part.id, reader).then(
+                    (grant) => sendView({ type: 'grant', grant }),
+                    (error: unknown) => report.info('A /paths token was not signed', { app: appId, error: error instanceof Error ? error.message : String(error) })
+                );
+            }, PATH_TOKEN_RENEW_MS);
             const rate = options.socketMessagesPerSecond;
             // A token bucket: `rate` frames a second, at most twice that many at once
             let tokens = rate === undefined ? 0 : rate * 2;
