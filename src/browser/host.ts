@@ -80,6 +80,7 @@
  */
 
 import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace, randomId } from '@punyts/state-sync';
+import { filesSource } from './filesSource.js';
 import { forgetListed } from './forgetListed.js';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
@@ -530,7 +531,9 @@ export class LiveView {
                 break;
             case 'grant':
                 // The read grant of `/paths` the frame appends to the URLs it loads; the first came with the page
-                if (typeof message.grant === 'string') this.body.dataset['grant'] = message.grant;
+                if (typeof message.grant !== 'string') break;
+                this.body.dataset['grant'] = message.grant;
+                if (this.loaded) this.post({ type: 'grant', grant: message.grant });
                 break;
             case 'rejected':
                 if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: message.path, reason: message.reason, ...(message.code === undefined ? {} : { code: message.code }) } });
@@ -660,6 +663,7 @@ export class LiveView {
         // The mode, the language and the screen to open go with the document, so the first frame painted shows them
         const at = this.openAt;
         this.openAt = undefined;
+        const files = filesSource(this.body.dataset['paths'], this.body.dataset['grant'], window.location.href);
         this.post({
             type: 'load',
             document: app.document,
@@ -670,7 +674,8 @@ export class LiveView {
             ...(this.hostKeys.length > 0 && { keys: this.hostKeys }),
             ...(this.mode !== undefined && { active: { mode: this.mode } }),
             ...(this.locale !== undefined && { locale: this.locale }),
-            ...(at !== undefined && { open: at })
+            ...(at !== undefined && { open: at }),
+            ...(files !== undefined && { files })
         });
         this.post({ type: 'write', writes: [{ path: '$.runtime.sync', value: this.syncStatus }] });
         this.loaded = true;
