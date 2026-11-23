@@ -144,7 +144,7 @@ const SCENE3D_MODELS = [
 ].join('\n');
 
 const SCENE3D_BEHAVIOR = [
-    '- interactive: true on a 3D node (with a _label) makes it pressable: its "on" entries run on press (a click, not a drag that turns the camera) and hover (once each time the pointer enters), and on a repeat3d copy with $row at its record. ui_tree with rendered: true lists those nodes (...rows.<recordKey> for a copy) and ui_interact clicks, hovers, focuses and presses keys on their paths; drag turns the camera of a scene with controls.',
+    '- interactive: true on a 3D node (with a _label) makes it pressable: its "on" entries run on press (a click, not a drag that turns the camera) and hover (once each time the pointer enters), and on a repeat3d copy with $row at its record. ui_tree with rendered: true lists those nodes (...rows.<recordKey> for a copy) and ui_interact clicks, hovers, focuses and presses keys on their paths; drag turns the camera of a scene with controls. keys on a scene3d (arrows, Space, Enter, Escape, a to z, 0 to 9) makes the focused scene raise key with { key } for a listed key instead of moving the camera; each press is written to $.raised.<scene path without $.>.key, so a rule with when { path } there runs on every press and reads $trigger.key. random(seed, n) gives a whole number 0 to n - 1 that depends only on the seed: seed it from state (game id and turn) so every player sees the same roll.',
     '- label3d draws its _text (plain text, linkable) in the page font, always facing the camera, at its position; fontSize is in scene units (0.3 by default) and color defaults to the theme text colour. An empty _text draws nothing.',
     '- A node with transition ({ duration, easing } as for 2D shapes) eases position, rotation, scale, material color and opacity, a light\'s intensity and a camera\'s position and target when state changes them; with reduced motion it jumps. animate ({ name: spin, bob or pulse, duration, loop, delay }) plays on a node, and a model plays its GLB clip named by animation while playing is true; neither writes state, an unknown clip is SUI-RUN-3D naming the file\'s clips, and with reduced motion neither plays.',
     '- Check a scene with ui_screenshot of its path: it waits until the scene, its models and textures are drawn and its transitions have arrived (a playing animate or clip does not hold it back).'
@@ -216,7 +216,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = Object.freeze([
     { name: 'paint-field', when: 'a paintField (a painted signature or sketch)', text: fixed(PAINT_FIELD), alwaysOn: false },
     { name: 'scene3d', when: 'a scene3d, its node values and its camera', text: fixed(SCENE3D), alwaysOn: false },
     { name: 'scene3d-models', when: 'a 3D model file, a texture or a repeat3d', text: fixed(SCENE3D_MODELS), alwaysOn: false },
-    { name: 'scene3d-behavior', when: 'a pressable 3D node, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: false },
+    { name: 'scene3d-behavior', when: 'a pressable 3D node, keys over a scene, a label3d, 3D motion or the check of a scene', text: fixed(SCENE3D_BEHAVIOR), alwaysOn: false },
     { name: 'safety', when: 'you delete or rename a part', text: fixed(SAFETY), alwaysOn: false }
 ] satisfies GuideTopic[]);
 
