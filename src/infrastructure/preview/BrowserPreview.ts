@@ -596,7 +596,8 @@ export class BrowserPreview {
     /**
      * Refuses the drag of a shape that is not draggable, before the mouse goes down, so its position stays as it was.
      * An SVG shape that can be dragged carries `data-draggable`; on canvas the mouse is moved onto the proxy's box,
-     * and the canvas beneath shows the `move` cursor over a draggable shape. A node that is not a shape passes
+     * and the canvas beneath shows the `move` cursor over a draggable 2D shape (and anywhere in a 3D scene with controls,
+     * where the drag turns the camera) and `grab` over a draggable 3D node. A node that is not a shape passes
      */
     private async ensureDraggable(page: Page, statePath: string): Promise<void> {
         const element = await this.elementAt(page, statePath);
@@ -620,7 +621,7 @@ export class BrowserPreview {
                 const canvas = beside instanceof HTMLCanvasElement ? beside : (proxy.getRootNode() as ParentNode).querySelector('canvas');
                 return canvas?.style.cursor ?? '';
             });
-            if (cursor !== 'move') throw new InteractionError(notDraggableError(statePath, shape.kind));
+            if (cursor !== 'move' && cursor !== 'grab') throw new InteractionError(notDraggableError(statePath, shape.kind));
         } finally {
             await element.dispose();
         }

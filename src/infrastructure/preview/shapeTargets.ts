@@ -49,5 +49,5 @@ export function shapeActionError(statePath: string, kind: string, action: Intera
 
 /** Why a drag of a shape did not run: its position is left as it was, and the message says what makes a shape draggable */
 export function notDraggableError(statePath: string, kind: string): string {
-    return `${statePath} is a shape (${kind}) that is not draggable, so it was not dragged and its position is unchanged. A shape drags when it has interactive: true and draggable "x", "y" or "both" (a repeat copy also needs that axis linked to its record, "<-x": "$row.x")`;
+    return `${statePath} is a shape (${kind}) that is not draggable, so it was not dragged and its position is unchanged. A shape drags when it has interactive: true and draggable "x", "y" or "both" (a 3D node "x", "z" or "ground"; a repeat copy also needs that axis linked to its record, "<-x": "$row.x")`;
 }

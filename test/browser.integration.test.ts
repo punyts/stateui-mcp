@@ -1740,10 +1740,12 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
     const LID = `${SCENE}.children.lid`;
     const BASE = `${SCENE}.children.base`;
     const EYE = `${SCENE}.children.eye`;
+    const PEG = `${SCENE}.children.peg`;
 
     /**
      * A scene with orbit controls: an interactive, labelled box at the origin whose press sets a state value, and a box
-     * to its right that is not interactive, with a press entry that would set another
+     * to its right that is not interactive, with a press entry that would set another, and a peg below on the left that
+     * drags along x
      */
     const parts = {
         component: 'scene3d',
@@ -1761,7 +1763,8 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
                 _label: 'Lid',
                 on: { press: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'lid' }] }
             },
-            base: { component: 'mesh', position: [2, 0, 0], geometry: { kind: 'box' }, on: { press: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'base' }] } }
+            base: { component: 'mesh', position: [2, 0, 0], geometry: { kind: 'box' }, on: { press: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'base' }] } },
+            peg: { component: 'mesh', position: [-2, -1, 0], geometry: { kind: 'sphere', radius: 0.4 }, interactive: true, _label: 'Peg', draggable: 'x', on: { dragEnd: [{ command: 'set', target: '$.data.ui.p1.chosen', value: 'peg' }] } }
         }
     };
 
@@ -1848,6 +1851,24 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.body)).toContain(BASE);
         expect(await valueAt('$.data.ui.p1.chosen')).not.toBe('base');
+    });
+
+    it('should drag a draggable mesh by an offset with ui_interact, writing its position along x once and running dragEnd, with the camera left alone', async () => {
+        // Arrange
+        await reset();
+
+        // Act
+        const dragged = await call(harness.client, 'ui_interact', { app: 'parts', actions: [{ action: 'drag', path: PEG, value: '+40,+0' }] });
+        const chosen = await valueWhen('$.data.ui.p1.chosen', (value) => value === 'peg');
+        const position = (await valueAt(`${PEG}.position`)) as number[];
+        const camera = await call(harness.client, 'ui_state_get', { app: 'parts', path: `${EYE}.position` });
+
+        // Assert: to the right on its own ground, the camera not written
+        expect(dragged.isError).toBe(false);
+        expect(chosen).toBe('peg');
+        expect(position[0]).toBeGreaterThan(-2);
+        expect(position.slice(1)).toEqual([-1, 0]);
+        expect(camera.isError).toBe(true);
     });
 
     it('should drag from the mesh by an offset to orbit the camera, raising no press', async () => {
