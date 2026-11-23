@@ -22,7 +22,7 @@ const TREE_TEXT =
 export const APP_ARGUMENT = {
     type: 'object',
     description:
-        "The app node's own properties, all optional: layout (how the app places its screens; one shows at a time, so the default needs none), toasts (the toastRegion node; $.app.toasts is the target of show commands from every screen) and on (app events such as sync.rejected). Its component is app and its _title the title"
+        "The app node's own properties, all optional: layout (how the app places its screens; one shows at a time, so the default needs none), toasts (the toastRegion node; $.app.toasts is the target of show commands from every screen) and on (app events such as sync.rejected and sync.requested). Its component is app and its _title the title"
 } as const;
 
 export const HOME_ARGUMENT = {

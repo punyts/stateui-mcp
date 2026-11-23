@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **The view host passes requests that wait for the owner to the app** (docs/design/statenet-requests.md, R2). It
+  writes the client's requests to `$.runtime.requests` (on every `onRequests` and with the load), raises `sync.requested`
+  once for each own pending request made in this session, and answers the frame's `decide` with `approve`, `reject` or
+  `withdraw`. The guide's `saving` topic teaches the notice, the list and the `request.*` commands. Tests:
+  `src/browser/requestsView.test.ts`, `src/infrastructure/mcp/guide.test.ts`.
 - **The guide teaches the 3D gizmo** (docs/design/stateui-3d-gizmo.md): the `scene3d-behavior` topic says `gizmo` (move, rotate, scale) adds handles that write position, rotation or scale once on release, as a drag does; the hover, key and `random` sentences are shorter to keep the topic under its 2,000-character cap. Tests: `src/infrastructure/mcp/instructions.test.ts`, `test/toolSet.test.ts`.
 - **The guide teaches the `scene3d` GLB export** (docs/design/stateui-3d-glb-export.md): the `scene3d-models` topic says a set `exportRequest` saves the scene as a GLB file and what `exported` holds after. Test: `test/toolSet.test.ts` (the topic's size).
 - **The guide teaches dragging `repeat3d` copies** (docs/design/stateui-3d-drag-copies.md): the `scene3d-behavior` topic says a draggable copy needs `"<-position": "$row.<field>"` and that the drag writes that record field; three phrases of the topic are shorter to keep it under its 2,000-character cap. Tests: `src/infrastructure/mcp/guide.test.ts` (the cap), `test/toolSet.test.ts` (the topic's size).
