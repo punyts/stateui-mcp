@@ -330,6 +330,8 @@ export class LiveView {
     readonly appId: string;
     readonly viewId = randomId();
     readonly viewKind: 'browser' | 'headless';
+    /** The app's `/paths` URL (`data-paths`), under which its files are read */
+    readonly paths: string;
     private readonly runtimeUrl: string;
     private readonly runtimeOrigin: string;
     /** The hash of the 3D renderer chunk the runtime origin serves (`data-chunk-3d`), sent in `load` as `chunks`; undefined when there is none */
@@ -392,6 +394,7 @@ export class LiveView {
 
     constructor(private readonly body: HTMLElement) {
         this.appId = body.dataset['appId'] ?? '';
+        this.paths = body.dataset['paths'] ?? `/apps/${this.appId}`;
         this.surface = body.dataset['surface'] === 'page' && stateuiPage() !== undefined ? 'page' : 'frame';
         this.viewKind = body.dataset['viewKind'] === 'headless' ? 'headless' : 'browser';
         this.runtimeUrl = body.dataset['runtimeUrl'] ?? '';
@@ -524,6 +527,10 @@ export class LiveView {
                 break;
             case 'deleted':
                 this.forget('This app was deleted');
+                break;
+            case 'grant':
+                // The read grant of `/paths` the frame appends to the URLs it loads; the first came with the page
+                if (typeof message.grant === 'string') this.body.dataset['grant'] = message.grant;
                 break;
             case 'rejected':
                 if (this.loaded) this.post({ type: 'event', name: 'sync.rejected', payload: { path: message.path, reason: message.reason, ...(message.code === undefined ? {} : { code: message.code }) } });

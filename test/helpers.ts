@@ -208,3 +208,8 @@ export async function createApp(client: Client, name: string, home: object = FOR
     if (created.isError) throw new Error(`ui_app_create ${name}: ${JSON.stringify(created.body)}`);
     return { name, id: created.body['id'] as string };
 }
+
+/** The `/paths` URL of a file of an app on a harness's server */
+export function filePathOf(server: { readonly origin: string; readonly services: { readonly instanceViews: { readonly owner: string } } }, appId: string, fileId: string): string {
+    return `${server.origin}/paths/${server.services.instanceViews.owner}/apps/${appId.toLowerCase()}/files/${fileId}`;
+}

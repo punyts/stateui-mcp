@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Readable } from 'node:stream';
-import type { SaveFileResult, UiFileStore } from '../../application/ports/UiFileStore.js';
+import type { ByteRange, SaveFileResult, UiFileStore } from '../../application/ports/UiFileStore.js';
 import type { PartFolders } from './PartFolders.js';
 import { isMissing } from './atomicFile.js';
 
@@ -51,7 +51,7 @@ export class FsUiFileStore implements UiFileStore {
         return { kind: 'saved', size, sha256: hash.digest('hex'), head: head.slice(0, Math.min(size, HEAD_BYTES)) };
     }
 
-    async open(appId: string, fileId: string): Promise<Readable | undefined> {
+    async open(appId: string, fileId: string, range?: ByteRange): Promise<Readable | undefined> {
         const path = this.folders.fileBytes(appId, fileId);
         try {
             await stat(path);
@@ -59,7 +59,7 @@ export class FsUiFileStore implements UiFileStore {
             if (isMissing(error)) return undefined;
             throw error;
         }
-        return createReadStream(path);
+        return range === undefined ? createReadStream(path) : createReadStream(path, { start: range.start, end: range.end });
     }
 
     async read(appId: string, fileId: string): Promise<Uint8Array> {

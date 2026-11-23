@@ -21,7 +21,9 @@ export type ViewMessage =
     | { readonly type: 'command'; readonly id: string; readonly target: string; readonly command: string; readonly value?: JsonValue; readonly expiresAt: string }
     | { readonly type: 'locale'; readonly locale: string }
     | { readonly type: 'theme'; readonly kind: string; readonly name: string }
-    | { readonly type: 'deleted' };
+    | { readonly type: 'deleted' }
+    /** A new read grant of `/paths` for this one view, sent before the one it holds runs out */
+    | { readonly type: 'grant'; readonly grant: string };
 
 /** One open view of an app: a browser tab of the human, or the headless page of Playwright */
 export interface ViewConnection {

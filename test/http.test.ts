@@ -17,6 +17,12 @@ let harness: HttpHarness;
 let origin = '';
 let appId = '';
 let appNamespace = '';
+let owner = '';
+
+/** The `/paths` URL of a file of the app */
+function filePath(id: string, app = appId): string {
+    return `/paths/${owner}/apps/${app.toLowerCase()}/files/${id}`;
+}
 
 beforeAll(async () => {
     data = await tempData();
@@ -26,6 +32,7 @@ beforeAll(async () => {
     const found = await harness.server.services.useCases.findPartApp.execute('form');
     if (found.kind !== 'found') throw new Error('the form app is stored');
     appNamespace = harness.server.services.instanceViews.namespace(found.part);
+    owner = harness.server.services.instanceViews.owner;
 });
 
 afterAll(async () => {
@@ -99,6 +106,8 @@ describe('GET /apps/:appId', () => {
         expect(html).toContain(`data-app-id="${appId}"`);
         expect(html).toContain('<title>form</title>');
         expect(html).toContain(`data-namespace="${appNamespace}"`);
+        expect(html).toContain(`data-paths="/paths/${owner}/apps/${appId.toLowerCase()}"`);
+        expect(html).toMatch(/data-grant="[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"/);
         expect(csp).toContain("script-src 'self'");
         expect(csp).not.toContain('unsafe');
         expect(csp).toContain("frame-ancestors 'none'");
@@ -221,6 +230,8 @@ describe('the 3D chunk on the runtime origin', () => {
 
         expect(csp).toContain("script-src 'self' 'unsafe-eval'");
         expect(csp).toContain("connect-src 'none'");
+        expect(csp).toContain('img-src data: https: http://127.0.0.1:4100');
+        expect(csp).toContain('media-src https: http://127.0.0.1:4100');
         expect(csp).not.toContain('blob:');
         expect(csp).not.toContain('worker-src');
     });
@@ -338,7 +349,7 @@ describe('POST /apps/:appId/files', () => {
     it('should serve a stored file as an attachment under a sandbox policy', async () => {
         const stored = (await (await upload(`/apps/${appId}/files`, Buffer.from('hi'), 'a "quoted" name.txt')).json()) as { id: string };
 
-        const response = await fetch(`${origin}/apps/${appId}/files/${stored.id}`);
+        const response = await fetch(`${origin}${filePath(stored.id)}`);
 
         expect(response.status).toBe(200);
         expect(response.headers.get('content-disposition')).toMatch(/^attachment; filename\*=UTF-8''/);
@@ -414,7 +425,7 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
 
         const first = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE', headers: { origin } });
         const second = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
-        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+        const read = await fetch(`${origin}${filePath(id)}`);
 
         expect(first.status).toBe(204);
         expect(await first.text()).toBe('');
@@ -429,7 +440,7 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
         await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: id });
 
         const response = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
-        const read = await fetch(`${origin}/apps/${appId}/files/${id}`);
+        const read = await fetch(`${origin}${filePath(id)}`);
         await call(harness.client, 'ui_state_set', { app: 'form', path: '$.screens.home.children.form.children.email.value', value: '' });
         const afterLetGo = await fetch(`${origin}/apps/${appId}/files/${id}`, { method: 'DELETE' });
 
@@ -449,7 +460,7 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
         const badApp = await fetch(`${origin}/apps/not-a-uuid/files/${id}`, { method: 'DELETE' });
 
         expect([fromOther.status, unknownApp.status, badFile.status, badApp.status]).toEqual([404, 404, 400, 400]);
-        expect((await fetch(`${origin}/apps/${appId}/files/${id}`)).status).toBe(200);
+        expect((await fetch(`${origin}${filePath(id)}`)).status).toBe(200);
     });
 
     it('should refuse a cross-origin DELETE and a foreign Host header with 403, and keep the file', async () => {
@@ -462,7 +473,123 @@ describe('DELETE /apps/:appId/files/:fileId', () => {
         expect(crossOrigin.status).toBe(403);
         expect(((await crossOrigin.json()) as { error: string }).error).toBe('forbidden_origin');
         expect(foreignHost).toBe(403);
-        expect((await fetch(`${origin}${path}`)).status).toBe(200);
+        expect((await fetch(`${origin}${filePath(id)}`)).status).toBe(200);
+    });
+});
+
+describe('GET /paths/<owner>/apps/:appId/files/:fileId', () => {
+    async function stored(bytes: Buffer, name: string): Promise<string> {
+        return ((await (await upload(`/apps/${appId}/files`, bytes, name)).json()) as { id: string }).id;
+    }
+
+    async function pageGrant(): Promise<string> {
+        const html = await (await fetch(`${origin}/apps/${appId}`)).text();
+        return /data-grant="([^"]+)"/.exec(html)?.[1] ?? '';
+    }
+
+    it('should serve a picture inline, immutable, with its hash as the ETag and byte ranges offered', async () => {
+        // Arrange
+        const id = await stored(PNG_BYTES, 'plan.png');
+
+        // Act
+        const response = await fetch(`${origin}${filePath(id)}`);
+        const body = Buffer.from(await response.arrayBuffer());
+
+        // Assert
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('image/png');
+        expect(response.headers.get('content-disposition')).toBe("inline; filename*=UTF-8''plan.png");
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+        expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
+        expect(response.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+        expect(response.headers.get('accept-ranges')).toBe('bytes');
+        expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
+        expect(body.equals(PNG_BYTES)).toBe(true);
+    });
+
+    it('should answer one byte range with 206, a range past the end with 416, and several ranges with the whole file', async () => {
+        // Arrange
+        const id = await stored(Buffer.from('0123456789'), 'digits.txt');
+        const read = (range: string) => fetch(`${origin}${filePath(id)}`, { headers: { range } });
+
+        // Act
+        const [middle, tail, from, past, several] = await Promise.all([read('bytes=2-5'), read('bytes=-3'), read('bytes=7-'), read('bytes=10-'), read('bytes=0-1, 4-5')]);
+
+        // Assert
+        expect([middle.status, await middle.text(), middle.headers.get('content-range')]).toEqual([206, '2345', 'bytes 2-5/10']);
+        expect([tail.status, await tail.text(), tail.headers.get('content-range')]).toEqual([206, '789', 'bytes 7-9/10']);
+        expect([from.status, await from.text()]).toEqual([206, '789']);
+        expect([past.status, past.headers.get('content-range')]).toEqual([416, 'bytes */10']);
+        expect([several.status, await several.text()]).toEqual([200, '0123456789']);
+    });
+
+    it('should answer 304 to a request with the ETag, and the headers alone to a HEAD', async () => {
+        // Arrange
+        const id = await stored(Buffer.from('cached'), 'cached.txt');
+        const etag = (await fetch(`${origin}${filePath(id)}`)).headers.get('etag') ?? '';
+
+        // Act
+        const again = await fetch(`${origin}${filePath(id)}`, { headers: { 'if-none-match': etag } });
+        const head = await fetch(`${origin}${filePath(id)}`, { method: 'HEAD' });
+
+        // Assert
+        expect(again.status).toBe(304);
+        expect(head.status).toBe(200);
+        expect(head.headers.get('content-length')).toBe('6');
+        expect(await head.text()).toBe('');
+    });
+
+    it('should answer 404 alike for an unknown file, another app, another owner, a path no source has and a bad segment', async () => {
+        // Arrange
+        const id = await stored(Buffer.from('mine'), 'mine.txt');
+        const otherApp = (await createApp(harness.client, 'paths-other', rootOf({}))).id;
+        const paths = [
+            filePath('11111111-1111-4111-8111-111111111111'),
+            filePath(id, otherApp),
+            `/paths/someone-else/apps/${appId.toLowerCase()}/files/${id}`,
+            `/paths/${owner}/apps/${appId.toLowerCase()}/files/${id}/more`,
+            `/paths/${owner}/apps/${appId.toLowerCase()}/notes/${id}`,
+            `/paths/${owner}/apps/not-a-uuid/files/${id}`,
+            `/paths/${owner}/apps/${appId.toLowerCase()}/files/a.b`,
+            '/paths'
+        ];
+
+        // Act
+        const statuses = await Promise.all(paths.map(async (path) => (await fetch(`${origin}${path}`)).status));
+
+        // Assert
+        expect(statuses).toEqual(paths.map(() => 404));
+    });
+
+    it('should refuse any query but a grant with 400, and no longer serve the download route', async () => {
+        // Arrange
+        const id = await stored(Buffer.from('q'), 'q.txt');
+
+        // Act
+        const query = await fetch(`${origin}${filePath(id)}?x=1`);
+        const twice = await fetch(`${origin}${filePath(id)}?g=a&g=b`);
+        const old = await fetch(`${origin}/apps/${appId}/files/${id}`);
+
+        // Assert
+        expect([query.status, twice.status, old.status]).toEqual([400, 400, 404]);
+    });
+
+    it("should read with the page's grant, and answer 404 for a grant tampered with or of another app", async () => {
+        // Arrange
+        const id = await stored(PNG_BYTES, 'granted.png');
+        const grant = await pageGrant();
+        const [body, mac] = grant.split('.') as [string, string];
+        const tampered = `${body}.${mac.startsWith('A') ? 'B' : 'A'}${mac.slice(1)}`;
+
+        // Act
+        const good = await fetch(`${origin}${filePath(id)}?g=${grant}`);
+        const bad = await fetch(`${origin}${filePath(id)}?g=${tampered}`);
+        const otherApp = (await createApp(harness.client, 'paths-grant-other', rootOf({}))).id;
+        const elsewhere = await fetch(`${origin}${filePath(id, otherApp)}?g=${grant}`);
+
+        // Assert
+        expect(good.status).toBe(200);
+        expect([bad.status, elsewhere.status]).toEqual([404, 404]);
     });
 });
 

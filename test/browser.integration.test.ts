@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, Page, WebSocketRoute } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
-import { call, createApp, FORM_ROOT, httpHarness, rootOf, tempData } from './helpers.js';
+import { call, createApp, filePathOf, FORM_ROOT, httpHarness, rootOf, tempData } from './helpers.js';
 import type { HttpHarness, TempData, ToolResult } from './helpers.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -1208,7 +1208,7 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
         // Act: one stroke, then the pause
         await drawStroke(page, 0.5);
         const first = await nextSave(app.name, undefined);
-        const response = await fetch(`${harness.server.origin}/apps/${app.id}/files/${first.id}`);
+        const response = await fetch(filePathOf(harness.server, app.id, first.id));
         const bytes = Buffer.from(await response.arrayBuffer());
         const pixels = await page.evaluate(async (base64: string) => {
             const image = new Image();
@@ -1238,7 +1238,7 @@ describe.skipIf(!installed)('paintField saving through the live view (G2.8 of th
         const trigger = new FormData();
         trigger.append('file', new Blob([new Uint8Array(Buffer.from('trigger'))]), 'trigger.txt');
         const uploaded = await fetch(`${harness.server.origin}/apps/${app.id}/files`, { method: 'POST', body: trigger });
-        const kept = await fetch(`${harness.server.origin}/apps/${app.id}/files/${last.id}`);
+        const kept = await fetch(filePathOf(harness.server, app.id, last.id));
 
         // Assert
         expect(response.status).toBe(200);

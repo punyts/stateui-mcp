@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { UNREFERENCED_FILE_GRACE_MS } from '../src/domain/UiFile.js';
-import { call, createApp, httpHarness, tempData } from './helpers.js';
+import { call, createApp, filePathOf, httpHarness, tempData } from './helpers.js';
 import type { CreatedApp, HttpHarness, TempData } from './helpers.js';
 
 /*
@@ -94,7 +94,7 @@ describe('the file sweep and files held only in live state (G2.5a)', () => {
     async function sweepAndCheck(running: HttpHarness, app: CreatedApp, fileId: string): Promise<number> {
         await ageFiles(data!.dir, app.id);
         await upload(running.server.origin, app.id, Buffer.from('trigger'), 'trigger.txt');
-        return (await fetch(`${running.server.origin}/apps/${app.id}/files/${fileId}`)).status;
+        return (await fetch(filePathOf(running.server, app.id, fileId))).status;
     }
 
     it('should keep a file a view holds in the state of the instance', async () => {
@@ -125,7 +125,7 @@ describe('the file sweep and files held only in live state (G2.5a)', () => {
 
         // Act
         const held = await fetch(url, { method: 'DELETE' });
-        const kept = await fetch(url);
+        const kept = await fetch(filePathOf(running.server, app.id, file.id));
         view.send(JSON.stringify({ type: 'change', change: { id: 'pick-2', path: HELD_AT, op: 'set', value: '', base: 1 } }));
         await eventually(
             () => call(running.client, 'ui_state_get', { app: app.name }),

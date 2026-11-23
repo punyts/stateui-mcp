@@ -8,13 +8,13 @@ function sources(policy: string, directive: string): string[] {
 }
 
 describe('runtimeCsp', () => {
-    it('should allow data: and https: images, https: media and nothing else of the network', () => {
+    it('should allow data: and https: images, https: media, both from the host origin, and nothing else of the network', () => {
         // Act
         const policy = runtimeCsp('http://127.0.0.1:4300');
 
         // Assert
-        expect(sources(policy, 'img-src')).toEqual(['data:', 'https:']);
-        expect(sources(policy, 'media-src')).toEqual(['https:']);
+        expect(sources(policy, 'img-src')).toEqual(['data:', 'https:', 'http://127.0.0.1:4300']);
+        expect(sources(policy, 'media-src')).toEqual(['https:', 'http://127.0.0.1:4300']);
         expect(sources(policy, 'connect-src')).toEqual(["'none'"]);
         expect(sources(policy, 'font-src')).toEqual(['data:']);
         expect(sources(policy, 'frame-ancestors')).toEqual(['http://127.0.0.1:4300']);
@@ -22,10 +22,10 @@ describe('runtimeCsp', () => {
 });
 
 describe('APP_PAGE_CSP', () => {
-    it('should allow what the runtime frame allows of images and media', () => {
+    it('should allow what the runtime frame allows of images and media, its own origin standing for the host origin', () => {
         // Assert
-        expect(sources(APP_PAGE_CSP, 'img-src')).toEqual(['data:', 'https:']);
-        expect(sources(APP_PAGE_CSP, 'media-src')).toEqual(['https:']);
+        expect(sources(APP_PAGE_CSP, 'img-src')).toEqual(['data:', 'https:', "'self'"]);
+        expect(sources(APP_PAGE_CSP, 'media-src')).toEqual(['https:', "'self'"]);
     });
 });
 

@@ -1,6 +1,6 @@
 /**
  * The live view page's side of a file read (`fileRead` from the runtime, answered with `fileData`). It runs in the page
- * and fetches `GET /apps/:appId/files/:fileId` from the page's own origin, which the page policy allows
+ * and fetches the file's `/paths` URL (`GET /paths/<owner>/apps/:appId/files/:fileId`) from the page's own origin, which the page policy allows
  * (`connect-src 'self'`); the frame itself never fetches. No imports: `host.ts` bundles it.
  */
 
@@ -26,7 +26,7 @@ export function isFileId(value: unknown): value is string {
     return typeof value === 'string' && FILE_ID.test(value);
 }
 
-/** The code of a refused read for the HTTP status of the download route: 404 `not_found`, 401 and 403 `unauthorized`, anything else `internal` */
+/** The code of a refused read for the HTTP status of the file's URL: 404 `not_found`, 401 and 403 `unauthorized`, anything else `internal` */
 export function fileReadCode(status: number): FileReadCode {
     if (status === 404) return 'not_found';
     if (status === 401 || status === 403) return 'unauthorized';
@@ -87,11 +87,12 @@ async function readCapped(response: Response): Promise<ArrayBuffer | undefined> 
  * `MAX_READ_BYTES` (by `Content-Length` or as it streams) is cut off and `too_large`. The reference carries the
  * requested id, the name of `Content-Disposition`, the bare media type of `Content-Type` and the size of the bytes
  */
-export async function readStoredFile(appId: string, id: unknown, fetcher: FileFetch): Promise<FileReadOutcome> {
+/** `files` is the URL the app's files are under, such as `/paths/<owner>/apps/<appId>/files` */
+export async function readStoredFile(files: string, id: unknown, fetcher: FileFetch): Promise<FileReadOutcome> {
     if (!isFileId(id)) return failed('not_found', 'A file id is a UUID');
     let response: Response;
     try {
-        response = await fetcher(`/apps/${encodeURIComponent(appId)}/files/${id}`, { method: 'GET', credentials: 'same-origin', cache: 'no-store' });
+        response = await fetcher(`${files}/${id}`, { method: 'GET', credentials: 'same-origin', cache: 'no-store' });
     } catch {
         return failed('offline', 'The server could not be reached');
     }

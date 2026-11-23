@@ -32,7 +32,9 @@ export class InstanceViews {
         private readonly states: Pick<AuthorityInstanceStates, 'shape' | 'authority' | 'connect'>,
         private readonly catalog: ComponentCatalog,
         private readonly coreIconNames: readonly string[],
-        private readonly ownerId: string
+        private readonly ownerId: string,
+        /** The owner as their state's addresses and `/paths` name them (`OwnerNames.of`): a number in a statenet that issues them */
+        readonly owner: string = ownerId
     ) {}
 
     /** The owner's app parts, for the list of apps */

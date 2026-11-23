@@ -65,6 +65,10 @@ export interface AppPageOptions {
     readonly revoked?: string;
     /** Sync namespaces the host script deletes before it opens the app (`data-forget`, space separated) */
     readonly forget?: readonly string[];
+    /** The `/paths` URL of the app, `/paths/<owner>/apps/<appId>`, under which its files are read (`data-paths`) */
+    readonly paths?: string;
+    /** The first read grant of `/paths` (`data-grant`); the view's socket sends the next ones */
+    readonly grant?: string;
     /**
      * The hash of the page bundle (`/assets/page/<hash>.js`) when the app runs in the page rather than in a frame
      * (`data-surface="page"`): the page loads the bundle before the host script and marks where the app goes with
@@ -88,7 +92,7 @@ export function appPage(options: AppPageOptions): string {
         `<title>${escapeHtml(options.name)}</title>`,
         '<link rel="stylesheet" href="/assets/page.css">',
         '</head>',
-        `<body class="view" data-app-id="${escapeHtml(options.appId)}" ${surface}${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`}${options.forget === undefined ? '' : ` data-forget="${escapeHtml(options.forget.join(' '))}"`} data-status="loading">`,
+        `<body class="view" data-app-id="${escapeHtml(options.appId)}" ${surface}${options.chunk3d === undefined ? '' : ` data-chunk-3d="${escapeHtml(options.chunk3d)}"`} data-view-kind="${options.viewKind}" data-namespace="${escapeHtml(options.namespace)}"${options.revoked === undefined ? '' : ` data-revoked="${escapeHtml(options.revoked)}"`}${options.forget === undefined ? '' : ` data-forget="${escapeHtml(options.forget.join(' '))}"`}${options.paths === undefined ? '' : ` data-paths="${escapeHtml(options.paths)}"`}${options.grant === undefined ? '' : ` data-grant="${escapeHtml(options.grant)}"`} data-status="loading">`,
         ...(options.pageBundle === undefined ? [] : [`<script src="/assets/page/${escapeHtml(options.pageBundle)}.js"></script>`, '<div data-app-frame></div>']),
         '<script type="module" src="/assets/host.js"></script>',
         '</body>',

@@ -252,7 +252,7 @@ export function createServices(options: ServicesOptions): Services {
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);
     const browser = options.browser ?? new BrowserPreview(hub, viewPage, options.browserArgs);
-    const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId);
+    const instanceViews = new InstanceViews(parts, parts, instanceStates, catalog, CORE_ICON_NAMES, ownerId, owners.of(ownerId));
     const liveViews = new LiveViews(hub, browser, instanceViews);
     // Every part change reaches the open views of the apps that show it
     parts.onChange((kind, name) => {

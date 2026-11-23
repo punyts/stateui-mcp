@@ -11,12 +11,18 @@ export type SaveFileResult =
       }
     | { readonly kind: 'too-large' };
 
+/** A run of bytes of a file, `start` to `end` inclusive, both within the file */
+export interface ByteRange {
+    readonly start: number;
+    readonly end: number;
+}
+
 /** Where the bytes of uploaded files live: one file per id in the folder of the app. A file name is never in a path */
 export interface UiFileStore {
     /** Streams `content` through a temporary file renamed when complete; more than `maxBytes` is `too-large` and stores nothing */
     save(appId: string, fileId: string, content: AsyncIterable<Uint8Array>, maxBytes: number): Promise<SaveFileResult>;
-    /** The stream of the stored bytes, or `undefined` when there are none */
-    open(appId: string, fileId: string): Promise<Readable | undefined>;
+    /** The stream of the stored bytes, or of `range` of them; `undefined` when there are none */
+    open(appId: string, fileId: string, range?: ByteRange): Promise<Readable | undefined>;
     /** The whole stored file. Files are at most `MAX_FILE_BYTES` */
     read(appId: string, fileId: string): Promise<Uint8Array>;
     remove(appId: string, fileId: string): Promise<void>;

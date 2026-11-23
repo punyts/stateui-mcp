@@ -25,7 +25,7 @@ export class ReadFileText {
 
     async execute(appId: string, fileId: string): Promise<ReadFileTextResult> {
         const result = await this.readFile.execute(appId, fileId);
-        if (result.kind === 'not-found') return result;
+        if (result.kind !== 'found') return { kind: 'not-found' };
         const { file, content } = result;
         const reference: UiFileReference = { id: file.id, name: file.name, size: file.size, type: file.type };
         if (!isTextReadableType(file.type)) {

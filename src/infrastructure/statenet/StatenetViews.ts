@@ -356,7 +356,7 @@ class AppBridge {
         if (fileId === undefined || !isAppId(fileId)) return { status: 400 };
         if (message['method'] === 'GET') {
             const result = await useCases.readFile.execute(this.appId, fileId);
-            if (result.kind === 'not-found') return { status: 404 };
+            if (result.kind !== 'found') return { status: 404 };
             const chunks: Buffer[] = [];
             for await (const chunk of result.content) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
             const encoded = encodeURIComponent(result.file.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);

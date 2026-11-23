@@ -4,6 +4,7 @@ import { MAX_READ_BYTES, dispositionName, fileReadCode, isFileId, readStoredFile
 import type { FileFetch } from '../src/browser/fileRead.js';
 
 const APP = '5f0c2b8e-1d4a-4c3b-9e2f-0a1b2c3d4e5f';
+const FILES = `/paths/7/apps/${APP}/files`;
 const ID = '0b6e8c1a-3f1e-4a52-9a43-2f4f1c8f2d10';
 
 function fetchWith(response: () => Response | Promise<Response>) {
@@ -42,7 +43,7 @@ describe('the live view host reading a file for the runtime', () => {
         const fetcher = fetchWith(() => new Response('{"error":"x"}', { status }));
 
         // Act
-        const outcome = await readStoredFile(APP, ID, fetcher);
+        const outcome = await readStoredFile(FILES, ID, fetcher);
 
         // Assert
         expect(fileReadCode(status)).toBe(code);
@@ -54,7 +55,7 @@ describe('the live view host reading a file for the runtime', () => {
         const fetcher = vi.fn<FileFetch>(() => Promise.reject(new TypeError('Failed to fetch')));
 
         // Act
-        const outcome = await readStoredFile(APP, ID, fetcher);
+        const outcome = await readStoredFile(FILES, ID, fetcher);
 
         // Assert
         expect(outcome).toMatchObject({ ok: false, code: 'offline' });
@@ -65,7 +66,7 @@ describe('the live view host reading a file for the runtime', () => {
         const fetcher = fetchWith(() => new Response('x'));
 
         // Act
-        const outcome = await readStoredFile(APP, id, fetcher);
+        const outcome = await readStoredFile(FILES, id, fetcher);
 
         // Assert
         expect(outcome).toMatchObject({ ok: false, code: 'not_found' });
@@ -73,7 +74,7 @@ describe('the live view host reading a file for the runtime', () => {
         expect(isFileId(id)).toBe(false);
     });
 
-    it('should fetch the download route of the page origin and answer the reference and the bytes', async () => {
+    it("should fetch the file's /paths URL on the page origin and answer the reference and the bytes", async () => {
         // Arrange
         const fetcher = fetchWith(
             () =>
@@ -84,10 +85,10 @@ describe('the live view host reading a file for the runtime', () => {
         );
 
         // Act
-        const outcome = await readStoredFile(APP, ID.toUpperCase(), fetcher);
+        const outcome = await readStoredFile(FILES, ID.toUpperCase(), fetcher);
 
         // Assert
-        expect(fetcher).toHaveBeenCalledWith(`/apps/${APP}/files/${ID.toUpperCase()}`, expect.objectContaining({ method: 'GET', credentials: 'same-origin' }));
+        expect(fetcher).toHaveBeenCalledWith(`${FILES}/${ID.toUpperCase()}`, expect.objectContaining({ method: 'GET', credentials: 'same-origin' }));
         expect(outcome.ok).toBe(true);
         if (!outcome.ok) return;
         expect(outcome.file).toEqual({ id: ID.toUpperCase(), name: 'plan é.png', size: 3, type: 'image/png' });
@@ -100,7 +101,7 @@ describe('the live view host reading a file for the runtime', () => {
         const arrayBuffer = vi.spyOn(response, 'arrayBuffer');
 
         // Act
-        const outcome = await readStoredFile(APP, ID, fetchWith(() => response));
+        const outcome = await readStoredFile(FILES, ID, fetchWith(() => response));
 
         // Assert
         expect(outcome).toMatchObject({ ok: false, code: 'too_large' });
@@ -112,8 +113,8 @@ describe('the live view host reading a file for the runtime', () => {
         const chunk = 1024 * 1024;
 
         // Act
-        const over = await readStoredFile(APP, ID, fetchWith(() => streamed(11, chunk)));
-        const exact = await readStoredFile(APP, ID, fetchWith(() => streamed(10, chunk)));
+        const over = await readStoredFile(FILES, ID, fetchWith(() => streamed(11, chunk)));
+        const exact = await readStoredFile(FILES, ID, fetchWith(() => streamed(10, chunk)));
 
         // Assert
         expect(over).toMatchObject({ ok: false, code: 'too_large' });

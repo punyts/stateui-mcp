@@ -2,7 +2,8 @@ export { parseOptions, HELP_TEXT } from './config/options.js';
 export type { CliOptions } from './config/options.js';
 export { DEFAULT_STATENET_URL, DEFAULT_VIEW_URL, loadHostScript, startServer, statenetViewPage } from './config/startServer.js';
 export { installShowcase, SHOWCASE_APP } from './config/showcase.js';
-export { HttpError, isNetworkRequest, startHttpServer } from './infrastructure/http/HttpServer.js';
+export { appPaths, HttpError, isNetworkRequest, startHttpServer } from './infrastructure/http/HttpServer.js';
+export { pathGrantKey } from './infrastructure/http/PathGrants.js';
 export type { HttpServerOptions, HttpTenant, NetworkListener, PublicOrigins, RunningHttpServer, TenantAnswer } from './infrastructure/http/HttpServer.js';
 export { escapeHtml, PAGE_CSS } from './infrastructure/http/pages.js';
 export { APP_PAGE_CSP, COMMON_HEADERS, hostPageCsp, isSameOrigin, requestHostName } from './infrastructure/http/security.js';
@@ -62,7 +63,7 @@ export type {
 export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository, WholeInstance } from './application/ports/UiInstanceRepository.js';
 export type { InstancePlacement } from './application/ports/InstancePlacement.js';
 export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
-export type { SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
+export type { ByteRange, SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';
 export type { AppFolderStore } from './application/ports/AppFolderStore.js';
 export type { UiErrorLog } from './application/ports/UiErrorLog.js';
 export type { UiViewLoad } from './application/ports/UiPreviewLog.js';

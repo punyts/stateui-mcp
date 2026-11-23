@@ -172,7 +172,8 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
         cancelUpload: (requestId) => {
             cancelled.add(requestId);
         },
-        readFile: (id) => readStoredFile(appId, id, fetcher),
+        // The relay answers the file routes by their old paths: a statenet view has no `/paths` route
+        readFile: (id) => readStoredFile(`/apps/${appId}/files`, id, fetcher),
         releaseFile: (id) => releaseStoredFile(appId, id, fetcher),
         exportFile: (message) => exportRecordsFile(appId, message, fetcher)
     };

@@ -8,7 +8,10 @@ import type { WebSocket } from 'ws';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { report as reportArea } from '@punyts/core';
+import { compilePattern, matchPattern } from '@punyts/stateui-app/core';
+import type { PathPattern } from '@punyts/stateui-app/core';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
+import type { ByteRange } from '../../application/ports/UiFileStore.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
@@ -25,6 +28,8 @@ import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
 import type { RuntimeBundle, RuntimeChunk } from './runtimeBundle.js';
 import { RUNTIME_CSS, runtimePage } from './runtimeBundle.js';
+import { byteRange } from './byteRange.js';
+import { GRANT_RENEW_MS, PathGrants } from './PathGrants.js';
 import { APP_PAGE_CSP, COMMON_HEADERS, FILE_CSP, hostPageCsp, isAllowedHost, isPublicHost, isSameOrigin, LIST_PAGE_CSP, requestHostName, runtimeCsp } from './security.js';
 
 /** What the browser endpoint serves for one owner: their apps, the views of them and their live state */
@@ -94,6 +99,13 @@ export interface HttpServerOptions {
     readonly network?: NetworkListener;
     /** The one owner of a local server, or how a request finds its owner on a server with many */
     readonly tenant: HttpTenant | ((request: IncomingMessage) => Promise<TenantAnswer>);
+    /**
+     * The tenant of an owner named in a `/paths` URL (`HttpTenant.instances.owner`), for a read with a grant and no
+     * cookie; undefined when there is none. Absent: the one tenant of a local server, when it is that owner
+     */
+    readonly ownerTenant?: (owner: string) => Promise<HttpTenant | undefined>;
+    /** The key of the read grants of `/paths` (`pathGrantKey`), the same on every server of a host. Absent: a random one */
+    readonly pathGrantKey?: Uint8Array;
     /**
      * Routes of the embedding server, tried before the endpoint's own and after the host and origin checks: true when
      * they answered the request. A thrown `HttpError` is answered with its status and code
@@ -202,6 +214,38 @@ function isUuid(value: string | null): value is string {
     return value !== null && isAppId(value);
 }
 
+/** A segment of a `/paths` URL: a key of a statenet path, which has no dot */
+const PATH_SEGMENT = /^[A-Za-z0-9_-]{1,200}$/;
+
+/** The types a browser shows in place: pictures, audio and video. An SVG is a document, so it is an attachment */
+const INLINE_TYPE = /^(?:image\/(?!svg)|audio\/|video\/)/i;
+
+/** The `/paths` URL under which an app's files are read */
+export function appPaths(owner: string, appId: string): string {
+    return `/paths/${encodeURIComponent(owner)}/apps/${appId.toLowerCase()}`;
+}
+
+/** A file name as `filename*=UTF-8''` takes it */
+function dispositionName(name: string): string {
+    return encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/** One read of a `/paths` source */
+interface PathRead {
+    readonly request: IncomingMessage;
+    readonly response: ServerResponse;
+    /** A `HEAD`: the headers only */
+    readonly head: boolean;
+    /** The read grant of the query, `g` */
+    readonly grant?: string;
+}
+
+/** A row of the sources table of `/paths`: a pattern, and the read of a path that matches it with its captures */
+interface PathSource {
+    readonly pattern: PathPattern;
+    read(captures: Readonly<Record<string, string>>, ask: PathRead): Promise<void>;
+}
+
 /** The category of the view server's reports: listening, and a view page served */
 const PREVIEW_CATEGORY = 'stateui-mcp.preview';
 
@@ -217,9 +261,9 @@ const PREVIEW_CATEGORY = 'stateui-mcp.preview';
  * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
- * | `GET /apps/:appId/files/:fileId` | the bytes of an upload, as an attachment |
  * | `POST /apps/:appId/export` | a CSV file of records in the persona's own instance: `{ source, name, request }` (`RecordExportRequest`), filtered and sorted here; never rows from the browser |
  * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
+ * | `GET /paths/<owner>/apps/:appId/files/:fileId` | the bytes of an upload by its statenet path (`pathsRoute`): byte ranges, inline for pictures, audio and video, read with the session or a read grant `?g=` |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
  *
  * A second listener on `runtimePort` is the runtime origin. It serves only the app frame:
@@ -250,6 +294,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         if (answer.refuse === 404) throw new HttpError(404, 'Not found', 'not_found');
         throw new HttpError(answer.refuse, answer.refuse === 401 ? 'Sign in first' : 'Not allowed', answer.refuse === 401 ? 'unauthorized' : 'forbidden');
     }
+    const grants = new PathGrants(options.pathGrantKey);
+    const ownerTenant = options.ownerTenant ?? (async (owner: string): Promise<HttpTenant | undefined> => (fixed !== undefined && fixed.tenant.instances.owner === owner ? fixed.tenant : undefined));
     const runtimePageBuffer = Buffer.from(runtimePage(runtime.hash), 'utf8');
     const runtimeBase = '/runtime';
     // Both known after listen, so a port of 0 works
@@ -336,13 +382,14 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
 
         const parts = path.split('/').filter((part) => part !== '');
+        if ((method === 'GET' || method === 'HEAD') && parts[0] === 'paths') return pathsRoute(request, response, url, parts.slice(1), method === 'HEAD');
         if (parts[0] === 'apps' && parts[1] !== undefined && SEGMENT.test(parts[1])) {
             const appId = parts[1];
             if (!isAppId(appId)) throw new HttpError(400, 'An app id is a UUID', 'invalid_id');
             const rest = parts.slice(2);
             const page = method === 'GET' && rest.length === 0;
             const fileId = rest.length === 2 && rest[0] === 'files' ? rest[1] : undefined;
-            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files' || rest[0] === 'export')) || ((method === 'GET' || method === 'DELETE') && fileId !== undefined);
+            const known = page || (method === 'POST' && rest.length === 1 && (rest[0] === 'report' || rest[0] === 'files' || rest[0] === 'export')) || (method === 'DELETE' && fileId !== undefined);
             if (known) {
                 if (page) {
                     const answer = await findTenant(request);
@@ -354,7 +401,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 const owner = (tenant.access ?? 'owner') === 'owner';
                 if (method === 'POST' && rest[0] === 'report') return reportRoute(tenant, request, response, appId);
                 if (method === 'POST' && rest[0] === 'export') return exportRoute(tenant, request, response, appId);
-                if (method === 'GET') return downloadRoute(tenant, response, appId, fileId as string);
                 if (!owner) throw new HttpError(403, "Only the app's owner adds or removes its files", 'forbidden');
                 if (method === 'POST') return uploadRoute(tenant, request, response, appId);
                 return releaseRoute(tenant, response, appId, fileId as string);
@@ -395,7 +441,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 ...(inPage !== undefined && { pageBundle: inPage.hash }),
                 viewKind: headless ? 'headless' : 'browser',
                 namespace: instances.namespace(part, persona),
-                ...(forget !== undefined && forget.length > 0 && { forget })
+                ...(forget !== undefined && forget.length > 0 && { forget }),
+                paths: appPaths(instances.owner, part.id),
+                grant: grants.issue(instances.owner, part.id)
             }),
             { 'Content-Security-Policy': inPage === undefined ? hostPageCsp(runtimeOrigin) : APP_PAGE_CSP, 'Cache-Control': 'no-store' }
         );
@@ -463,18 +511,92 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         }
     }
 
-    async function downloadRoute({ useCases }: HttpTenant, response: ServerResponse, appId: string, fileId: string): Promise<void> {
-        if (!isAppId(fileId)) throw new HttpError(400, 'A file id is a UUID', 'invalid_id');
-        const result = await useCases.readFile.execute(appId, fileId);
-        if (result.kind === 'not-found') throw new HttpError(404, 'No file with this id', 'not_found');
-        const encoded = encodeURIComponent(result.file.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-        response.writeHead(200, {
-            'Content-Type': result.file.type,
-            'Content-Length': String(result.file.size),
-            'Content-Disposition': `attachment; filename*=UTF-8''${encoded}`,
+    /** The sources of `/paths`: a path pattern and how the bytes under it are read. Tiles join when they are built */
+    const sources: readonly PathSource[] = [{ pattern: compilePattern('$.{owner}.apps.{app}.files.{file}') as PathPattern, read: fileSource }];
+
+    /**
+     * `GET` or `HEAD` of `/paths/<segments>`: the statenet path `$.<segment>.<segment>…`, read by the first source whose
+     * pattern it matches exactly (no deeper or shallower path). A path no source matches, and one the reader may not read,
+     * are both `404`, so the route does not tell which paths exist. The query is only a grant, `g`
+     */
+    async function pathsRoute(request: IncomingMessage, response: ServerResponse, url: URL, segments: readonly string[], head: boolean): Promise<void> {
+        if (segments.length === 0 || !segments.every((segment) => PATH_SEGMENT.test(segment))) throw new HttpError(404, 'Not found', 'not_found');
+        const grant = url.searchParams.getAll('g');
+        if ([...url.searchParams.keys()].some((key) => key !== 'g') || grant.length > 1) throw new HttpError(400, 'A /paths URL takes no query but its grant, g', 'bad_query');
+        const path = `$.${segments.join('.')}`;
+        for (const source of sources) {
+            if (source.pattern.steps.length !== segments.length) continue;
+            const [found] = matchPattern(source.pattern, path);
+            if (found !== undefined) return source.read(found.captures, { request, response, head, ...(grant[0] !== undefined && { grant: grant[0] }) });
+        }
+        throw new HttpError(404, 'Not found', 'not_found');
+    }
+
+    /**
+     * Who reads `app` of `owner`: with a grant, the owner's tenant when the grant is good for the app; without, the
+     * tenant of the request's session, when it is that owner's (the owner, an org member, a person given the app)
+     */
+    async function readerOf(request: IncomingMessage, owner: string, app: string, grant: string | undefined): Promise<HttpTenant | undefined> {
+        if (grant !== undefined) return grants.allows(grant, owner, app) ? ownerTenant(owner) : undefined;
+        const answer = await findTenant(request);
+        return 'tenant' in answer && answer.tenant.instances.owner === owner ? answer.tenant : undefined;
+    }
+
+    /**
+     * An uploaded file, `$.{owner}.apps.{app}.files.{file}`: whoever may open the app may read its files. The stored,
+     * sniffed type with `nosniff` and the file policy; inline for pictures, audio and video, an attachment otherwise;
+     * one byte range (`206`, `416`); immutable, with the bytes' SHA-256 as the `ETag` (`304`)
+     */
+    async function fileSource({ owner, app, file }: Readonly<Record<string, string>>, { request, response, head, grant }: PathRead): Promise<void> {
+        if (owner === undefined || app === undefined || file === undefined || !isAppId(app) || !isAppId(file)) throw new HttpError(404, 'Not found', 'not_found');
+        const tenant = await readerOf(request, owner, app, grant);
+        if (tenant === undefined || (await tenant.instances.find(app)) === undefined) throw new HttpError(404, 'Not found', 'not_found');
+        let status = 200 as 200 | 206 | 304 | 416;
+        let range: ByteRange | undefined;
+        const result = await tenant.useCases.readFile.execute(app, file, (found) => {
+            if (request.headers['if-none-match'] === `"${found.sha256}"`) {
+                status = 304;
+                return false;
+            }
+            const asked = byteRange(request.headers.range, found.size);
+            if (asked === 'unsatisfiable') {
+                status = 416;
+                return false;
+            }
+            if (asked !== undefined) {
+                status = 206;
+                range = asked;
+            }
+            return head ? false : asked;
+        });
+        if (result.kind === 'not-found') throw new HttpError(404, 'Not found', 'not_found');
+        const stored = result.file;
+        const cache = { ETag: `"${stored.sha256}"`, 'Cache-Control': 'private, max-age=31536000, immutable' };
+        if (status === 304) {
+            response.writeHead(304, { ...COMMON_HEADERS, ...cache });
+            response.end();
+            return;
+        }
+        if (status === 416) {
+            response.writeHead(416, { ...COMMON_HEADERS, 'Content-Range': `bytes */${stored.size}` });
+            response.end();
+            return;
+        }
+        const length = range === undefined ? stored.size : range.end - range.start + 1;
+        response.writeHead(status, {
+            'Content-Type': stored.type,
+            'Content-Length': String(length),
+            'Content-Disposition': `${INLINE_TYPE.test(stored.type) ? 'inline' : 'attachment'}; filename*=UTF-8''${dispositionName(stored.name)}`,
             'Content-Security-Policy': FILE_CSP,
+            'Accept-Ranges': 'bytes',
+            ...(range !== undefined && { 'Content-Range': `bytes ${range.start}-${range.end}/${stored.size}` }),
+            ...cache,
             ...COMMON_HEADERS
         });
+        if (result.kind === 'held') {
+            response.end();
+            return;
+        }
         result.content.pipe(response);
     }
 
@@ -613,6 +735,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     }
                 );
             const timer = setInterval(() => ws.ping(), KEEP_ALIVE_MS);
+            // The view reads its files with a grant that lasts minutes: a new one before it runs out, while the socket is open
+            const renew = setInterval(() => sendView({ type: 'grant', grant: grants.issue(instances.owner, part.id) }), GRANT_RENEW_MS);
             const rate = options.socketMessagesPerSecond;
             // A token bucket: `rate` frames a second, at most twice that many at once
             let tokens = rate === undefined ? 0 : rate * 2;
@@ -641,6 +765,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {
                 clearInterval(timer);
+                clearInterval(renew);
                 closed = true;
                 session?.close();
                 detach();

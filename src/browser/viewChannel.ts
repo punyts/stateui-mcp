@@ -25,7 +25,9 @@ export type ServerMessage =
     | { type: 'theme'; kind: string; name: string }
     | { type: 'deleted' }
     /** A change of this view the server's authority refused after the statenet had applied it: the app gets `sync.rejected` */
-    | { type: 'rejected'; path: string; reason: string; code?: RejectionCode };
+    | { type: 'rejected'; path: string; reason: string; code?: RejectionCode }
+    /** A new read grant of `/paths`, before the one the page holds runs out */
+    | { type: 'grant'; grant: string };
 
 /** A file the runtime asks the host to upload */
 export interface UploadInput {
@@ -78,8 +80,11 @@ export function uploadOutcome(status: number, body: unknown): UploadOutcome {
 
 const VIEW_FRAME = '{"type":"view"';
 
-/** The channel to the page's own server: the WebSocket, report and file routes of `startHttpServer` */
-export function directChannel(appId: string, viewId: string, viewKind: string): ViewChannel {
+/**
+ * The channel to the page's own server: the WebSocket, report and file routes of `startHttpServer`. `paths` is the app's
+ * `/paths` URL (`data-paths`), under which its files are read
+ */
+export function directChannel(appId: string, viewId: string, viewKind: string, paths: string): ViewChannel {
     const uploads = new Map<number, XMLHttpRequest>();
     let client: SyncClient | undefined;
     const fetcher: FileFetch = (url, init) => fetch(url, init);
@@ -158,7 +163,7 @@ export function directChannel(appId: string, viewId: string, viewKind: string): 
                 request.send(form);
             }),
         cancelUpload: (requestId) => uploads.get(requestId)?.abort(),
-        readFile: (id) => readStoredFile(appId, id, fetcher),
+        readFile: (id) => readStoredFile(`${paths}/files`, id, fetcher),
         releaseFile: (id) => releaseStoredFile(appId, id, fetcher),
         exportFile: (message) => exportRecordsFile(appId, message, fetcher)
     };
