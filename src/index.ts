@@ -89,4 +89,5 @@ export { diffInstance } from '@punyts/stateui-app/core';
 /** Statenet addresses: `<ownerId>/<appId>/<scope>` */
 export { datasetOfAddress, datasetStateAddress, formatAddress, instanceOfAddress, OWNER_IDS, parseAddress, userStateAddress } from './domain/StateAddress.js';
 export { RECORDS_PATH, seededDataset } from './infrastructure/sync/DatasetNamespaces.js';
+export type { DatasetRequestList, DatasetRequests } from './infrastructure/sync/DatasetRequests.js';
 export type { OwnerNames, StateAddress, StateBranch } from './domain/StateAddress.js';

@@ -66,6 +66,9 @@ export const RENEW_BEFORE_MS = 10 * 60_000;
 /** The shortest wait before a renewal, so a grant about to expire does not make the session reconnect in a loop */
 const RENEW_MIN_MS = 1_000;
 
+/** The shortest time between two reconnects for a change refused for access */
+const ACCESS_RETRY_MS = 60_000;
+
 /** The longest wait a timer takes */
 const TIMER_MAX_MS = 2 ** 31 - 1;
 
@@ -88,7 +91,8 @@ export interface DatasetSessionOptions {
  * client in the server, as the person the instance acts for, so the dataset's authority checks their access. Its
  * visible state is the namespace's records with the binding's own changes on top until they are acked; a change kept
  * as a request is taken out again, and so is a refused one. Each connection reads the access again, and one made with a
- * grant closes before the grant expires, so the client reconnects with a fresh one and sends what was unanswered again
+ * grant closes before the grant expires, so the client reconnects with a fresh one and sends what was unanswered again.
+ * A change refused for access makes it reconnect at once (at most once a minute), so changed rights take effect
  */
 export class DatasetSession {
     private state: SyncState = {};
@@ -97,6 +101,9 @@ export class DatasetSession {
     private readonly waiters: Array<() => void> = [];
     private rejected: string | undefined;
     private loaded!: () => void;
+    /** The connection open now, which a refusal for access closes */
+    private connection: AuthorityConnection | undefined;
+    private accessRetryAt = Number.NEGATIVE_INFINITY;
     private readonly first = new Promise<void>((resolve) => (this.loaded = resolve));
 
     constructor(private readonly options: DatasetSessionOptions) {
@@ -125,6 +132,10 @@ export class DatasetSession {
                 if (report.waiting === 0 && report.pending === 0) for (const resolve of this.waiters.splice(0)) resolve();
             },
             onRejected: (rejection) => {
+                if (rejection.code === 'access' && Date.now() - this.accessRetryAt >= ACCESS_RETRY_MS) {
+                    this.accessRetryAt = Date.now();
+                    this.connection?.close();
+                }
                 this.rejected ??= rejection.reason;
                 options.onRejected(rejection.reason);
             },
@@ -197,6 +208,7 @@ export class DatasetSession {
     private async open(connection: AuthorityConnection): Promise<AuthoritySession> {
         const access = await this.options.access();
         const session = await this.options.connect(this.options.address, connection, access);
+        this.connection = connection;
         const expires = access?.grant === undefined ? undefined : readGrant(access.grant)?.expires;
         if (expires === undefined || !Number.isFinite(expires)) return session;
         const wait = Math.min(TIMER_MAX_MS, Math.max(RENEW_MIN_MS, expires - Date.now() - (this.options.renewBeforeMs ?? RENEW_BEFORE_MS)));
