@@ -161,6 +161,28 @@ describe('the server and its views through a statenet', () => {
         expect(server.services.hub.viewCount(appId, 'browser')).toBeGreaterThanOrEqual(1);
     });
 
+    it("should pass a page's call for the requests of the instance's shared bindings to it, and its answer back (sync.requests)", async () => {
+        // Arrange: an app bound to a dataset, bridged, with a page
+        await call(client, 'ui_model_write', { model: 'dish', operations: [{ op: 'set', field: 'name', type: 'string' }] });
+        await call(client, 'ui_data_write', { dataset: 'dishes', model: 'dish', operations: [{ op: 'set', path: 'tea', value: { name: 'Tea' } }] });
+        const menuId = (await createApp(client, 'menu', { component: 'panel' }, { data: { menu: { dataset: 'dishes' } } })).id;
+        const directory = new FakePage(statenet.url, DIRECTORY_NAMESPACE);
+        pages.push(directory);
+        await directory.open();
+        directory.send({ type: 'emit', name: OPEN_EMIT, value: { appId: menuId } });
+        await eventually(() => server.views.openApps().includes(menuId));
+        const page = new FakePage(statenet.url, server.services.instanceViews.namespace((await server.services.instanceViews.find(menuId))!));
+        pages.push(page);
+        await page.open();
+
+        // Act
+        page.send({ type: 'emit', name: 'sync.requests' });
+        const answer = await page.next((message) => message['type'] === 'emit' && message['name'] === 'sync.requests');
+
+        // Assert
+        expect(answer['value']).toEqual([]);
+    });
+
     it("should put the instance's state into the statenet and send a tool's write to the pages", async () => {
         const page = await openPage();
 
