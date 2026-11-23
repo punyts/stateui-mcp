@@ -79,7 +79,8 @@ describe('ui_data_write', () => {
         });
 
         // Assert
-        expect(result.body).toMatchObject({ revision: 2, added: [] });
+        // the namespace's revision rises once per path the write changed: the new record p2, and p1's price
+        expect(result.body).toMatchObject({ revision: 3, added: [] });
         expect(await records('catalog')).toEqual({ p1: { name: 'Lamp' }, p2: { name: 'Desk', price: 180 } });
     });
 

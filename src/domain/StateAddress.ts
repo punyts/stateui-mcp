@@ -63,3 +63,15 @@ export function instanceOfAddress(address: string, workspaceId: string, owners: 
     if (parsed === undefined || id === undefined) return undefined;
     return { appId: parsed.key.toLowerCase(), persona: id === workspaceId ? DEFAULT_PERSONA : id };
 }
+
+/** The address of a dataset of a workspace: `<owner>/data/<dataset>`, the namespace that holds its records */
+export function datasetStateAddress(workspaceId: string, dataset: string, owners: OwnerNames = OWNER_IDS): string {
+    return formatAddress({ owner: owners.of(workspaceId), branch: 'data', key: dataset });
+}
+
+/** The dataset of an address in a workspace: undefined when the address is not one of the workspace's datasets */
+export function datasetOfAddress(address: string, workspaceId: string, owners: OwnerNames = OWNER_IDS): string | undefined {
+    const parsed = parseAddress(address);
+    if (parsed === undefined || parsed.branch !== 'data' || owners.idOf(parsed.owner) !== workspaceId) return undefined;
+    return parsed.key;
+}

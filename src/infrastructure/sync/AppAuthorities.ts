@@ -268,9 +268,17 @@ export class AppAuthorities {
         this.closing.push(listener);
     }
 
+    private readonly closed: Array<() => Promise<void>> = [];
+
+    /** Runs a task once the authorities closed and saved: what the instances wrote to (the datasets) closes after them */
+    onClosed(task: () => Promise<void>): void {
+        this.closed.push(task);
+    }
+
     /** Closes every connection and waits for every save */
     async close(): Promise<void> {
         for (const listener of this.closing.splice(0)) listener();
         await Promise.all([...this.authorities.keys()].map((namespace) => this.forgetNamespace(namespace)));
+        for (const task of this.closed.splice(0)) await task();
     }
 }

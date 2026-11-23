@@ -26,6 +26,10 @@ import { LiveViews } from '../infrastructure/preview/LiveViews.js';
 import { PreviewHub } from '../infrastructure/preview/PreviewHub.js';
 import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
 import { FileUiInstanceRepository } from '../infrastructure/storage/FileUiInstanceRepository.js';
+import { DatasetParts } from '../infrastructure/storage/DatasetParts.js';
+import { FileNamespaceStore } from '../infrastructure/storage/FileNamespaceStore.js';
+import type { InstanceNamespaceStore } from '../infrastructure/storage/NamespaceUiInstanceRepository.js';
+import { DatasetNamespaces } from '../infrastructure/sync/DatasetNamespaces.js';
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { FileUiErrorLog } from '../infrastructure/storage/FileUiErrorLog.js';
 import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileRepository.js';
@@ -122,11 +126,12 @@ export interface Services {
     /** The views of the owner's apps (parts): the assembled app and its instance's authority */
     readonly instanceViews: InstanceViews;
     /**
-     * The authority of the instance at an address of this owner (`<owner>/apps/<appId>`), started here: for the owner
-     * node of a placement when this server takes the namespace. Undefined when it is not one of this owner's apps
+     * The authority of the instance or dataset at an address of this owner (`<owner>/apps/<appId>`,
+     * `<owner>/data/<dataset>`), started here: for the owner node of a placement when this server takes the namespace.
+     * Undefined when it is not one of this owner's apps or datasets
      */
     hostInstance(address: string): Promise<Authority | undefined>;
-    /** Stops the instance at an address here: the owner node of a placement let its namespace go */
+    /** Stops the instance or dataset at an address here: the owner node of a placement let its namespace go */
     releaseInstance(address: string): Promise<void>;
     /**
      * A part another server on the same storage changed: the usage index, the open views, the running instances and the
@@ -159,6 +164,8 @@ export interface ServicesStorage {
     readonly parts: UiPartRepository;
     /** The instances and persona datasets of one persona of the owner's apps */
     instances(persona: string): UiInstanceRepository;
+    /** Where the records of the owner's datasets are kept: a stored namespace each, at `<owner>/data/<dataset>` */
+    readonly datasets: InstanceNamespaceStore;
     readonly files: UiFileRepository;
     readonly fileStore: UiFileStore;
     readonly errorLog: UiErrorLog;
@@ -182,6 +189,7 @@ function fileStorage(dataDir: string, ownerId: string, now: () => Date): Service
     return {
         parts: partFiles,
         instances: (persona) => new FileUiInstanceRepository(folders, lock, ownerId, persona),
+        datasets: new FileNamespaceStore(dataDir),
         files: new FileUiFileRepository(folders, lock, now),
         fileStore: new FsUiFileStore(folders),
         errorLog: new FileUiErrorLog(folders, lock),
@@ -205,10 +213,19 @@ export function createServices(options: ServicesOptions): Services {
         ...(options.toolLog !== undefined && { toolLog: options.toolLog }),
         functions: catalogs
     });
-    const parts = new IndexedUiPartRepository(storage.parts);
+    const owners = options.owners ?? OWNER_IDS;
+    /** Each dataset's records, in its namespace; the parts serve them with the dataset (docs/design/statenet-requests.md, R3a) */
+    const datasetNamespaces = new DatasetNamespaces(storage.datasets, ownerId, owners, options.placement);
+    const parts = new IndexedUiPartRepository(new DatasetParts(storage.parts, datasetNamespaces), storage.parts);
     // Instances bound to one shared dataset see each other's changes (Full mode)
     const writeData = new WriteData(parts, validator, randomUUID, options.report);
-    const datasets = new DatasetHub(parts, (name, operations) => writeData.execute({ name, operations }), options.report);
+    const datasets = new DatasetHub(
+        { findByName: (kind, name) => storage.parts.findByName(kind, name), onChange: (listener) => parts.onChange(listener) },
+        (name, operations) => writeData.execute({ name, operations }),
+        { subscribe: (...args) => relay.subscribe(...args) },
+        (name) => datasetNamespaces.address(name),
+        options.report
+    );
     const authorities = new AppAuthorities(
         (appId, name, value, viewId) => {
             hub.recordEvent(appId, viewId, name, value);
@@ -225,8 +242,9 @@ export function createServices(options: ServicesOptions): Services {
         },
         datasets
     );
+    authorities.onClose(() => datasets.close());
+    authorities.onClosed(() => datasetNamespaces.close());
     const instances = instancesOf(DEFAULT_PERSONA);
-    const owners = options.owners ?? OWNER_IDS;
     /**
      * The in-process relay (docs/design/statenet-relays.md, S3): it serves the namespaces of this workspace's running
      * instances by address, a person's state of an app at `<owner>/apps/<appId>`, and caches each subscribed path
@@ -235,6 +253,8 @@ export function createServices(options: ServicesOptions): Services {
     let states: AuthorityInstanceStates | undefined;
     const relay: Upstream = options.placement?.upstream ?? createRelay(
         createAuthorityUpstream(async (address) => {
+            const dataset = datasetNamespaces.datasetAt(address);
+            if (dataset !== undefined) return (await storage.parts.findByName('data', dataset)) === undefined ? undefined : datasetNamespaces.hosted(address);
             const found = instanceOfAddress(address, ownerId, owners);
             if (found === undefined || states === undefined) return undefined;
             const app = await parts.findById('apps', found.appId);
@@ -279,8 +299,8 @@ export function createServices(options: ServicesOptions): Services {
         effects: authorities.effects,
         liveViews,
         instanceViews,
-        hostInstance: (address) => instanceStates.hosted(address),
-        releaseInstance: (address) => instanceStates.release(address),
+        hostInstance: async (address) => (datasetNamespaces.datasetAt(address) === undefined ? instanceStates.hosted(address) : datasetNamespaces.hosted(address)),
+        releaseInstance: (address) => (datasetNamespaces.datasetAt(address) === undefined ? instanceStates.release(address) : datasetNamespaces.release(address)),
         partChangedElsewhere: (kind, name) => parts.changedElsewhere(kind, name),
         resyncParts: () => parts.resync(),
         categoryIndex: catalog.categoryIndex(),

@@ -10,6 +10,10 @@ import { PART_KINDS } from '../domain/partName.js';
 import { packageRoot } from '../infrastructure/http/packageRoot.js';
 import { writeJsonAtomic } from '../infrastructure/storage/atomicFile.js';
 import { isAppId, PartFolders } from '../infrastructure/storage/PartFolders.js';
+import { FileNamespaceStore } from '../infrastructure/storage/FileNamespaceStore.js';
+import { seededDataset } from '../infrastructure/sync/DatasetNamespaces.js';
+import { datasetStateAddress } from '../domain/StateAddress.js';
+import { LOCAL_OWNER_ID } from './createServices.js';
 
 /** The name of the app the showcase installs */
 export const SHOWCASE_APP = 'component-showcase';
@@ -58,6 +62,19 @@ export async function holdsParts(dataDir: string): Promise<boolean> {
 }
 
 /** Writes `names.json` from the part files of the data directory, every kind and the names in order, as the part repository keeps it */
+/** Moves the records of each copied dataset part into its namespace (`<owner>/data/<dataset>`), at revision 1 */
+async function moveRecords(folders: PartFolders, ownerId: string): Promise<void> {
+    const store = new FileNamespaceStore(folders.root);
+    for (const entry of await entries(folders.kindDir('data'))) {
+        if (!entry.endsWith('.json')) continue;
+        const file = join(folders.kindDir('data'), entry);
+        const part = JSON.parse(await readFile(file, 'utf8')) as { name: string; body: { records?: object } };
+        const { records = {}, ...body } = part.body;
+        await store.save(datasetStateAddress(ownerId, part.name), seededDataset(records));
+        await writeJsonAtomic(file, { ...part, body });
+    }
+}
+
 async function writeNames(folders: PartFolders): Promise<void> {
     const names: Record<string, Record<string, string>> = {};
     for (const kind of PART_KINDS) {
@@ -74,6 +91,8 @@ async function writeNames(folders: PartFolders): Promise<void> {
 
 export interface InstallShowcaseOptions {
     readonly dataDir: string;
+    /** The owner whose datasets the showcase's records go in; default `LOCAL_OWNER_ID` */
+    readonly ownerId?: string;
     readonly report: UseCaseReport;
     /** The built parts to copy; default the ones this package ships */
     readonly sourceDir?: string;
@@ -93,6 +112,7 @@ export async function installShowcase(options: InstallShowcaseOptions): Promise<
     }
     const folders = new PartFolders(options.dataDir);
     await cp(source, folders.root, { recursive: true, force: false, errorOnExist: false });
+    await moveRecords(folders, options.ownerId ?? LOCAL_OWNER_ID);
     await writeNames(folders);
     options.report.info('Installed the component showcase on the new data directory', { app: SHOWCASE_APP, dataDir: folders.root });
     return true;
