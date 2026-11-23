@@ -207,10 +207,18 @@ describe('scene3dSection', () => {
 
         // Assert
         expect(text).toContain('interactive: true on a 3D node (with a _label) makes it pressable');
-        expect(text).toContain('press (a click, not a drag that turns the camera) and hover (once each time the pointer enters)');
+        expect(text).toContain('press (a click, not a drag that turns the camera) and hover (on entering)');
         expect(text).toContain('repeat3d copy with $row at its record');
         expect(text).toContain('ui_tree with rendered: true lists those nodes (...rows.<recordKey> for a copy)');
         expect(text).toContain('ui_interact clicks, hovers, focuses and presses keys on their paths; drag turns the camera of a scene with controls');
+    });
+
+    it('should say a gizmo shows handles that write position, rotation or scale like a drag', () => {
+        // Act
+        const text = scene3dSection();
+
+        // Assert
+        expect(text).toContain('gizmo (move, rotate, scale) adds handles writing position, rotation or scale so');
     });
 
     it('should say a scene3d needs _title and _fallback', () => {
