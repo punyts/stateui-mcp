@@ -1,12 +1,11 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAuthorityUpstream, createRelay } from '@punyts/state-sync/authority';
-import type { Authority } from '@punyts/state-sync/authority';
+import { generateGrantKey, RevocationList, signGrant } from '@punyts/state-sync/authority';
+import type { Access, Authority, GrantKey, GrantRight, StoredNamespace } from '@punyts/state-sync/authority';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import { WriteData } from '../application/use-cases/WriteData.js';
-import type { DataOperation } from '../application/use-cases/WriteData.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
 import type { JsonValue } from '../domain/JsonValue.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
@@ -18,8 +17,10 @@ import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { PartFolders } from '../infrastructure/storage/PartFolders.js';
 import { AppAuthorities } from '../infrastructure/sync/AppAuthorities.js';
 import { AuthorityInstanceStates } from '../infrastructure/sync/AuthorityInstanceStates.js';
-import { DatasetHub } from '../infrastructure/sync/DatasetHub.js';
+import { DatasetHub, DECIDE_EMIT, REQUESTS_EMIT } from '../infrastructure/sync/DatasetHub.js';
+import { DatasetModels } from '../infrastructure/sync/DatasetModels.js';
 import { DatasetNamespaces } from '../infrastructure/sync/DatasetNamespaces.js';
+import { DatasetSession } from '../infrastructure/sync/DatasetSession.js';
 import { createStateUiAdapters } from './createStateUiAdapters.js';
 
 function deepFreeze<T>(value: T): T {
@@ -81,15 +82,28 @@ interface Message {
     type: string;
     result?: string;
     reason?: string;
+    name?: string;
+    value?: unknown;
+}
+
+/** The owner's grant key, and the clock grants are checked at */
+const NOW = 1_800_000_000_000;
+const KEY = generateGrantKey();
+const KEYS = new Map<string, GrantKey>([['owner-1', { ownerId: OWNER, publicKey: KEY.publicKey }]]);
+
+/** A grant from the owner to a person on the catalog dataset */
+function grantOf(subject: string, rights: GrantRight[]): string {
+    return signGrant({ kid: 'owner-1', issuer: OWNER, subject, owner: OWNER, pattern: '$.data.catalog', rights, issued: NOW, expires: NOW + 86_400_000 }, KEY.privateKey);
 }
 
 let dir: string;
 let namespaces: DatasetNamespaces;
 let parts: IndexedUiPartRepository;
 let writeData: WriteData;
-let failWrites: boolean;
-/** While set, writes of the datasets wait for it */
+/** While set, saves of the datasets' namespaces wait for it */
 let hold: Promise<void> | undefined;
+/** The grants of personas other than the owner, by persona */
+let grants: Map<string, string>;
 let report: ReturnType<typeof vi.fn<(message: string, details?: unknown) => void>>;
 let hub: DatasetHub;
 let authorities: AppAuthorities;
@@ -114,15 +128,22 @@ async function stored(): Promise<{ revision: number; records: JsonValue }> {
 let counter = 0;
 
 /** A view of an instance: sends client changes and keeps the messages it gets */
-function view(authority: Authority): { change(path: string, value: unknown): void; received: Message[] } {
+function view(authority: Authority): { change(path: string, value: unknown): void; emit(name: string, value?: unknown): void; received: Message[] } {
     const received: Message[] = [];
     const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Message), close: () => undefined });
     session.receive(JSON.stringify({ type: 'hello', namespace: authority.namespace, revision: authority.revision(), clientId: `view-${++counter}`, protocol: 1 }));
     received.length = 0;
     return {
         change: (path, value) => session.receive(JSON.stringify({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: authority.revision() } })),
+        emit: (name, value) => session.receive(JSON.stringify({ type: 'emit', name, value })),
         received
     };
+}
+
+/** The last list of the bindings' requests a view was sent */
+function requestsOf(received: readonly Message[]): Array<{ id: string; path: string; status: string; mine: boolean }> {
+    const sent = received.filter((message) => message.type === 'emit' && message.name === REQUESTS_EMIT);
+    return (sent.at(-1)?.value ?? []) as Array<{ id: string; path: string; status: string; mine: boolean }>;
 }
 
 beforeEach(async () => {
@@ -130,9 +151,21 @@ beforeEach(async () => {
     const folders = new PartFolders(dir);
     const lock = new KeyedLock();
     const files = new FilePartRepository(folders, lock);
-    namespaces = new DatasetNamespaces(new FileNamespaceStore(dir), OWNER);
+    const store = new FileNamespaceStore(dir);
+    const held = {
+        load: (address: string) => store.load(address),
+        save: async (address: string, namespace: StoredNamespace) => {
+            await hold;
+            await store.save(address, namespace);
+        },
+        remove: (address: string) => store.remove(address)
+    };
+    const models = new DatasetModels(files);
+    const revocations = new RevocationList();
+    namespaces = new DatasetNamespaces(held, OWNER, { models, context: () => ({ keyOf: (kid) => KEYS.get(kid), now: NOW, revoked: (entry) => revocations.has(entry) }) });
     parts = new IndexedUiPartRepository(new DatasetParts(files, namespaces), files);
-    const relay = createRelay(createAuthorityUpstream((address) => namespaces.hosted(address)));
+    models.watch((listener) => parts.onChange(listener));
+    grants = new Map();
     const writePart = new WritePart(parts, parts, validator, QUIET);
     for (const [kind, name, body] of [...PARTS, ['apps', 'shop-a', shop(SAVE_BAD)], ['apps', 'shop-b', shop()], ['apps', 'shop-c', shop()]] as const) {
         const written = await writePart.execute({ kind, name, body } as never);
@@ -140,18 +173,30 @@ beforeEach(async () => {
     }
     let next = 0;
     writeData = new WriteData(parts, validator, () => `id${++next}`, QUIET);
-    failWrites = false;
     hold = undefined;
     report = vi.fn<(message: string, details?: unknown) => void>();
+    const accessOf = (persona: string): Access => {
+        const grant = grants.get(persona);
+        return persona === 'default' ? { subject: OWNER } : grant === undefined ? { subject: persona } : { subject: persona, grant };
+    };
     hub = new DatasetHub(
-        { findByName: (kind, name) => files.findByName(kind, name), onChange: (listener) => parts.onChange(listener) },
-        (name: string, operations: readonly DataOperation[]) => (failWrites ? Promise.reject(new Error('EIO: disk error')) : (hold ?? Promise.resolve()).then(() => writeData.execute({ name, operations }))),
-        relay,
-        (name) => namespaces.address(name),
+        models,
+        async (name) => (await files.findByName('data', name)) !== undefined,
+        async (persona, name, handlers) =>
+            new DatasetSession({
+                address: namespaces.address(name),
+                access: async () => accessOf(persona),
+                connect: async (address, connection, access) => {
+                    const authority = await namespaces.hosted(address);
+                    if (authority === undefined) throw new Error('no dataset');
+                    return authority.connect(connection, access);
+                },
+                ...handlers
+            }),
         { info: report }
     );
     authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET }, hub);
-    states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, QUIET.info, hub);
+    states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, QUIET.info, hub, (persona) => new FileUiInstanceRepository(folders, lock, OWNER, persona));
     [shopA, shopB, shopC] = [await part('shop-a'), await part('shop-b'), await part('shop-c')];
 });
 
@@ -271,21 +316,82 @@ describe('DatasetHub', () => {
         expect((await states.authority(shopB)).get('$.data.products.p2')).toEqual({ name: 'Chair', price: 90, gross: 180 });
     });
 
-    it('should put the stored records back into the instance and report when the write-through fails', async () => {
+    it('should take a change of someone without access out of their instance and report the refusal', async () => {
         // Arrange
-        const a = await states.authority(shopA);
         const b = await states.authority(shopB);
-        const viewA = view(a);
-        failWrites = true;
+        await hub.settled();
+        const guest = await states.authority(shopC, 'guest');
+        await hub.settled();
+        const before = await stored();
 
         // Act
-        viewA.change('$.data.products.p2.name', 'Sofa');
+        view(guest).change('$.data.products.p2.name', 'Sofa');
         await hub.settled();
 
         // Assert
-        expect(a.get('$.data.products')).toEqual((await stored()).records);
+        expect(guest.get('$.data.products.p2.name')).toBe('Chair');
         expect(b.get('$.data.products.p2.name')).toBe('Chair');
-        expect(report).toHaveBeenCalledWith('Shared data not written', expect.objectContaining({ dataset: 'catalog', reason: 'EIO: disk error' }));
+        expect(await stored()).toEqual(before);
+        expect(report).toHaveBeenCalledWith('Shared data refused', expect.objectContaining({ dataset: 'catalog', reason: expect.stringContaining('needs a grant') }));
+    });
+
+    it('should write a change of someone with a write grant through to the dataset', async () => {
+        // Arrange
+        grants.set('guest', grantOf('guest', ['read', 'write']));
+        const b = await states.authority(shopB);
+        const guest = await states.authority(shopC, 'guest');
+        await hub.settled();
+
+        // Act
+        view(guest).change('$.data.products.p2.name', 'Sofa');
+        await hub.settled();
+
+        // Assert
+        expect(b.get('$.data.products.p2.name')).toBe('Sofa');
+        expect(((await stored()).records as Record<string, { name: string }>)['p2']?.name).toBe('Sofa');
+    });
+
+    it('should keep a change of someone who may request as a request, listed to both instances, and apply it once the owner approves', async () => {
+        // Arrange
+        grants.set('guest', grantOf('guest', ['read', 'request']));
+        const owner = await states.authority(shopB);
+        const guest = await states.authority(shopC, 'guest');
+        await hub.settled();
+        const ownerView = view(owner);
+        const guestView = view(guest);
+
+        // Act
+        guestView.change('$.data.products.p2.name', 'Sofa');
+        await hub.settled();
+        const asked = { guest: requestsOf(guestView.received), owner: requestsOf(ownerView.received), name: guest.get('$.data.products.p2.name') };
+        ownerView.emit(DECIDE_EMIT, { action: 'approve', id: asked.owner[0]?.id });
+        await hub.settled();
+
+        // Assert
+        expect(asked.name).toBe('Chair');
+        expect(asked.guest).toEqual([expect.objectContaining({ path: '$.data.products.p2', status: 'pending', mine: true })]);
+        expect(asked.owner).toEqual([expect.objectContaining({ path: '$.data.products.p2', status: 'pending', mine: false })]);
+        expect(owner.get('$.data.products.p2.name')).toBe('Sofa');
+        expect(guest.get('$.data.products.p2.name')).toBe('Sofa');
+        expect(requestsOf(guestView.received)).toEqual([expect.objectContaining({ status: 'approved' })]);
+    });
+
+    it('should send the requests again when a client asks for them', async () => {
+        // Arrange
+        grants.set('guest', grantOf('guest', ['read', 'request']));
+        await states.authority(shopB);
+        await hub.settled();
+        const guest = await states.authority(shopC, 'guest');
+        await hub.settled();
+        view(guest).change('$.data.products.p2.name', 'Sofa');
+        await hub.settled();
+        const late = view(guest);
+
+        // Act
+        late.emit(REQUESTS_EMIT);
+
+        // Assert
+        expect(requestsOf(late.received)).toEqual([expect.objectContaining({ path: '$.data.products.p2', status: 'pending' })]);
     });
 
     it('should apply a write of the dataset from elsewhere to every instance, whose rules derive and write back, without restarting them', async () => {
@@ -347,12 +453,11 @@ describe('DatasetHub', () => {
             expect(a.get('$.data.status')).toBe('Saved');
         });
 
-        it('should give the reason instead of Saved when the shared record could not be stored', async () => {
+        it('should give the reason instead of Saved when the dataset refused the shared record', async () => {
             // Arrange
             await parts.write('apps', 'shop-a', shop(SAVE_FORM), shopA.revision);
-            const a = await states.authority(await part('shop-a'));
+            const a = await states.authority(await part('shop-a'), 'guest');
             await hub.settled();
-            failWrites = true;
 
             // Act
             view(a).change('$.data.request', true);
@@ -360,7 +465,8 @@ describe('DatasetHub', () => {
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             // Assert
-            expect(a.get('$.data.status')).toBe('The shared data was not stored: EIO: disk error');
+            expect(a.get('$.data.status')).toContain('The shared data was not stored: a write of');
+            expect(a.get('$.data.products.p9')).toBeUndefined();
         });
     });
 });

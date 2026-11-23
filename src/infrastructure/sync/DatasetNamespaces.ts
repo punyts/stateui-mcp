@@ -1,16 +1,38 @@
 import { createAuthority } from '@punyts/state-sync/authority';
-import type { Authority, StoredNamespace } from '@punyts/state-sync/authority';
+import type { Authority, GrantContext, RequestOptions, ServerWrite, StoredNamespace } from '@punyts/state-sync/authority';
 import type { InstancePlacement } from '../../application/ports/InstancePlacement.js';
 import { datasetOfAddress, datasetStateAddress, OWNER_IDS } from '../../domain/StateAddress.js';
 import type { OwnerNames } from '../../domain/StateAddress.js';
+import type { JsonValue } from '../../domain/JsonValue.js';
 import type { InstanceNamespaceStore } from '../storage/NamespaceUiInstanceRepository.js';
+import { recordsReason } from './DatasetModels.js';
+import type { DatasetModels } from './DatasetModels.js';
 
 /** Where a dataset's namespace holds its records: `$.data.records.<key>` */
 export const RECORDS_PATH = '$.data.records';
 
+/** The sync namespace of a dataset's authority, its address with dots (`<owner>.data.<dataset>`), as a hello names it */
+export function syncNamespaceOf(address: string): string {
+    return address.replaceAll('/', '.');
+}
+
 /** A dataset's namespace as stored when it is made outside a running authority (an import): `records` at revision 1 */
 export function seededDataset(records: object): StoredNamespace {
     return { state: { data: { records } } as StoredNamespace['state'], revision: 1, log: [], applied: [] };
+}
+
+export interface DatasetNamespacesOptions {
+    readonly owners?: OwnerNames;
+    readonly placement?: InstancePlacement;
+    /** The models records are checked with, by the authority's change handler, whoever writes */
+    readonly models?: DatasetModels;
+    /**
+     * Checks each session's access (docs/design/statenet-requests.md, R3b): the grants' keys, the clock and revocations.
+     * Without it sessions are not checked
+     */
+    readonly context?: () => GrantContext;
+    /** Requests of sessions that may request and not write, with `context` */
+    readonly requests?: RequestOptions;
 }
 
 /**
@@ -18,19 +40,25 @@ export function seededDataset(records: object): StoredNamespace {
  * dataset at `<owner>/data/<dataset>`, made when it is first needed, saving through the owner's namespace store. With
  * a placement (several servers on one database) a dataset's authority runs only on the server that owns its address:
  * `authority` claims it first, as the tools claim an instance, and the owner node starts and releases it by address
- * (`hosted`, `release`)
+ * (`hosted`, `release`). Each authority checks records against the dataset's model, and, given a context, each
+ * session's access (R3b)
  */
 export class DatasetNamespaces {
     /** By address */
     private readonly authorities = new Map<string, Promise<Authority>>();
     private closed = false;
 
+    private readonly owners: OwnerNames;
+    private readonly placement: InstancePlacement | undefined;
+
     constructor(
         private readonly store: InstanceNamespaceStore,
         private readonly ownerId: string,
-        private readonly owners: OwnerNames = OWNER_IDS,
-        private readonly placement?: InstancePlacement
-    ) {}
+        private readonly options: DatasetNamespacesOptions = {}
+    ) {
+        this.owners = options.owners ?? OWNER_IDS;
+        this.placement = options.placement;
+    }
 
     /** The address of a dataset of this owner */
     address(name: string): string {
@@ -111,11 +139,22 @@ export class DatasetNamespaces {
             if (this.closed) return Promise.reject(new Error('The datasets are closed'));
             if (this.placement !== undefined && this.placement.epochOf(address) === undefined) return Promise.reject(new Error('The dataset runs on another server'));
             const epoch = this.epochOf(address);
-            authority = createAuthority({
-                namespace: address,
-                createParents: true,
-                storage: { load: () => this.store.load(address), save: (_namespace, stored) => this.store.save(address, stored, epoch) }
-            });
+            const name = this.datasetAt(address) ?? '';
+            const { models, context, requests } = this.options;
+            authority = (async () => {
+                await models?.load(name);
+                const made = await createAuthority({
+                    namespace: syncNamespaceOf(address),
+                    createParents: true,
+                    storage: { load: () => this.store.load(address), save: (_namespace, stored) => this.store.save(address, stored, epoch) },
+                    ...(context === undefined ? {} : { access: { address, context }, ...(requests === undefined ? {} : { requests }) })
+                });
+                made.onChange(RECORDS_PATH, ({ change, get }) => {
+                    const reason = recordsReason(models?.fields(name), name, RECORDS_PATH, (path) => get(path) as JsonValue | undefined, [change as ServerWrite]);
+                    return reason === undefined ? undefined : { result: 'reject', reason };
+                });
+                return made;
+            })();
             const made = authority;
             made.catch(() => {
                 if (this.authorities.get(address) === made) this.authorities.delete(address);

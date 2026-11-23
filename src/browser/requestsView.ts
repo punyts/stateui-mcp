@@ -6,6 +6,11 @@
 import type { SyncRequest } from '@punyts/state-sync';
 import type { Json, JsonRecord } from './documentUpdate.js';
 
+/** The emit that carries the instance's shared bindings' requests, and asks for them again (the server's `DatasetHub`) */
+export const BOUND_REQUESTS = 'sync.requests';
+/** The emit that decides a request of a shared binding: `{ action, id, note }` */
+export const BOUND_DECIDE = 'sync.decide';
+
 /** A request as an entry of `$.runtime.requests`: everything the client knows of it but the revision it was based on */
 export function requestEntry(request: SyncRequest): JsonRecord {
     const { base: _, ...entry } = request;

@@ -85,7 +85,7 @@ import { forgetListed } from './forgetListed.js';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
 import type { Json, JsonRecord, PathWrite } from './documentUpdate.js';
 import { createReleaseGate } from './fileRelease.js';
-import { newRequests, requestEntries } from './requestsView.js';
+import { BOUND_DECIDE, BOUND_REQUESTS, newRequests, requestEntries } from './requestsView.js';
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { ServerMessage, ViewChannel } from './viewChannel.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncRequest, SyncState, SyncStatusReport } from '@punyts/state-sync';
@@ -364,6 +364,15 @@ export class LiveView {
     private syncStatus: { mode: 'full'; status: string; waiting: number };
     /** The requests the sync client knows, as the runtime's `$.runtime.requests` (docs/design/statenet-requests.md) */
     private requests: JsonRecord = {};
+    /** The requests of the app's own namespace, as the sync client knows them */
+    private ownRequests: readonly SyncRequest[] = [];
+    /**
+     * The requests of the instance's shared bindings, as the server's dataset sessions know them (`sync.requests`,
+     * docs/design/statenet-requests.md, R3b), with paths below the binding
+     */
+    private boundRequests: readonly SyncRequest[] = [];
+    /** The next list of the bindings' requests answers the call made on going online: it announces nothing */
+    private boundWelcome = true;
     /** The ids of this view's own requests it has told the app of with `sync.requested`, or found in a welcome */
     private readonly announced = new Set<string>();
     private readonly sentIcons = new Set<string>();
@@ -453,6 +462,10 @@ export class LiveView {
             clientId: this.viewId,
             onStatus: (report) => this.onSyncStatus(report),
             onEmit: (name, value) => {
+                if (name === BOUND_REQUESTS && Array.isArray(value)) {
+                    this.onBoundRequests(value as unknown as SyncRequest[]);
+                    return;
+                }
                 if (this.channel.receive?.(name, value) === true) return;
                 if (this.loaded && isLogicEvent(name)) this.post({ type: 'event', name, ...(value === undefined ? {} : { payload: value }) });
             },
@@ -563,23 +576,51 @@ export class LiveView {
      * comes before the client is online is a welcome's: those were made in an earlier session and raise nothing
      */
     private onRequests(requests: readonly SyncRequest[]): void {
-        this.requests = requestEntries(requests);
+        this.ownRequests = requests;
+        this.publishRequests(newRequests(requests, this.announced, this.syncStatus.status !== 'online'));
+    }
+
+    /** The instance's shared bindings' requests changed: listed beside the app's own, announced as those are */
+    private onBoundRequests(requests: readonly SyncRequest[]): void {
+        this.boundRequests = requests;
+        const welcome = this.boundWelcome;
+        this.boundWelcome = false;
+        this.publishRequests(newRequests(requests, this.announced, welcome));
+    }
+
+    private publishRequests(fresh: readonly { id: string; path: string }[]): void {
+        this.requests = requestEntries([...this.ownRequests, ...this.boundRequests]);
         if (this.loaded) this.post({ type: 'write', writes: [{ path: '$.runtime.requests', value: this.requests }] });
-        for (const payload of newRequests(requests, this.announced, this.syncStatus.status !== 'online')) {
+        for (const payload of fresh) {
             if (this.loaded) this.post({ type: 'event', name: 'sync.requested', payload });
         }
     }
 
-    /** A `request.*` command of the app: the sync client sends the decision, or drops it while offline */
+    /**
+     * A `request.*` command of the app: the sync client sends the decision on a request of the app's namespace, or
+     * drops it while offline; one of a shared binding goes to the server as `sync.decide`
+     */
     private onDecide(message: Record<string, unknown>): void {
         const id = message['id'];
         if (this.client === undefined || typeof id !== 'string') return;
-        if (message['action'] === 'approve') this.client.approve(id);
-        else if (message['action'] === 'reject') this.client.reject(id, typeof message['note'] === 'string' ? message['note'] : undefined);
-        else if (message['action'] === 'withdraw') this.client.withdraw(id);
+        const note = typeof message['note'] === 'string' ? message['note'] : undefined;
+        const action = message['action'];
+        if (action !== 'approve' && action !== 'reject' && action !== 'withdraw') return;
+        if (!this.ownRequests.some((request) => request.id === id)) {
+            this.client.emit(BOUND_DECIDE, { action, id, ...(note === undefined ? {} : { note }) });
+            return;
+        }
+        if (action === 'approve') this.client.approve(id);
+        else if (action === 'reject') this.client.reject(id, note);
+        else this.client.withdraw(id);
     }
 
     private onSyncStatus(report: SyncStatusReport): void {
+        // On going online the server is asked for the bindings' requests, which it sends only as they change
+        if (report.status === 'online' && this.syncStatus.status !== 'online') {
+            this.boundWelcome = true;
+            this.client?.emit(BOUND_REQUESTS);
+        }
         this.syncStatus = { mode: 'full', status: report.status, waiting: report.waiting };
         this.channel.status?.(report.status);
         this.releaseGate.update(report.status, report.waiting);
