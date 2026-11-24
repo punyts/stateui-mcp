@@ -9,6 +9,7 @@
   found by `wireTypeOf`; one wire per socket reads those changes, since they carry the paths the view numbers. Tests:
   `test/http.test.ts` ("should reject every change of the view with access, the path sent first by number after, and
   drop its emits"), and the socket and session tests over `src/testing/syncWire.ts`.
+- **`CatalogFileComponent` has `layout`**: true for a component that lays out children of its own, as the catalog file already carried it. Magnetic's editor library reads it to drop into an empty panel. Type only; covered by Magnetic's typecheck.
 - **The guide topic `scene3d-modeling`** (docs/design/stateui-mesh-editor.md, V4): custom geometry, `edit`, the
   operations of `editRequest` with the counter that repeats one, writing `geometry` from a tool, and the limits. The
   3D topic points to it. Tests: `src/infrastructure/mcp/instructions.test.ts`, `test/toolSet.test.ts`.
