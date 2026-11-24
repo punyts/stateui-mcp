@@ -9,7 +9,7 @@ import type { UiDocument } from '../../domain/UiApp.js';
 import type { UiPart } from '../../domain/UiPart.js';
 
 /**
- * One data binding of an app: its scope and, for a persona binding, the model its records are of, or, for a shared
+ * One data binding of an app: its scope and, for a person binding, the model its records are of, or, for a shared
  * binding, the dataset part it shows
  */
 export interface InstanceBinding {
@@ -50,7 +50,7 @@ export async function assembleInstance(parts: UiPartRepository, app: UiPart<'app
     const { document } = assembleApp(app.body, source);
     const bindings: Record<string, InstanceBinding> = {};
     for (const [name, binding] of Object.entries(app.body.uses?.data ?? {})) {
-        bindings[name] = 'dataset' in binding ? { scope: 'shared', dataset: binding.dataset } : { scope: 'persona', model: binding.model };
+        bindings[name] = 'dataset' in binding ? { scope: 'shared', dataset: binding.dataset } : { scope: 'person', model: binding.model };
     }
     return { key, document: JSON.parse(JSON.stringify(document as unknown as LibraryJsonValue)) as UiDocument, bindings };
 }

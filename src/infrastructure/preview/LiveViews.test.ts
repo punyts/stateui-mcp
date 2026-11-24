@@ -71,7 +71,7 @@ describe('LiveViews of owner apps', () => {
         // Assert
         expect(message).toMatchObject({ type: 'app', reason: 'attach', revision: 1, icons: { star: 'M0 0 star' } });
         expect(JSON.stringify(message)).toContain('#204080');
-        expect(views.namespace(shop)).toBe(`instances.default.${OWNER.toLowerCase()}.${shop.id.toLowerCase()}`);
+        expect(views.namespace(shop)).toBe(`instances.${OWNER.toLowerCase()}.${OWNER.toLowerCase()}.${shop.id.toLowerCase()}`);
     });
 
     it("should look up only the icons that are not the app's own: those ride in the document", async () => {

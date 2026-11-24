@@ -35,7 +35,7 @@ describe('Logic that reads another app', () => {
     it("should show the other app's path at $.external, run the app's logic on its changes, and never store it", async () => {
         // Arrange: a notes app, and a dashboard that reads its notes and copies the latest title into a field
         await write('models', 'note', { fields: { title: { type: 'string' } } });
-        await write('apps', 'notes', { uses: { data: { notes: { model: 'note', scope: 'persona' } } }, start: 'home', app: { component: 'app' }, screens: { home: { root: { component: 'text', _text: 'Notes' } } } });
+        await write('apps', 'notes', { uses: { data: { notes: { model: 'note', scope: 'person' } } }, start: 'home', app: { component: 'app' }, screens: { home: { root: { component: 'text', _text: 'Notes' } } } });
         const notes = await harness.services.parts.findByName('apps', 'notes');
         await write('apps', 'dashboard', {
             uses: { external: { notes: { app: notes?.id, path: '$.data.notes' } } },
@@ -60,7 +60,7 @@ describe('Logic that reads another app', () => {
         // what the dashboard stores of its instance has its own field, and nothing of what it read
         const dashboard = await harness.services.parts.findByName('apps', 'dashboard');
         const file = await vi.waitFor(async () => {
-            const found = (await readdir(data.dir, { recursive: true })).find((name) => name.endsWith(`${dashboard?.id}.json`) && name.includes('personas'));
+            const found = (await readdir(data.dir, { recursive: true })).find((name) => name.endsWith(`${dashboard?.id}.json`) && name.includes('people'));
             expect(found).toBeDefined();
             const text = await readFile(join(data.dir, found as string), 'utf8');
             expect(text).toContain('Buy milk');

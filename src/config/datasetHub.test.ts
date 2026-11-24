@@ -51,10 +51,10 @@ const PARTS = deepFreeze([
     ]
 ] as const);
 
-/** A shop app: the shared catalog as `products`, a persona cart and the pricing module; `logic` is the app's own */
+/** A shop app: the shared catalog as `products`, a person cart and the pricing module; `logic` is the app's own */
 function shop(logic?: object): UiPartBodies['apps'] {
     return deepFreeze({
-        uses: { data: { products: { dataset: 'catalog' }, cart: { model: 'line', scope: 'persona' } }, logic: { pricing: {} } },
+        uses: { data: { products: { dataset: 'catalog' }, cart: { model: 'line', scope: 'person' } }, logic: { pricing: {} } },
         start: 'home',
         app: { component: 'app' },
         screens: { home: { root: { component: 'text', _text: 'Shop' } } },
@@ -103,7 +103,7 @@ let parts: IndexedUiPartRepository;
 let writeData: WriteData;
 /** While set, saves of the datasets' namespaces wait for it */
 let hold: Promise<void> | undefined;
-/** The grants of personas other than the owner, by persona */
+/** The grants of people other than the owner, by person */
 let grants: Map<string, string>;
 let report: ReturnType<typeof vi.fn<(message: string, details?: unknown) => void>>;
 let hub: DatasetHub;
@@ -176,17 +176,17 @@ beforeEach(async () => {
     writeData = new WriteData(parts, validator, () => `id${++next}`, QUIET);
     hold = undefined;
     report = vi.fn<(message: string, details?: unknown) => void>();
-    const accessOf = (persona: string): Access => {
-        const grant = grants.get(persona);
-        return persona === 'default' ? { subject: OWNER } : grant === undefined ? { subject: persona } : { subject: persona, grant };
+    const accessOf = (person: string): Access => {
+        const grant = grants.get(person);
+        return person === OWNER ? { subject: OWNER } : grant === undefined ? { subject: person } : { subject: person, grant };
     };
     hub = new DatasetHub(
         models,
         async (name) => (await files.findByName('data', name)) !== undefined,
-        async (persona, name, handlers) =>
+        async (person, name, handlers) =>
             new DatasetSession({
                 address: namespaces.address(name),
-                access: async () => accessOf(persona),
+                access: async () => accessOf(person),
                 connect: async (address, connection, access) => {
                     const authority = await namespaces.hosted(address);
                     if (authority === undefined) throw new Error('no dataset');
@@ -197,7 +197,7 @@ beforeEach(async () => {
         { info: report }
     );
     authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET }, hub);
-    states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, QUIET.info, hub, (persona) => new FileUiInstanceRepository(folders, lock, OWNER, persona));
+    states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, QUIET.info, hub, (person) => new FileUiInstanceRepository(folders, lock, OWNER, person));
     [shopA, shopB, shopC] = [await part('shop-a'), await part('shop-b'), await part('shop-c')];
 });
 
@@ -414,7 +414,7 @@ describe('DatasetHub', () => {
         expect((await states.shape(shopA)).document['data']).toMatchObject({ products: expected });
     });
 
-    it('should not share a persona binding', async () => {
+    it('should not share a person binding', async () => {
         // Arrange
         const a = await states.authority(shopA);
         const b = await states.authority(shopB);

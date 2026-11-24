@@ -4,7 +4,6 @@ import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.
 import type { UiPartRepository, UiPartSummary } from '../../application/ports/UiPartRepository.js';
 import type { UsageSource } from '../../application/UsageIndex.js';
 import { collectIconNames } from '../../application/collectIconNames.js';
-import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
 import type { PartKind } from '../../domain/partName.js';
 import type { UiPart } from '../../domain/UiPart.js';
 import type { AuthorityInstanceStates } from '../sync/AuthorityInstanceStates.js';
@@ -17,7 +16,7 @@ export type AppViewMessage = Extract<ViewMessage, { type: 'app' }>;
 /**
  * The live views of the owner's apps (parts): what a view of an app part is sent and which authority its socket
  * talks to. A view shows the assembled app (`assembleApp`: the app node, the screens, the themes, the bound data and
- * modules) with the default persona's instance laid over it, and syncs with that instance's authority.
+ * modules) with the owner's own instance laid over it, and syncs with that instance's authority.
  *
  * The document of a view is not one part, so its revision is counted here: it rises by one each time the assembled
  * document of the app differs from the one sent before (the app or a part it reaches was written). The count starts at
@@ -47,9 +46,9 @@ export class InstanceViews {
         return this.parts.findById('apps', appId);
     }
 
-    /** The sync namespace of a persona's instance of the app (the default persona's unless named), which the page's sync client names */
-    namespace(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): string {
-        return appNamespace({ persona, ownerId: this.ownerId, appId: app.id });
+    /** The sync namespace of a person's instance of the app (the owner's own unless a person is named), which the page's sync client names */
+    namespace(app: UiPart<'apps'>, person: string = this.ownerId): string {
+        return appNamespace({ person, ownerId: this.ownerId, appId: app.id });
     }
 
     /**
@@ -83,19 +82,20 @@ export class InstanceViews {
     }
 
     /**
-     * The authority of a persona's instance of the app (the default persona's unless named); a changed definition
+     * The authority of a person's instance of the app (the owner's own unless a person is named); a changed definition
      * restarts it, which closes the views' sockets
      */
-    authority(app: UiPart<'apps'>, persona: string = DEFAULT_PERSONA): Promise<Authority> {
-        return this.states.authority(app, persona);
+    authority(app: UiPart<'apps'>, person: string = this.ownerId): Promise<Authority> {
+        return this.states.authority(app, person);
     }
 
     /**
-     * A view's session with a persona's instance of the app, wherever the instance runs (another server's, with a
-     * placement); it closes when the instance restarts or moves, and the view connects again
+     * A view's session with a person's instance of the app, wherever the instance runs (another server's, with a
+     * placement), the owner's own when no person is named; it closes when the instance restarts or moves, and the view
+     * connects again
      */
-    connect(app: UiPart<'apps'>, persona: string, connection: AuthorityConnection): Promise<AuthoritySession> {
-        return this.states.connect(app, persona, connection);
+    connect(app: UiPart<'apps'>, person: string | undefined, connection: AuthorityConnection): Promise<AuthoritySession> {
+        return this.states.connect(app, person ?? this.ownerId, connection);
     }
 
     /** The app parts that show a change of this part: the app itself, and every app that reaches the part */

@@ -1,6 +1,6 @@
 import { diffInstance } from '@punyts/stateui-app/core';
 import type { EpochStorage, StoredNamespace } from '@punyts/state-sync/authority';
-import type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository, WholeInstance } from '../../application/ports/UiInstanceRepository.js';
+import type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonDataset, UiInstanceRepository, WholeInstance } from '../../application/ports/UiInstanceRepository.js';
 import { isAppId } from './PartFolders.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject } from '../../domain/JsonValue.js';
@@ -13,9 +13,9 @@ export interface InstanceNamespaceStore extends EpochStorage {
 
 type DiffInput = Parameters<typeof diffInstance>[0];
 
-/** Where a diff's own `data` is kept (data that no binding holds), as `data` holds the persona records */
+/** Where a diff's own `data` is kept (data that no binding holds), as `data` holds the person records */
 const LOCAL_DATA = 'localData';
-/** Where each persona binding's model is kept, by binding */
+/** Where each person binding's model is kept, by binding */
 const MODELS = 'models';
 
 const EMPTY: WholeInstance = { diff: {}, datasets: {}, applied: [], revision: 0 };
@@ -24,7 +24,7 @@ const EMPTY: WholeInstance = { diff: {}, datasets: {}, applied: [], revision: 0 
 function instanceOf(stored: StoredNamespace | undefined): WholeInstance {
     if (stored === undefined) return EMPTY;
     const { data, [MODELS]: models, [LOCAL_DATA]: local, ...rest } = stored.state as JsonObject;
-    const datasets: Record<string, PersonaDataset> = {};
+    const datasets: Record<string, PersonDataset> = {};
     if (isJsonObject(data) && isJsonObject(models)) {
         for (const [binding, records] of Object.entries(data)) {
             const model = models[binding];
@@ -34,8 +34,8 @@ function instanceOf(stored: StoredNamespace | undefined): WholeInstance {
     return { diff: local === undefined ? rest : { ...rest, data: local }, datasets, applied: stored.applied, revision: stored.revision };
 }
 
-/** The state a stored namespace keeps for an instance: its diff, its own unbound data, its persona records and their models */
-function stateOf(diff: InstanceDiff, datasets: Readonly<Record<string, PersonaDataset>>): StoredNamespace['state'] {
+/** The state a stored namespace keeps for an instance: its diff, its own unbound data, its person records and their models */
+function stateOf(diff: InstanceDiff, datasets: Readonly<Record<string, PersonDataset>>): StoredNamespace['state'] {
     const { data: local, ...rest } = diff;
     const bindings = Object.keys(datasets);
     return {
@@ -44,22 +44,22 @@ function stateOf(diff: InstanceDiff, datasets: Readonly<Record<string, PersonaDa
         ...(bindings.length === 0
             ? {}
             : {
-                  data: Object.fromEntries(bindings.map((binding) => [binding, (datasets[binding] as PersonaDataset).records])),
-                  [MODELS]: Object.fromEntries(bindings.map((binding) => [binding, (datasets[binding] as PersonaDataset).model]))
+                  data: Object.fromEntries(bindings.map((binding) => [binding, (datasets[binding] as PersonDataset).records])),
+                  [MODELS]: Object.fromEntries(bindings.map((binding) => [binding, (datasets[binding] as PersonDataset).model]))
               })
     } as StoredNamespace['state'];
 }
 
 /**
- * One persona's instances kept as stored namespaces (docs/design/statenet-network.md, "An instance is a stored
+ * One person's instances kept as stored namespaces (docs/design/statenet-network.md, "An instance is a stored
  * namespace"): each app's at its statenet address, whole. Its state is the instance's diff over the app's definition
- * (a key each), its own unbound `data` as `localData`, the records of its persona bindings under `data` and each
+ * (a key each), its own unbound `data` as `localData`, the records of its person bindings under `data` and each
  * binding's model under `models`; beside it the authority's revision and the change ids it applied, so a change sent
  * again after a handoff is applied once. Every write is one save of the namespace under an owner epoch: the fence's,
  * or the one this node holds the address under (`epochOf`), or 0 where nothing orders instances.
  *
  * `loadWhole` and `saveWhole` are what a running instance uses, one load and one save each. The other methods are for
- * what writes an instance while it is stopped (a reset, a tool that sets persona records, an import): each reads the
+ * what writes an instance while it is stopped (a reset, a tool that sets person records, an import): each reads the
  * namespace, changes its part and saves it at the next revision
  */
 export class NamespaceUiInstanceRepository implements UiInstanceRepository {
@@ -75,7 +75,7 @@ export class NamespaceUiInstanceRepository implements UiInstanceRepository {
         return { value: instanceOf(await this.store.load(this.addressOf(appId))) };
     }
 
-    async saveWhole(appId: string, definition: JsonObject, current: JsonObject, datasets: Readonly<Record<string, PersonaDataset>>, kept: Pick<WholeInstance, 'applied' | 'revision'>, fence?: InstanceWriteFence): Promise<InstanceDiff> {
+    async saveWhole(appId: string, definition: JsonObject, current: JsonObject, datasets: Readonly<Record<string, PersonDataset>>, kept: Pick<WholeInstance, 'applied' | 'revision'>, fence?: InstanceWriteFence): Promise<InstanceDiff> {
         const diff = diffInstance(definition as DiffInput, current as DiffInput) as InstanceDiff;
         if (!isAppId(appId)) return diff;
         await this.put(appId, { diff, datasets, applied: kept.applied, revision: kept.revision }, fence);
@@ -94,11 +94,11 @@ export class NamespaceUiInstanceRepository implements UiInstanceRepository {
         return diff;
     }
 
-    async getData(appId: string, binding: string): Promise<InstanceRead<PersonaDataset | undefined>> {
+    async getData(appId: string, binding: string): Promise<InstanceRead<PersonDataset | undefined>> {
         return { value: (await this.loadWhole(appId)).value.datasets[binding] };
     }
 
-    async writeData(appId: string, binding: string, dataset: PersonaDataset, fence?: InstanceWriteFence): Promise<void> {
+    async writeData(appId: string, binding: string, dataset: PersonDataset, fence?: InstanceWriteFence): Promise<void> {
         if (!isAppId(appId)) throw new Error('An app id is a UUID');
         const whole = (await this.loadWhole(appId)).value;
         await this.put(appId, { ...whole, datasets: { ...whole.datasets, [binding]: dataset }, revision: this.next(whole) }, fence);

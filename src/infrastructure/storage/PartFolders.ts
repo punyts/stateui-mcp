@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import { isKeyName } from '@punyts/stateui-app/core';
-import { DEFAULT_PERSONA, isPersonaName } from '../../domain/InstanceKey.js';
+import { isPersonId } from '../../domain/InstanceKey.js';
 import type { PartKind } from '../../domain/partName.js';
 import { isPartKind } from '../../domain/UiPart.js';
 
@@ -29,10 +29,11 @@ export const isPartId = isAppId;
  *     <dataDir>/<appId>/files.json   metadata of the uploaded files
  *     <dataDir>/<appId>/files/<id>   the bytes of one uploaded file
  *
- * The default persona's instances and persona datasets (O2.7), keyed by app id so a rename moves nothing:
+ * Each person's instances and person datasets (O2.7), keyed by app id so a rename moves nothing. A person is an owner
+ * id; the owner's own instances are under the owner's id:
  *
- *     <dataDir>/personas/default/apps/<ownerId>/<appId>.json      the instance: the diff over the definition
- *     <dataDir>/personas/default/data/<appId>/<binding>.json      { model, records } of one persona binding (a capital as ^ and its small letter)
+ *     <dataDir>/people/<person>/apps/<ownerId>/<appId>.json      the instance: the diff over the definition
+ *     <dataDir>/people/<person>/data/<appId>/<binding>.json      { model, records } of one person binding (a capital as ^ and its small letter)
  *
  * Only kinds, UUIDs and binding key names reach a path: anything else is refused here, so no input can name a file outside `root`
  */
@@ -62,33 +63,34 @@ export class PartFolders {
         return join(this.root, 'rename.pending.json');
     }
 
-    /** A persona's diff of one app of one owner; the default persona's when none is named */
-    instanceFile(ownerId: string, appId: string, persona: string = DEFAULT_PERSONA): string {
+    /** A person's diff of one app of one owner; the owner's own when no person is named */
+    instanceFile(ownerId: string, appId: string, person: string = ownerId): string {
         if (!UUID.test(ownerId)) throw new Error('An owner id is a UUID');
         if (!UUID.test(appId)) throw new Error('An app id is a UUID');
-        return join(this.personaDir(persona), 'apps', ownerId.toLowerCase(), `${appId.toLowerCase()}.json`);
+        return join(this.personDir(person), 'apps', ownerId.toLowerCase(), `${appId.toLowerCase()}.json`);
     }
 
-    /** The folder of a persona's datasets of one app; the default persona's when none is named */
-    personaDataDir(appId: string, persona: string = DEFAULT_PERSONA): string {
+    /** The folder of a person's datasets of one app */
+    personDataDir(appId: string, person: string): string {
         if (!UUID.test(appId)) throw new Error('An app id is a UUID');
-        return join(this.personaDir(persona), 'data', appId.toLowerCase());
+        return join(this.personDir(person), 'data', appId.toLowerCase());
     }
 
-    private personaDir(persona: string): string {
-        if (!isPersonaName(persona)) throw new Error('A persona name is lower-case letters, digits and dashes');
-        return join(this.root, 'personas', persona);
+    private personDir(person: string): string {
+        const id = person.toLowerCase();
+        if (!isPersonId(id)) throw new Error('A person is an owner id: letters, digits and dashes');
+        return join(this.root, 'people', id);
     }
 
     /**
-     * The records of one persona binding. A binding name is a key name (`[A-Za-z_][A-Za-z0-9_]*`); each capital becomes
+     * The records of one person binding. A binding name is a key name (`[A-Za-z_][A-Za-z0-9_]*`); each capital becomes
      * `^` and its small letter (`notesByDay` is `notes^by^day.json`), so two names that differ in case get two files on a
      * file system that ignores case
      */
-    personaDataFile(appId: string, binding: string, persona: string = DEFAULT_PERSONA): string {
+    personDataFile(appId: string, binding: string, person: string): string {
         if (!isKeyName(binding)) throw new Error('A binding name is a key name');
         const file = binding.replace(/[A-Z]/g, (capital) => `^${capital.toLowerCase()}`);
-        return join(this.personaDataDir(appId, persona), `${file}.json`);
+        return join(this.personDataDir(appId, person), `${file}.json`);
     }
 
     dir(appId: string): string {

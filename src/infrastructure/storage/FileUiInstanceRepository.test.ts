@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 describe('FileUiInstanceRepository', () => {
-    it('should read an app the persona has not used as an empty diff, with no problem', async () => {
+    it('should read an app the person has not used as an empty diff, with no problem', async () => {
         // Act
         const read = await instances.get(APP);
 
@@ -64,7 +64,7 @@ describe('FileUiInstanceRepository', () => {
         // Assert
         const expected = { app: { children: { body: { open: true } } }, screens: { main: { query: 'lamp' } } };
         expect(diff).toEqual(expected);
-        const path = join(dir, 'personas', 'default', 'apps', OWNER, `${APP}.json`);
+        const path = join(dir, 'people', OWNER, 'apps', OWNER, `${APP}.json`);
         expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(expected);
         expect(await instances.get(APP)).toEqual({ value: expected });
     });
@@ -105,12 +105,12 @@ describe('FileUiInstanceRepository', () => {
         expect(read).toEqual({ value: {}, problem: `The instance of the app ${APP} was ignored: the key "document" is not part of an instance` });
     });
 
-    it('should keep the records of a persona binding by app id and binding name', async () => {
+    it('should keep the records of a person binding by app id and binding name', async () => {
         // Act
         await instances.writeData(APP, 'notes', NOTES);
 
         // Assert
-        const path = join(dir, 'personas', 'default', 'data', APP, 'notes.json');
+        const path = join(dir, 'people', OWNER, 'data', APP, 'notes.json');
         expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(NOTES);
         expect(await instances.getData(APP, 'notes')).toEqual({ value: NOTES });
         expect(await instances.getData(APP, 'other')).toEqual({ value: undefined });
@@ -125,14 +125,14 @@ describe('FileUiInstanceRepository', () => {
         await instances.writeData(APP, 'notesbyday', upper);
 
         // Assert
-        expect(folders.personaDataFile(APP, 'notesByDay').endsWith('notes^by^day.json')).toBe(true);
+        expect(folders.personDataFile(APP, 'notesByDay', OWNER).endsWith('notes^by^day.json')).toBe(true);
         expect((await instances.getData(APP, 'notesByDay')).value).toEqual(NOTES);
         expect((await instances.getData(APP, 'notesbyday')).value).toEqual(upper);
     });
 
-    it('should ignore a persona dataset file without records and say why', async () => {
+    it('should ignore a person dataset file without records and say why', async () => {
         // Arrange
-        await plant(folders.personaDataFile(APP, 'notes'), JSON.stringify({ model: 'note' }));
+        await plant(folders.personDataFile(APP, 'notes', OWNER), JSON.stringify({ model: 'note' }));
 
         // Act
         const read = await instances.getData(APP, 'notes');
@@ -141,7 +141,7 @@ describe('FileUiInstanceRepository', () => {
         expect(read).toEqual({ value: undefined, problem: `The records of "notes" in the app ${APP} were ignored: the file has no records object` });
     });
 
-    it('should remove the instance and every persona dataset of the app on reset, and leave other apps alone', async () => {
+    it('should remove the instance and every person dataset of the app on reset, and leave other apps alone', async () => {
         // Arrange
         const other = '00000000-0000-4000-8000-000000000002';
         await instances.write(APP, DEFINITION, USED);
@@ -155,7 +155,7 @@ describe('FileUiInstanceRepository', () => {
         // Assert
         expect(await instances.get(APP)).toEqual({ value: {} });
         expect(await instances.getData(APP, 'notes')).toEqual({ value: undefined });
-        expect(await exists(folders.personaDataDir(APP))).toBe(false);
+        expect(await exists(folders.personDataDir(APP, OWNER))).toBe(false);
         expect((await instances.get(other)).value).not.toEqual({});
     });
 

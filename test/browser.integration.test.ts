@@ -240,7 +240,7 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
     it('should add a new key with ui_state_set to the running page and keep it', async () => {
         // Arrange
         await step(harness, 'ui_model_write', { model: 'task', operations: [{ op: 'set', field: 'title', type: 'string', required: true }] });
-        await createApp(harness.client, 'tasks', rootOf({}), { data: { tasks: { model: 'task', scope: 'persona' } } });
+        await createApp(harness.client, 'tasks', rootOf({}), { data: { tasks: { model: 'task', scope: 'person' } } });
 
         // Act: a new object under the binding, then a new record inside it
         await call(harness.client, 'ui_state_set', { app: 'tasks', path: '$.data.tasks', value: { t1: { title: 'first' } } });
@@ -1900,7 +1900,7 @@ describe.skipIf(!installed)('the host script serving an editor over the page (st
         data = await tempData();
         harness = await httpHarness(data.dir);
         await step(harness, 'ui_model_write', { model: 'note', operations: [{ op: 'set', field: 'title', type: 'string', required: true }] });
-        await createApp(harness.client, 'editing', FORM_ROOT, { data: { notes: { model: 'note', scope: 'persona' } } });
+        await createApp(harness.client, 'editing', FORM_ROOT, { data: { notes: { model: 'note', scope: 'person' } } });
         const preview = await call(harness.client, 'ui_preview', { app: 'editing' });
         browser = await chromium.launch();
         page = await browser.newPage();

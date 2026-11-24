@@ -2,7 +2,7 @@ import { initialRoute, layInstance } from '@punyts/stateui-app/core';
 import type { AppDocument, AppInstance, JsonObject as LibraryJsonObject } from '@punyts/stateui-app/core';
 import type { JsonValue as SyncValue } from '@punyts/state-sync';
 import type { NamespaceStorage, StoredNamespace } from '@punyts/state-sync/authority';
-import type { PersonaDataset, UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
+import type { PersonDataset, UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import { instanceKeyText } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
@@ -11,12 +11,12 @@ import type { InstanceStart } from './InstanceStart.js';
 
 const INSTANCE_PREFIX = 'instances.';
 
-/** The sync namespace of a running instance of an owner app, `instances.<persona>.<ownerId>.<appId>` */
+/** The sync namespace of a running instance of an owner app, `instances.<person>.<ownerId>.<appId>` */
 export function appNamespace(key: InstanceKey): string {
     return `${INSTANCE_PREFIX}${instanceKeyText(key)}`;
 }
 
-/** Reports a stored instance or persona dataset that was ignored, or a value of the instance that no longer fits */
+/** Reports a stored instance or person dataset that was ignored, or a value of the instance that no longer fits */
 export type InstanceProblemReport = (message: string, fields: Readonly<Record<string, string>>) => void;
 
 function without(data: JsonObject, keys: readonly string[]): JsonObject {
@@ -74,12 +74,12 @@ function storedNode(diff: Record<string, JsonValue>, path: readonly string[], cr
 }
 
 /**
- * The state of one running instance, kept as the persona's instance (`UiInstanceRepository`), not as a sync log.
+ * The state of one running instance, kept as the person's instance (`UiInstanceRepository`), not as a sync log.
  *
  * `load` builds the starting state: the assembled view (`$.app` and `$.screens` empty, as sparse as for old apps, the
- * start `$.route`, the document's `$.data` by binding) with the persona's records and its diff laid over it; the route
+ * start `$.route`, the document's `$.data` by binding) with the person's records and its diff laid over it; the route
  * and the active theme are checked by `layInstance`, and what no longer fits is reported and dropped. `save` stores the
- * diff of the state over that view, leaving out the bound data and `$.server`, and the records of each persona
+ * diff of the state over that view, leaving out the bound data and `$.server`, and the records of each person
  * binding that changed. The copies of shared datasets under `$.data` are not the instance's, so they are never saved.
  *
  * Nothing of the authority's log is kept, so a loaded instance's revision is the clock in milliseconds: a view that
@@ -94,11 +94,11 @@ function storedNode(diff: Record<string, JsonValue>, path: readonly string[], cr
 export class InstanceNamespaceStorage implements NamespaceStorage {
     readonly namespace: string;
     private readonly bound: readonly string[];
-    private readonly persona: readonly string[];
-    /** The records of each persona binding as last loaded or saved, as JSON text */
+    private readonly personBindings: readonly string[];
+    /** The records of each person binding as last loaded or saved, as JSON text */
     private readonly saved = new Map<string, string>();
-    /** Each persona binding's dataset as last loaded or saved whole: kept as it is while its records cannot be stored */
-    private readonly kept = new Map<string, PersonaDataset>();
+    /** Each person binding's dataset as last loaded or saved whole: kept as it is while its records cannot be stored */
+    private readonly kept = new Map<string, PersonDataset>();
 
     constructor(
         private readonly start: InstanceStart,
@@ -110,7 +110,7 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
     ) {
         this.namespace = appNamespace(start.key);
         this.bound = Object.keys(start.bindings);
-        this.persona = this.bound.filter((name) => start.bindings[name]?.scope === 'persona');
+        this.personBindings = this.bound.filter((name) => start.bindings[name]?.scope === 'person');
     }
 
     async load(namespace: string): Promise<StoredNamespace> {
@@ -132,10 +132,10 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         if (Object.keys(active).length > 0) diff['theme'] = { ...theme, active };
 
         const data: Record<string, JsonValue> = { ...objectOr(this.start.document['data']) };
-        for (const binding of this.persona) {
+        for (const binding of this.personBindings) {
             const records = whole === undefined ? await this.instances.getData(appId, binding) : { value: whole.value.datasets[binding], problem: undefined };
             if (whole !== undefined && records.value !== undefined) this.kept.set(binding, records.value);
-            if (records.problem !== undefined) this.report('Persona records ignored', { app: appId, binding, reason: records.problem });
+            if (records.problem !== undefined) this.report('Person records ignored', { app: appId, binding, reason: records.problem });
             if (records.value !== undefined) data[binding] = records.value.records;
             this.saved.set(binding, JSON.stringify(data[binding] ?? null));
         }
@@ -182,7 +182,7 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         const moved = route !== undefined && JSON.stringify(route) !== JSON.stringify(start ?? null);
         const fence = this.epoch === undefined ? undefined : { epoch: this.epoch };
         if (this.instances.saveWhole !== undefined) {
-            for (const binding of this.persona) {
+            for (const binding of this.personBindings) {
                 const records = allData[binding];
                 const text = JSON.stringify(records ?? null);
                 const model = this.start.bindings[binding]?.model;
@@ -196,7 +196,7 @@ export class InstanceNamespaceStorage implements NamespaceStorage {
         }
         await this.instances.write(appId, { app: {}, screens: {}, data: {} }, { ...rest, ...(moved && { route }), data: without(allData, this.bound) }, fence);
 
-        for (const binding of this.persona) {
+        for (const binding of this.personBindings) {
             const records = allData[binding];
             const text = JSON.stringify(records ?? null);
             const model = this.start.bindings[binding]?.model;

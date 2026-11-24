@@ -8,7 +8,7 @@ import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.
 import { loadPartSource } from '../application/partSource.js';
 import { ResetInstance } from '../application/use-cases/ResetState.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
-import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
+import { WritePersonData } from '../application/use-cases/WritePersonData.js';
 import type { JsonObject } from '../domain/JsonValue.js';
 import { partReferences } from '../domain/partReferences.js';
 import type { UiPartBodies } from '../domain/UiPart.js';
@@ -34,7 +34,7 @@ const NOTE = deepFreeze({ fields: { text: { type: 'string', required: true } } }
 
 function app(greeting: string): UiPartBodies['apps'] {
     return deepFreeze({
-        uses: { data: { notes: { model: 'note', scope: 'persona' } } },
+        uses: { data: { notes: { model: 'note', scope: 'person' } } },
         start: 'main',
         app: { component: 'app' },
         screens: { main: { root: { component: 'text', _text: greeting } } }
@@ -122,9 +122,9 @@ describe('instances beside owner parts', () => {
         expect(laid.data).toEqual({ draft: 'Buy milk' });
     });
 
-    it('should keep persona records that fit the model and refuse ones that do not, writing no part', async () => {
+    it('should keep person records that fit the model and refuse ones that do not, writing no part', async () => {
         // Arrange
-        const writeData = new WritePersonaData(parts, instances, validator, REPORT);
+        const writeData = new WritePersonData(parts, instances, validator, REPORT);
         const before = await files(join(dir, 'models'));
 
         // Act
@@ -136,16 +136,16 @@ describe('instances beside owner parts', () => {
         // Assert
         expect(good).toEqual({ kind: 'written', app: 'notebook', binding: 'notes' });
         expect(bad.kind === 'invalid' && bad.errors.map((error) => [error.code, error.statePath])).toEqual([['SUI-MODEL-FIELD', '$.records.n2']]);
-        expect([shared.kind, missing.kind]).toEqual(['not-persona', 'not-found']);
+        expect([shared.kind, missing.kind]).toEqual(['not-person', 'not-found']);
         expect(await instances.getData(appId, 'notes')).toEqual({ value: { model: 'note', records: { n1: { text: 'Call Ann' } } } });
         expect(await files(join(dir, 'models'))).toEqual(before);
     });
 
-    it('should reset the instance and the persona records to the definition', async () => {
+    it('should reset the instance and the person records to the definition', async () => {
         // Arrange
         const reset = new ResetInstance(parts, instances, REPORT);
         await instances.write(appId, { data: {} }, { data: { draft: 'Buy milk' } });
-        await new WritePersonaData(parts, instances, validator, REPORT).execute({ app: 'notebook', binding: 'notes', records: { n1: { text: 'Call Ann' } } });
+        await new WritePersonData(parts, instances, validator, REPORT).execute({ app: 'notebook', binding: 'notes', records: { n1: { text: 'Call Ann' } } });
 
         // Act
         const result = await reset.execute('notebook');

@@ -119,11 +119,11 @@ function valueAt(state: JsonObject, path: readonly string[]): JsonValue | undefi
 }
 
 /**
- * Writes one value into the default persona's running instance of an owner app, never into its definition:
+ * Writes one value into the owner's own running instance of an owner app, never into its definition:
  *
  * - `$.app...` and `$.screens.{screen}...` name an articulation property of a node of the app node or a screen, checked as
  *   `SetState` checks one; content (`_` properties) belongs to the definition and is refused;
- * - `$.data.{binding}...` writes the persona's own records of a persona binding; a shared dataset's records are the
+ * - `$.data.{binding}...` writes the person's own records of a person binding; a shared dataset's records are the
  *   dataset's, written with `ui_data_write`;
  * - `$.theme` and the other roots of the document are the definition's, and `$.route` moves with `navigate`.
  *
@@ -158,7 +158,7 @@ export class SetPartState {
 
         if (input.remove === true) {
             if (root !== 'data' || target.snapshotPath.length < 3) {
-                return this.finish(partRefusal(app, 'unknown-path', 'remove takes a path inside a persona binding, such as $.data.bag.l1; set node properties with a value').result);
+                return this.finish(partRefusal(app, 'unknown-path', 'remove takes a path inside a person binding, such as $.data.bag.l1; set node properties with a value').result);
             }
             if (valueAt(await this.states.state(part), target.snapshotPath) === undefined) {
                 return this.finish(partRefusal(app, 'unknown-path', `Nothing is at ${statePath} to remove`).result);

@@ -11,8 +11,8 @@ export type ResetInstanceResult =
     | { readonly kind: 'not-found'; readonly app: string };
 
 /**
- * Puts the default persona's use of an owner app back to the definition: its instance (the diff) and the records of its
- * persona bindings are removed, so the next read is the definition. The definition and every part stay as they are.
+ * Puts the owner's own use of an owner app back to the definition: its instance (the diff) and the records of its
+ * person bindings are removed, so the next read is the definition. The definition and every part stay as they are.
  * With `states`, the running instance is stopped first and the removal runs while it is stopped, so its views
  * reconnect to an instance of the definition and its logic starts again
  */

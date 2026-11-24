@@ -181,7 +181,7 @@ export function createPartTools(
         {
             name: 'ui_rename',
             description:
-                'Build time: rename a part, or a screen of an app (kind "screens" with app), and rewrite every part that names it, all together: theme lists, data bindings, logic module keys, models of datasets and modules, component names in nodes; a screen\'s start and the navigate commands to it. Ask the user first. The part keeps its id, so instances and persona data stay. expectedRevision is required (for a screen, the app\'s). Returns { kind, name, revision, rewritten } with the new name, its revision and each rewritten part with its new revision.',
+                'Build time: rename a part, or a screen of an app (kind "screens" with app), and rewrite every part that names it, all together: theme lists, data bindings, logic module keys, models of datasets and modules, component names in nodes; a screen\'s start and the navigate commands to it. Ask the user first. The part keeps its id, so instances and person data stay. expectedRevision is required (for a screen, the app\'s). Returns { kind, name, revision, rewritten } with the new name, its revision and each rewritten part with its new revision.',
             inputSchema: RENAME.schema,
             annotations: DESTROYS,
             run: async (args) => {

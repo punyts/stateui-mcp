@@ -13,7 +13,7 @@ const refused = (status: 400 | 404 | 413, code: 'invalid_export' | 'not_found' |
 /**
  * Builds the CSV a grid asked for (`fileExport` of the runtime): `body` is `{ source, name, request }`, where `request`
  * is the visible columns, filters and sort (`RecordExportRequest`), never rows. `read` gives the value at `source` in
- * the requesting persona's own instance, so the file holds only records that persona can read; it is called once the
+ * the requesting person's own instance, so the file holds only records that person can read; it is called once the
  * body is valid. The CSV starts with a byte order mark, so spreadsheets read it as UTF-8. Logs the app, the source and
  * the row count, never a value
  */

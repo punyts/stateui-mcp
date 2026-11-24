@@ -15,8 +15,8 @@ import type { InstanceBinding } from './InstanceStart.js';
 /** Applies the hub's writes to one instance: its authority's `writeAll`, then its logic sees them as changes */
 export type InstanceDelivery = (writes: readonly ServerWrite[]) => void;
 
-/** Opens a binding's session with a dataset's namespace as the persona the instance acts for */
-export type DatasetSessionOpener = (persona: string, dataset: string, handlers: Pick<DatasetSessionOptions, 'onRecords' | 'onRequests' | 'onRejected'>) => Promise<DatasetSession>;
+/** Opens a binding's session with a dataset's namespace as the person the instance acts for */
+export type DatasetSessionOpener = (person: string, dataset: string, handlers: Pick<DatasetSessionOptions, 'onRecords' | 'onRequests' | 'onRejected'>) => Promise<DatasetSession>;
 
 /** How long an instance's start waits for a binding's records before its logic runs without them */
 const FIRST_RECORDS_MS = 5_000;
@@ -56,7 +56,7 @@ function asBinding(request: SyncRequest, base: string): SyncRequest {
  * Keeps the running instances that bind one shared dataset (`uses.data.{binding} = { dataset }`) in step with the
  * dataset's namespace (`<owner>/data/<dataset>`, docs/design/statenet-requests.md, "how R3b is built").
  *
- * - Each binding is a sync session with the namespace (`DatasetSession`) as the persona the instance acts for, so the
+ * - Each binding is a sync session with the namespace (`DatasetSession`) as the person the instance acts for, so the
  *   dataset's authority checks their access: a write they may make is applied, one they may only request waits as a
  *   request, any other is refused. The authority checks records against the model whoever writes.
  * - The instance's own writes to a binding are checked against the model here too, synchronously, so a client change
@@ -69,7 +69,7 @@ function asBinding(request: SyncRequest, base: string): SyncRequest {
  * - The binding's requests are emitted to the instance's clients as `sync.requests`, with paths below the binding; a
  *   client decides one with the emit `sync.decide` `{ action, id, note }` and asks for them again with `sync.requests`.
  *
- * Persona bindings are the persona's own and are never attached. Deliveries are server writes, which fire no
+ * Person bindings are the person's own and are never attached. Deliveries are server writes, which fire no
  * `onApplied`, so the hub never sends its own deliveries again
  */
 export class DatasetHub implements InstanceDataGate {
@@ -84,10 +84,10 @@ export class DatasetHub implements InstanceDataGate {
     ) {}
 
     /**
-     * Attaches a running instance's shared bindings, each with a session as `persona`. Replaces what was attached for
+     * Attaches a running instance's shared bindings, each with a session as `person`. Replaces what was attached for
      * the namespace before
      */
-    async attach(namespace: string, persona: string, authority: Authority, bindings: Readonly<Record<string, InstanceBinding>>, deliver: InstanceDelivery): Promise<void> {
+    async attach(namespace: string, person: string, authority: Authority, bindings: Readonly<Record<string, InstanceBinding>>, deliver: InstanceDelivery): Promise<void> {
         this.detach(namespace);
         const members: Member[] = [];
         const removers: (() => void)[] = [];
@@ -105,7 +105,7 @@ export class DatasetHub implements InstanceDataGate {
         removers.push(authority.onApplied((change) => this.applied(namespace, [change])));
         removers.push(authority.onEmit((name, value) => this.emitted(attached, name, value)));
         for (const member of members) {
-            member.session = await this.open(persona, member.dataset, {
+            member.session = await this.open(person, member.dataset, {
                 onRecords: (records) => this.reconcile(member, records),
                 onRequests: (requests) => {
                     member.requests = requests.map((request) => asBinding(request, member.base));

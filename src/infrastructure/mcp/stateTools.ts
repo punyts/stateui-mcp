@@ -147,7 +147,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
         {
             name: 'ui_state_reset',
             description:
-                'Run time: put the state back to the definition. The instance of the app part is dropped with the persona\'s own records: the running instance stops, its views reconnect to a fresh one, and its logic starts again. No guard or rule runs; machines are in their initial states after it and the trace is empty. Open views follow at once. Use it between test runs. The definition and its revision do not change. Returns { app, revision }.',
+                'Run time: put the state back to the definition. The instance of the app part is dropped with the person\'s own records: the running instance stops, its views reconnect to a fresh one, and its logic starts again. No guard or rule runs; machines are in their initial states after it and the trace is empty. Open views follow at once. Use it between test runs. The definition and its revision do not change. Returns { app, revision }.',
             inputSchema: STATE_RESET.schema,
             annotations: WRITES,
             run: async (args) => {

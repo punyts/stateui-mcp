@@ -22,7 +22,7 @@ export interface CreatePartAppInput {
     readonly title?: string;
     /** `uses.themes`: theme names, the first the default */
     readonly themes?: readonly string[];
-    /** `uses.data`: each name the app reads under `$.data` bound to `{ dataset }` or `{ model, scope: "persona" }` */
+    /** `uses.data`: each name the app reads under `$.data` bound to `{ dataset }` or `{ model, scope: "person" }` */
     readonly data?: JsonObject;
     /** `uses.logic`: each logic module by name with `{ params }` */
     readonly logic?: JsonObject;

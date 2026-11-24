@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import { SetPartState } from '../application/use-cases/SetState.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
-import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
 import type { JsonObject } from '../domain/JsonValue.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
 import { FilePartRepository } from '../infrastructure/storage/FilePartRepository.js';
@@ -62,7 +61,7 @@ const PARTS = deepFreeze([
 function store(taxRate: number): UiPartBodies['apps'] {
     return deepFreeze({
         uses: {
-            data: { products: { dataset: 'catalog' }, bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } },
+            data: { products: { dataset: 'catalog' }, bag: { model: 'bag-line', scope: 'person' }, totals: { model: 'cart-totals', scope: 'person' } },
             logic: { cart: { params: { taxRate, currency: 'EUR' } } }
         },
         start: 'home',
@@ -123,7 +122,7 @@ afterEach(async () => {
 });
 
 describe('running instances of owner apps', () => {
-    it('should start from the assembled view: sparse nodes, the start route, the shared copy and the persona defaults', async () => {
+    it('should start from the assembled view: sparse nodes, the start route, the shared copy and the person defaults', async () => {
         // Arrange
         const { states, authorities } = server();
 
@@ -140,7 +139,7 @@ describe('running instances of owner apps', () => {
         });
     });
 
-    it('should run the cart module over the persona bag and keep the derived totals with the persona', async () => {
+    it('should run the cart module over the person bag and keep the derived totals with the person', async () => {
         // Arrange
         const { states, setState, authorities } = server();
 
@@ -223,7 +222,7 @@ describe('running instances of owner apps', () => {
         expect(missing).toEqual({ kind: 'not-found', app: 'nothing' });
     });
 
-    it('should run the edited definition after an app write and keep what the persona did', async () => {
+    it('should run the edited definition after an app write and keep what the person did', async () => {
         // Arrange
         const { states, setState, authorities } = server();
         await setState.execute('store', { path: '$.app.toasts.position', value: 'topEnd' });
@@ -262,13 +261,13 @@ describe('InstanceNamespaceStorage', () => {
         const shape = await states.shape(await app());
         await authorities.close();
         return {
-            key: { persona: DEFAULT_PERSONA, ownerId: OWNER, appId },
+            key: { person: OWNER, ownerId: OWNER, appId },
             document: shape.document,
-            bindings: { products: { scope: 'shared' }, bag: { scope: 'persona', model: 'bag-line' }, totals: { scope: 'persona', model: 'cart-totals' } }
+            bindings: { products: { scope: 'shared' }, bag: { scope: 'person', model: 'bag-line' }, totals: { scope: 'person', model: 'cart-totals' } }
         };
     }
 
-    it('should save the route whole, unbound data and persona records, and nothing of a shared dataset or $.server', async () => {
+    it('should save the route whole, unbound data and person records, and nothing of a shared dataset or $.server', async () => {
         // Arrange
         const begun = await start();
         const storage = new InstanceNamespaceStorage(begun, instances, () => undefined, () => 5000);
@@ -315,7 +314,7 @@ describe('InstanceNamespaceStorage', () => {
             return { memory, saves, removed, clock, repository: new NamespaceUiInstanceRepository(store, ADDRESS, () => 3, () => clock.now) };
         }
 
-        it('should save an instance in one write: its diff, its unbound data as localData, its changed persona records with their models, and the applied ids', async () => {
+        it('should save an instance in one write: its diff, its unbound data as localData, its changed person records with their models, and the applied ids', async () => {
             // Arrange
             const begun = await start();
             const { memory, saves, repository } = namespaces();
@@ -400,7 +399,7 @@ describe('InstanceNamespaceStorage', () => {
 
     describe('with a theme switch control', () => {
         const SWITCHED = deepFreeze({
-            key: { persona: DEFAULT_PERSONA, ownerId: OWNER, appId: '' },
+            key: { person: OWNER, ownerId: OWNER, appId: '' },
             document: {
                 appThemes: { calm: { tokens: {} }, bold: { tokens: {} } },
                 app: {
@@ -474,47 +473,47 @@ describe('InstanceNamespaceStorage', () => {
     });
 });
 
-describe('instances of other personas', () => {
-    const PERSONA = '00000000-0000-4000-8000-0000000000b1';
+describe('instances of other people', () => {
+    const PERSON = '00000000-0000-4000-8000-0000000000b1';
 
-    /** A server whose apps other personas use, each with instances of their own */
+    /** A server whose apps other people use, each with instances of their own */
     function sharing(): Running {
         const report = vi.fn();
         const authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET });
         const lock = new KeyedLock();
-        const states = new AuthorityInstanceStates(parts, instances, authorities, OWNER, report, undefined, (persona) => new FileUiInstanceRepository(folders, lock, OWNER, persona));
+        const states = new AuthorityInstanceStates(parts, instances, authorities, OWNER, report, undefined, (person) => new FileUiInstanceRepository(folders, lock, OWNER, person));
         return { authorities, states, setState: new SetPartState(parts, states, validator, QUIET), report };
     }
 
-    it("should keep a persona's state in its own files and namespace, apart from the owner's", async () => {
+    it("should keep a person's state in its own files and namespace, apart from the owner's", async () => {
         // Arrange
         const { states, authorities } = sharing();
 
         // Act
-        const theirs = await states.authority(await app(), PERSONA);
+        const theirs = await states.authority(await app(), PERSON);
         theirs.write({ path: '$.data.bag', op: 'set', value: LINES as unknown as SyncValue });
         const owners = await states.state(await app());
         await authorities.close();
 
         // Assert
-        expect(theirs.namespace).toBe(appNamespace({ persona: PERSONA, ownerId: OWNER, appId }));
+        expect(theirs.namespace).toBe(appNamespace({ person: PERSON, ownerId: OWNER, appId }));
         expect(owners['data']).toMatchObject({ bag: {} });
-        expect((await new FileUiInstanceRepository(folders, new KeyedLock(), OWNER, PERSONA).getData(appId, 'bag')).value).toEqual({ model: 'bag-line', records: LINES });
+        expect((await new FileUiInstanceRepository(folders, new KeyedLock(), OWNER, PERSON).getData(appId, 'bag')).value).toEqual({ model: 'bag-line', records: LINES });
         expect((await instances.getData(appId, 'bag')).value).toBeUndefined();
-        expect(folders.personaDataFile(appId, 'bag', PERSONA)).toContain(join('personas', PERSONA, 'data'));
+        expect(folders.personDataFile(appId, 'bag', PERSON)).toContain(join('people', PERSON, 'data'));
     });
 
-    it("should restart a persona's instance when the owner's definition changes, and stop it with the app", async () => {
+    it("should restart a person's instance when the owner's definition changes, and stop it with the app", async () => {
         // Arrange
         const { states, authorities } = sharing();
-        const first = await states.authority(await app(), PERSONA);
+        const first = await states.authority(await app(), PERSON);
         const closed = vi.fn();
         first.connect({ send: () => undefined, close: closed });
 
         // Act
         await writePart.execute({ kind: 'apps', name: 'store', body: store(0.05), expectedRevision: 1 });
         await states.shape(await app());
-        const second = await states.authority(await app(), PERSONA);
+        const second = await states.authority(await app(), PERSON);
         const again = vi.fn();
         second.connect({ send: () => undefined, close: again });
         await states.stop(await app(), async () => undefined);
@@ -526,14 +525,14 @@ describe('instances of other personas', () => {
         expect(again).toHaveBeenCalled();
     });
 
-    it('should refuse a persona when only the default one exists, or a name that is not a persona name', async () => {
+    it("should refuse another person when only the owner's own instances exist, or an id that is not a person id", async () => {
         // Arrange
         const plain = server();
         const { states, authorities } = sharing();
 
         // Act / Assert
-        await expect(plain.states.authority(await app(), PERSONA)).rejects.toThrow('No persona');
-        await expect(states.authority(await app(), '../x')).rejects.toThrow('No persona');
+        await expect(plain.states.authority(await app(), PERSON)).rejects.toThrow('No person');
+        await expect(states.authority(await app(), '../x')).rejects.toThrow('No person');
         await plain.authorities.close();
         await authorities.close();
     });

@@ -12,33 +12,33 @@ const NUMBERS: OwnerNames = {
 };
 
 describe('StateAddress', () => {
-    it("should put a persona's state of an app under apps in that person's tree", () => {
+    it("should put a person's state of an app under apps in that person's tree", () => {
         // Act
-        const address = userStateAddress('w1', 'u7', APP);
+        const address = userStateAddress('u7', APP);
 
         // Assert
         expect(address).toBe(`u7/apps/${app}`);
     });
 
-    it("should put the default persona's state in the tree of the workspace's owner", () => {
+    it("should put the owner's own state of their app in the owner's tree", () => {
         // Act
-        const address = userStateAddress('w1', 'default', APP);
+        const address = userStateAddress('w1', APP);
 
         // Assert
         expect(address).toBe(`w1/apps/${app}`);
     });
 
-    it('should name owners by their numbers where they have them, and find the persona and app of an address again', () => {
+    it('should name owners by their numbers where they have them, and find the person and app of an address again', () => {
         // Act
-        const mine = userStateAddress('w1', 'default', APP, NUMBERS);
-        const theirs = userStateAddress('w1', 'u7', APP, NUMBERS);
+        const mine = userStateAddress('w1', APP, NUMBERS);
+        const theirs = userStateAddress('u7', APP, NUMBERS);
 
         // Assert
         expect([mine, theirs]).toEqual([`7/apps/${app}`, `12/apps/${app}`]);
-        expect(instanceOfAddress(mine, 'w1', NUMBERS)).toEqual({ appId: app, persona: 'default' });
-        expect(instanceOfAddress(theirs, 'w1', NUMBERS)).toEqual({ appId: app, persona: 'u7' });
-        expect(instanceOfAddress(`99/apps/${app}`, 'w1', NUMBERS)).toBeUndefined();
-        expect(instanceOfAddress('7/data/orders', 'w1', NUMBERS)).toBeUndefined();
+        expect(instanceOfAddress(mine, NUMBERS)).toEqual({ appId: app, person: 'w1' });
+        expect(instanceOfAddress(theirs, NUMBERS)).toEqual({ appId: app, person: 'u7' });
+        expect(instanceOfAddress(`99/apps/${app}`, NUMBERS)).toBeUndefined();
+        expect(instanceOfAddress('7/data/orders', NUMBERS)).toBeUndefined();
     });
 
     it('should read back what it writes, and nothing else', () => {

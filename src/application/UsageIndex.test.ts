@@ -25,9 +25,9 @@ const CARD = deepFreeze({
     exposes: []
 }) as unknown as UiPartBodies['components'];
 
-/** A shop: theme, catalog dataset, persona bag of lines, the cart module, a card in a screen; `home` is the start */
+/** A shop: theme, catalog dataset, person bag of lines, the cart module, a card in a screen; `home` is the start */
 const SHOP = deepFreeze({
-    uses: { themes: ['store'], data: { catalog: { dataset: 'catalog' }, bag: { model: 'line', scope: 'persona' } }, logic: { cart: {} } },
+    uses: { themes: ['store'], data: { catalog: { dataset: 'catalog' }, bag: { model: 'line', scope: 'person' } }, logic: { cart: {} } },
     start: 'home',
     shell: { component: 'stack', children: { body: { component: 'outlet' } } },
     screens: {

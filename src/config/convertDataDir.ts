@@ -23,7 +23,7 @@ export interface ConvertDataDirOptions {
     readonly dryRun?: boolean;
     /** Delete `.converted/` after converting */
     readonly purge?: boolean;
-    /** The owner whose default persona's instances are cleared; default `LOCAL_OWNER_ID` */
+    /** The owner whose own instances are cleared; default `LOCAL_OWNER_ID` */
     readonly ownerId?: string;
     readonly now?: () => Date;
     readonly newId?: () => string;
@@ -198,8 +198,8 @@ async function plan(folders: PartFolders): Promise<Plan[]> {
 /**
  * Converts the apps of the old single-document store in a data directory into owner parts, once. For each app folder
  * with an `app.json`: `splitDocument` (the snapshot in `state.json` gives the live data), then the parts are created
- * (the app last, with the app's id as its part id, so its files, errors and instance stay keyed by it), the default
- * persona's instance is cleared (an empty instance has no file: the live data went into the datasets and the converter drops the articulation),
+ * (the app last, with the app's id as its part id, so its files, errors and instance stay keyed by it), the owner's
+ * own instance is cleared (an empty instance has no file: the live data went into the datasets and the converter drops the articulation),
  * and `app.json` and `state.json` move to `.converted/{appId}/`. `errors.json`, `files.json` and the uploaded bytes
  * stay where they are. An app the converter cannot convert keeps its files in place and is reported with the reasons;
  * a second run converts nothing new. An app whose part an earlier run created gets its files moved.

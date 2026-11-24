@@ -35,7 +35,6 @@ import { FileUiFileRepository } from '../infrastructure/storage/FileUiFileReposi
 import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js';
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
-import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
 import { instanceOfAddress, OWNER_IDS } from '../domain/StateAddress.js';
 import type { OwnerNames } from '../domain/StateAddress.js';
 import { ExternalReads } from '../infrastructure/sync/ExternalReads.js';
@@ -88,7 +87,7 @@ export interface ServicesOptions {
     readonly functions?: readonly InstanceCatalog[];
     /** A file that gets one JSON line per tool call; absent: no log */
     readonly toolLog?: string;
-    /** The id of the local owner, whose default persona's instances are stored under it; default `LOCAL_OWNER_ID` */
+    /** The id of the local owner, whose own instances are stored under it; default `LOCAL_OWNER_ID` */
     readonly ownerId?: string;
     /** Whether logic `call`s and effects the server has no function for wait for the agent's answer; default true (`AppLogicOptions.agentAnswers`) */
     readonly agentAnswers?: boolean;
@@ -110,7 +109,7 @@ export interface ServicesOptions {
     readonly sharedData?: SharedData;
     /**
      * Who may write the owner's datasets (docs/design/statenet-requests.md, R3b): each dataset's authority checks a
-     * session's access with `context`, and an instance's binding connects as `accessFor` its persona. Absent, sessions
+     * session's access with `context`, and an instance's binding connects as `accessFor` its person. Absent, sessions
      * are not checked
      */
     readonly datasetAccess?: DatasetAccess;
@@ -120,13 +119,13 @@ export interface ServicesOptions {
 export interface DatasetAccess {
     /** The grants' keys, the clock and revocations, read at each change */
     context(): GrantContext;
-    /** The access of the person an instance acts for (`default` is the owner) to one dataset of the owner */
-    accessFor(persona: string, dataset: string): Promise<Access>;
+    /** The access of the person an instance acts for (the owner's id for the owner) to one dataset of the owner */
+    accessFor(person: string, dataset: string): Promise<Access>;
     /** Requests of people who may request and not write */
     readonly requests?: RequestOptions;
 }
 
-/** The one owner of a local server: the owner of the parts and, as the default persona, their one user */
+/** The one owner of a local server: the owner of the parts and, as the person of its own instances, their one user */
 export const LOCAL_OWNER_ID = '00000000-0000-4000-8000-000000000001';
 
 /** Everything the transports need: the use cases, the live views and the browser */
@@ -183,8 +182,8 @@ export interface Services {
  */
 export interface ServicesStorage {
     readonly parts: UiPartRepository;
-    /** The instances and persona datasets of one persona of the owner's apps */
-    instances(persona: string): UiInstanceRepository;
+    /** The instances and person datasets of one person of the owner's apps */
+    instances(person: string): UiInstanceRepository;
     /** Where the records of the owner's datasets are kept: a stored namespace each, at `<owner>/data/<dataset>` */
     readonly datasets: InstanceNamespaceStore;
     readonly files: UiFileRepository;
@@ -192,8 +191,8 @@ export interface ServicesStorage {
     readonly errorLog: UiErrorLog;
     readonly appFolders: AppFolderStore;
     /**
-     * Removes every persona's stored instance of an app (the people it was shared with, an org's members), called while
-     * the app's instances are stopped as it is deleted. File storage keeps no other persona's instance by app, so it has none
+     * Removes every person's stored instance of an app (the people it was shared with, an org's members), called while
+     * the app's instances are stopped as it is deleted. File storage keeps no other person's instance by app, so it has none
      */
     removeApp?(appId: string): Promise<void>;
     /** Stores a part exactly as given (id, name, revision and dates), for importing parts made elsewhere; nothing when it is there */
@@ -209,7 +208,7 @@ function fileStorage(dataDir: string, ownerId: string, now: () => Date): Service
     const partFiles = new FilePartRepository(folders, lock, { now, newId: randomUUID });
     return {
         parts: partFiles,
-        instances: (persona) => new FileUiInstanceRepository(folders, lock, ownerId, persona),
+        instances: (person) => new FileUiInstanceRepository(folders, lock, ownerId, person),
         datasets: new FileNamespaceStore(dataDir),
         files: new FileUiFileRepository(folders, lock, now),
         fileStore: new FsUiFileStore(folders),
@@ -225,7 +224,7 @@ export function createServices(options: ServicesOptions): Services {
     const ownerId = options.ownerId ?? LOCAL_OWNER_ID;
     if (options.storage === undefined && options.dataDir === undefined) throw new Error('createServices needs a dataDir or a storage');
     const storage = options.storage ?? fileStorage(options.dataDir as string, ownerId, now);
-    const instancesOf = (persona: string): UiInstanceRepository => storage.instances(persona);
+    const instancesOf = (person: string): UiInstanceRepository => storage.instances(person);
     const hub = new PreviewHub(now);
     // A component's functions go with the component: they are installed whenever the components are
     const catalogs: readonly InstanceCatalog[] = [COMPONENT_FUNCTIONS, ...(options.functions ?? [])];
@@ -263,10 +262,10 @@ export function createServices(options: ServicesOptions): Services {
     const datasets = new DatasetHub(
         models,
         async (name) => (await storage.parts.findByName('data', name)) !== undefined,
-        async (persona, name, handlers) =>
+        async (person, name, handlers) =>
             new DatasetSession({
                 address: datasetNamespaces.address(name),
-                access: async () => access?.accessFor(persona, name),
+                access: async () => access?.accessFor(person, name),
                 connect: connectDataset,
                 ...handlers
             }),
@@ -290,7 +289,7 @@ export function createServices(options: ServicesOptions): Services {
     );
     authorities.onClose(() => datasets.close());
     authorities.onClosed(() => datasetNamespaces.close());
-    const instances = instancesOf(DEFAULT_PERSONA);
+    const instances = instancesOf(ownerId);
     /**
      * The in-process relay (docs/design/statenet-relays.md, S3): it serves the namespaces of this workspace's running
      * instances by address, a person's state of an app at `<owner>/apps/<appId>`, and caches each subscribed path
@@ -301,11 +300,11 @@ export function createServices(options: ServicesOptions): Services {
         createAuthorityUpstream(async (address) => {
             const dataset = datasetNamespaces.datasetAt(address);
             if (dataset !== undefined) return (await storage.parts.findByName('data', dataset)) === undefined ? undefined : datasetNamespaces.hosted(address);
-            const found = instanceOfAddress(address, ownerId, owners);
+            const found = instanceOfAddress(address, owners);
             if (found === undefined || states === undefined) return undefined;
             const app = await parts.findById('apps', found.appId);
             if (app === undefined) return undefined;
-            return states.authority(app, found.persona).catch(() => undefined);
+            return states.authority(app, found.person).catch(() => undefined);
         })
     );
     const external = new ExternalReads(relay, (key, authority, writes) => authorities.receiveInstance(key, authority, writes), { owners, report: (message, fields) => options.report.info(message, fields), ...(options.sharedData !== undefined && { sharedData: options.sharedData }) });

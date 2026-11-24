@@ -49,7 +49,7 @@ import { WriteIcons } from '../application/use-cases/WriteIcons.js';
 import { WriteLocale } from '../application/use-cases/WriteLocale.js';
 import { WriteNodes } from '../application/use-cases/WriteNodes.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
-import { WritePersonaData } from '../application/use-cases/WritePersonaData.js';
+import { WritePersonData } from '../application/use-cases/WritePersonData.js';
 import type { UsageSource } from '../application/UsageIndex.js';
 import { msSince } from '../infrastructure/msSince.js';
 
@@ -57,7 +57,7 @@ import { msSince } from '../infrastructure/msSince.js';
 export interface UiBuilderPorts {
     /** The owner's parts with their usage index (`IndexedUiPartRepository` over `FilePartRepository` in the server) */
     readonly parts: UiPartRepository & UsageSource;
-    /** The default persona's instances of owner apps (`FileUiInstanceRepository`) */
+    /** The owner's own instances of owner apps (`FileUiInstanceRepository`) */
     readonly instances: UiInstanceRepository;
     /** The running instances of owner apps (`AuthorityInstanceStates`) */
     readonly instanceStates: InstanceStates;
@@ -70,7 +70,7 @@ export interface UiBuilderPorts {
     readonly fileStore: UiFileStore;
     /** The side folders of app parts, removed with the app */
     readonly appFolders: AppFolderStore;
-    /** Removes every persona's stored instance of an app, with the app; none: only the default persona's is removed */
+    /** Removes every person's stored instance of an app, with the app; none: only the owner's own is removed */
     readonly removeApp?: (appId: string) => Promise<void>;
     /** Ranks the library by meaning when a catalog search is weak; none: keywords only */
     readonly meanings?: CatalogMeanings;
@@ -118,7 +118,7 @@ export interface UiBuilderUseCases {
     readonly queryData: QueryData;
     readonly validatePartApp: ValidatePartApp;
     readonly resetInstance: ResetInstance;
-    readonly writePersonaData: WritePersonaData;
+    readonly writePersonData: WritePersonData;
     readonly setPartState: SetPartState;
     /** The app part a run-time tool names */
     readonly findPartApp: FindPartApp;
@@ -168,7 +168,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         validatePartApp: new ValidatePartApp(parts, parts, validator, report),
         findPartApp: new FindPartApp(parts),
         resetInstance: new ResetInstance(parts, instances, report, instanceStates),
-        writePersonaData: new WritePersonaData(parts, instances, validator, report, instanceStates),
+        writePersonData: new WritePersonData(parts, instances, validator, report, instanceStates),
         setPartState: new SetPartState(parts, instanceStates, validator, report),
         getPartState: new GetPartState(instanceStates, previewLog, now, report),
         runPartCommand: new RunPartCommand(instanceStates, runCommand),

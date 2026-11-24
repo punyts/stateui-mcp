@@ -1,5 +1,3 @@
-import { DEFAULT_PERSONA } from './InstanceKey.js';
-
 /** The branch of an owner's tree a namespace is under: its state of apps (`$.apps`), or its data (`$.data`) */
 export type StateBranch = 'apps' | 'data';
 
@@ -47,21 +45,20 @@ export function parseAddress(text: string): StateAddress | undefined {
 }
 
 /**
- * The address of a persona's own state of an app of a workspace: `<owner>/apps/<appId>`, the app's place in that
- * owner's tree. The workspace's default persona (its builders' preview, and the person themself in their own
- * workspace) is the workspace's owner, so a person's state of their own app is in their own tree, and stays there when
- * the app moves into an org; any other persona is the person it names
+ * The address of a person's own state of an app: `<person>/apps/<appId>`, the app's place in the person's tree. The
+ * person is an owner id: the app's owner for their own state of it (a workspace's builders' preview is the workspace's
+ * owner), anyone else for theirs, so a person's state of an app stays in their tree when the app moves into an org
  */
-export function userStateAddress(workspaceId: string, persona: string, appId: string, owners: OwnerNames = OWNER_IDS): string {
-    return formatAddress({ owner: owners.of(persona === DEFAULT_PERSONA ? workspaceId : persona), branch: 'apps', key: appId });
+export function userStateAddress(person: string, appId: string, owners: OwnerNames = OWNER_IDS): string {
+    return formatAddress({ owner: owners.of(person), branch: 'apps', key: appId });
 }
 
-/** The persona and app of an address in a workspace: its default persona when the owner is the workspace's own */
-export function instanceOfAddress(address: string, workspaceId: string, owners: OwnerNames = OWNER_IDS): { readonly appId: string; readonly persona: string } | undefined {
+/** The person (an owner id) and app of an address, or undefined when it is not an app's state of an owner known here */
+export function instanceOfAddress(address: string, owners: OwnerNames = OWNER_IDS): { readonly appId: string; readonly person: string } | undefined {
     const parsed = parseAddress(address);
     const id = parsed === undefined || parsed.branch !== 'apps' ? undefined : owners.idOf(parsed.owner);
     if (parsed === undefined || id === undefined) return undefined;
-    return { appId: parsed.key.toLowerCase(), persona: id === workspaceId ? DEFAULT_PERSONA : id };
+    return { appId: parsed.key.toLowerCase(), person: id };
 }
 
 /** The address of a dataset of a workspace: `<owner>/data/<dataset>`, the namespace that holds its records */

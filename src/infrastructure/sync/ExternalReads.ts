@@ -118,7 +118,7 @@ export class ExternalReads {
             );
         }
         for (const [alias, use] of uses) {
-            const address = userStateAddress(key.ownerId, key.persona, use.app, this.options.owners);
+            const address = userStateAddress(key.person, use.app, this.options.owners);
             attached.subscriptions.push(
                 this.relay.subscribe(address, use.path, undefined, {
                     welcome: (welcome) => {

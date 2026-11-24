@@ -39,8 +39,8 @@ export const LOGIC_VIEW_ID = 'logic';
 /** The running instance a host's function catalogs are made for */
 export interface LogicInstance {
     readonly appId: string;
-    /** The persona whose instance it is; undefined for the owner's own */
-    readonly persona?: string;
+    /** The person (an owner id) whose instance it is; absent for logic that runs outside an instance */
+    readonly person?: string;
     readonly namespace: string;
 }
 
@@ -77,10 +77,10 @@ export interface AppLogicOptions {
 }
 
 /**
- * One state-sync authority per running instance of an owner app (`instances.<persona>.<ownerId>.<appId>`), made when
+ * One state-sync authority per running instance of an owner app (`instances.<person>.<ownerId>.<appId>`), made when
  * its state is first needed, keyed by its sync namespace (`appNamespace`). It owns the order of the state changes: the
  * views' changes over their sockets and the tools' writes. `$.app` stays sparse (only the articulation a user or a tool
- * changed), so changes create missing parents. The state is the assembled view with the persona's instance laid over
+ * changed), so changes create missing parents. The state is the assembled view with the person's instance laid over
  * it, kept by the instance's own storage (`InstanceNamespaceStorage`), and with `logic` options the logic is the
  * assembled logic (the app's units and its bound modules), run by `AppLogic`
  */
@@ -110,7 +110,7 @@ export class AppAuthorities {
 
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
     instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
-        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined, start.key.persona);
+        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined, start.key.person);
     }
 
     /**
@@ -148,7 +148,7 @@ export class AppAuthorities {
     }
 
     /** The authority of a namespace, made on first use; its emits and its logic's events are recorded under `appId` */
-    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true, persona?: string): Promise<Authority> {
+    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true, person?: string): Promise<Authority> {
         let authority = this.authorities.get(namespace);
         if (authority === undefined) {
             authority = createAuthority({
@@ -161,7 +161,7 @@ export class AppAuthorities {
                 ...(ephemeralOf(document).length > 0 && { ephemeral: ephemeralOf(document) })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
-                this.startLogic(namespace, appId, created, document, derive, persona);
+                this.startLogic(namespace, appId, created, document, derive, person);
                 return created;
             }, (error: unknown) => {
                 throw this.explain(appId, error);
@@ -173,10 +173,10 @@ export class AppAuthorities {
         return authority;
     }
 
-    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true, persona?: string): void {
+    private startLogic(namespace: string, appId: string, authority: Authority, document: UiDocument, derive = true, person?: string): void {
         if (this.logic === undefined) return;
         const { library, report, procedures, agentAnswers = true } = this.logic;
-        const instance: LogicInstance = { appId, namespace, ...(persona !== undefined && { persona }) };
+        const instance: LogicInstance = { appId, namespace, ...(person !== undefined && { person }) };
         const catalogs = this.logic.functions?.map((catalog) => catalogFor(catalog, instance));
         let functions: FunctionTable | undefined;
         try {
@@ -191,7 +191,7 @@ export class AppAuthorities {
             (message, failure) => report.info(message, { app: appId, kind: failure.kind, name: failure.name, from: failure.from, command: failure.command, reason: failure.reason }),
             agentAnswers || procedures !== undefined
                 ? (name, payload) =>
-                      agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload, persona) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
+                      agentAnswers || procedures?.[name] !== undefined ? this.calls.ask(appId, name, payload, person) : Promise.resolve({ status: 'rejected' as const, reason: `no server answers "${name}"` })
                 : undefined,
             this.gateOf(namespace),
             functions,

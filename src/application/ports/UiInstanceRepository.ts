@@ -1,13 +1,13 @@
 import type { JsonObject } from '../../domain/JsonValue.js';
 
 /**
- * What one persona did in one app, shaped like the library's `AppInstance` (`app`, `screens`, `route`, `theme`,
+ * What one person did in one app, shaped like the library's `AppInstance` (`app`, `screens`, `route`, `theme`,
  * `data`), every part sparse: only the paths that differ from the definition, a removed key as `null`
  */
 export type InstanceDiff = JsonObject;
 
-/** The records of one persona binding (`uses.data.{binding}` with `scope: "persona"`): they belong to the instance */
-export interface PersonaDataset {
+/** The records of one person binding (`uses.data.{binding}` with `scope: "person"`): they belong to the instance */
+export interface PersonDataset {
     readonly model: string;
     readonly records: JsonObject;
 }
@@ -27,12 +27,12 @@ export interface InstanceWriteFence {
 }
 
 /**
- * An instance whole, for a repository that keeps it as one stored namespace: its diff, the records of its persona
+ * An instance whole, for a repository that keeps it as one stored namespace: its diff, the records of its person
  * bindings, and what the authority keeps beside its state (the revision it reached and the change ids it applied)
  */
 export interface WholeInstance {
     readonly diff: InstanceDiff;
-    readonly datasets: Readonly<Record<string, PersonaDataset>>;
+    readonly datasets: Readonly<Record<string, PersonDataset>>;
     readonly applied: ReadonlyArray<{ id: string; revision: number }>;
     readonly revision: number;
 }
@@ -43,12 +43,12 @@ export interface InstanceRead<T> {
 }
 
 /**
- * The instances of one owner's default persona, by app id: the diff of each app's state over its definition, and the
- * records of its persona bindings. Keyed by the app's id, so a rename of the app keeps them. Nothing here writes a
+ * The instances of one person in one owner's apps, by app id: the diff of each app's state over its definition, and the
+ * records of its person bindings. Keyed by the app's id, so a rename of the app keeps them. Nothing here writes a
  * part, and no part write touches an instance
  */
 export interface UiInstanceRepository {
-    /** The stored diff; `{}` when the persona has not used the app */
+    /** The stored diff; `{}` when the person has not used the app */
     get(appId: string): Promise<InstanceRead<InstanceDiff>>;
 
     /**
@@ -57,13 +57,13 @@ export interface UiInstanceRepository {
      */
     write(appId: string, definition: JsonObject, current: JsonObject, fence?: InstanceWriteFence): Promise<InstanceDiff>;
 
-    /** The records of one persona binding; `undefined` when the persona has none yet */
-    getData(appId: string, binding: string): Promise<InstanceRead<PersonaDataset | undefined>>;
+    /** The records of one person binding; `undefined` when the person has none yet */
+    getData(appId: string, binding: string): Promise<InstanceRead<PersonDataset | undefined>>;
 
-    /** Replaces the records of one persona binding. The caller checks them against the model first */
-    writeData(appId: string, binding: string, dataset: PersonaDataset, fence?: InstanceWriteFence): Promise<void>;
+    /** Replaces the records of one person binding. The caller checks them against the model first */
+    writeData(appId: string, binding: string, dataset: PersonDataset, fence?: InstanceWriteFence): Promise<void>;
 
-    /** Removes the instance and every persona binding's records of the app, so the next read is the definition */
+    /** Removes the instance and every person binding's records of the app, so the next read is the definition */
     reset(appId: string): Promise<void>;
 
     /**
@@ -74,7 +74,7 @@ export interface UiInstanceRepository {
 
     /**
      * Stores the instance whole, in one write: the diff of `current` over `definition` as `write` takes them, the
-     * records of every persona binding, and what the authority keeps beside its state. Returns the diff stored
+     * records of every person binding, and what the authority keeps beside its state. Returns the diff stored
      */
-    saveWhole?(appId: string, definition: JsonObject, current: JsonObject, datasets: Readonly<Record<string, PersonaDataset>>, kept: Pick<WholeInstance, 'applied' | 'revision'>, fence?: InstanceWriteFence): Promise<InstanceDiff>;
+    saveWhole?(appId: string, definition: JsonObject, current: JsonObject, datasets: Readonly<Record<string, PersonDataset>>, kept: Pick<WholeInstance, 'applied' | 'revision'>, fence?: InstanceWriteFence): Promise<InstanceDiff>;
 }

@@ -43,7 +43,7 @@ export type RenamePartResult =
 /**
  * Renames a part and rewrites every part that names it, all together (the repository writes them through a journal):
  * theme lists, bindings' datasets and models, `uses.logic` keys, `needs` models, datasets' models and the composed
- * names in nodes. The part keeps its id, so instances and persona data, which are keyed by id, stay where they are.
+ * names in nodes. The part keeps its id, so instances and person data, which are keyed by id, stay where they are.
  * Renaming a screen is a write of its app with its revision: the key in `screens`, `start` and every `navigate` to it
  */
 export class RenamePart {

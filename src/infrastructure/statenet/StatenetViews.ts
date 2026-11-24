@@ -385,7 +385,7 @@ class AppBridge {
 
     /**
      * A CSV export over the relay, as `POST /apps/:appId/export` answers it: the records at the source in the owner's
-     * instance (a statenet view runs the default persona), never rows from the browser
+     * instance (a statenet view runs the owner's own), never rows from the browser
      */
     private async exportRequest(body: JsonValue | undefined): Promise<{ status: number; json?: JsonValue; bytes?: string; headers?: Record<string, string> }> {
         if (typeof body !== 'string' || body.length > 64 * 1024) return { status: 400 };

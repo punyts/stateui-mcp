@@ -53,7 +53,7 @@ function objectAt(value: JsonValue | undefined, key: string): JsonObject | undef
 }
 
 /**
- * The structure or the content of an app of parts as its default persona's instance runs it: the app node, with the
+ * The structure or the content of an app of parts as the owner's own instance runs it: the app node, with the
  * screens drawn below it under their own state paths (`$.screens.{name}`), and, when asked, the logic of the app
  * and of its modules (module units carry their module's name as a prefix, `cart:totals`), each machine in its current
  * state. Marks and record counts follow the instance's state. Reuses the formatters of `OutlineApp`

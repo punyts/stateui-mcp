@@ -62,7 +62,7 @@ function appReferences(app: UiPartBodies['apps'], refs: Refs): void {
 }
 
 /**
- * The parts a part names directly, once each, in the order found. An app: its themes, its datasets (a persona
+ * The parts a part names directly, once each, in the order found. An app: its themes, its datasets (a person
  * binding names a model), its logic modules and the components in its app node and screens; a logic module: the models of
  * its `needs`; a dataset: its model; a component or a pattern: the components in its tree. Component names include
  * library components, which are no parts: the caller keeps only the names the owner has. Bodies are read loosely, so a

@@ -52,7 +52,7 @@ function freeName(name: string, taken: (candidate: string) => boolean): string {
 /**
  * Copies an app and every part it reaches (its themes, datasets and models, logic modules and composed components,
  * and what those reach in turn) from one owner's parts to another's, as a remix does. The copy is the definition only:
- * no persona's state and none of the app's uploaded files come along.
+ * no person's state and none of the app's uploaded files come along.
  *
  * A reached part the target already has under its name with the same body is reused. One whose name the target uses for
  * something else is copied under a free name (`theme-2`), and every copied body that names it is rewritten to match.

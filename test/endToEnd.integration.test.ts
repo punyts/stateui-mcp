@@ -101,7 +101,7 @@ describe.skipIf(!installed)('building a multi-screen app from parts through the 
             name: 'shop',
             title: 'Harbor shop',
             themes: ['harbor'],
-            data: { products: { dataset: 'catalog' }, bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } },
+            data: { products: { dataset: 'catalog' }, bag: { model: 'bag-line', scope: 'person' }, totals: { model: 'cart-totals', scope: 'person' } },
             logic: { cart: {} }
         });
         shopId = shop['id'] as string;

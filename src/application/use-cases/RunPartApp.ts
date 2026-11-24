@@ -26,14 +26,14 @@ export interface PartStateResult {
     readonly app: string;
     /** The app part's revision: using the app never raises it */
     readonly revision: number;
-    /** The state of the default persona's running instance */
+    /** The state of the owner's own running instance */
     readonly state: JsonObject;
     readonly source: 'instance';
     readonly preview: UiPreviewDto;
 }
 
 /**
- * The state of the default persona's instance of an app part, read from its running authority (started over the
+ * The state of the owner's own instance of an app part, read from its running authority (started over the
  * definition and the stored instance when nothing runs it yet), with what its views report
  */
 export class GetPartState {

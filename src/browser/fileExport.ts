@@ -1,7 +1,7 @@
 /**
  * The live view page's side of a CSV export (`fileExport` from the runtime, answered with `fileExported`). It runs in
  * the page and sends `POST /apps/:appId/export` to the page's own origin with the grid's settings, never rows; the
- * authority builds the file from the persona's own instance. The page then hands the file to the browser to save: the
+ * authority builds the file from the person's own instance. The page then hands the file to the browser to save: the
  * frame is sandboxed without `allow-downloads`, so it could not. `host.ts` bundles it.
  */
 

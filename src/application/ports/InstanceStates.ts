@@ -2,8 +2,8 @@ import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { UiDocument } from '../../domain/UiApp.js';
 import type { UiPart } from '../../domain/UiPart.js';
 
-/** What a key of `uses.data` binds: a shared dataset (a part) or the persona's own records of a model */
-export type BindingScope = 'shared' | 'persona';
+/** What a key of `uses.data` binds: a shared dataset (a part) or the person's own records of a model */
+export type BindingScope = 'shared' | 'person';
 
 /** What a running instance is made of: the assembled document and the scope of each data binding */
 export interface InstanceShape {
@@ -18,8 +18,8 @@ export interface InstanceWriteOptions {
 }
 
 /**
- * The running instances of owner apps, for the default persona: one state-sync authority each, whose state is the
- * assembled view (`$.app` and `$.screens` sparse, `$.route`, `$.data` by binding) with the persona's instance laid
+ * The running instances of owner apps, for the owner's own instance (whose person is the owner): one state-sync authority each, whose state is the
+ * assembled view (`$.app` and `$.screens` sparse, `$.route`, `$.data` by binding) with the person's instance laid
  * over it. The app is given as its part, so the caller has read it (and its revision) once
  */
 export interface InstanceStates {

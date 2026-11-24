@@ -82,18 +82,18 @@ describe('the run-time tools', () => {
         for (const name of RUN_TIME_TOOLS) expect(described.get(name), name).toMatch(/^Run time: /);
     });
 
-    it('should need an app, refuse other personas and name the nearest apps', async () => {
+    it('should need an app, take no persona and name the nearest apps', async () => {
         // Act
         const neither = await call(harness.client, 'ui_state_get', {});
         const byId = await call(harness.client, 'ui_state_get', { appId: '00000000-0000-4000-8000-0000000000aa' });
-        const persona = await call(harness.client, 'ui_events_read', { app: 'shop', persona: 'guest' });
+        const persona = await call(harness.client, 'ui_events_read', { app: 'shop', persona: 'default' });
         const missing = await call(harness.client, 'ui_events_read', { app: 'shp' });
-        const events = await call(harness.client, 'ui_events_read', { app: 'shop', persona: 'default' });
+        const events = await call(harness.client, 'ui_events_read', { app: 'shop' });
 
         // Assert
         expect(neither.body).toMatchObject({ error: 'invalid-argument' });
         expect(byId.body).toMatchObject({ error: 'invalid-argument' });
-        expect(persona.body).toMatchObject({ error: 'invalid-argument', argument: 'persona', personas: ['default'] });
+        expect(persona.body).toMatchObject({ error: 'invalid-argument' });
         expect(missing.body).toMatchObject({ error: 'not-found', nearest: ['shop'] });
         expect(events.body).toEqual({ app: 'shop', events: [], cursor: 0 });
     });

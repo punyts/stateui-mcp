@@ -20,8 +20,8 @@
  * document. The sync client keeps the confirmed state and the changes not yet acknowledged in `localStorage`, with
  * the document beside them, so the app opens and takes changes offline and sends them when the connection is back.
  *
- * An owner app (`data-namespace` on the body, `instances.<persona>.<ownerId>.<appId>`) syncs with the default
- * persona's instance: besides `$.data` and `$.app`, its state holds the articulation of each screen (`$.screens`) and
+ * An owner app (`data-namespace` on the body, `instances.<person>.<ownerId>.<appId>`) syncs with the
+ * person's instance: besides `$.data` and `$.app`, its state holds the articulation of each screen (`$.screens`) and
  * the route (`$.route`). A load lays that state over the assembled app as the runtime's `instance`; a route another
  * view moved arrives as a `navigate` command, since the runtime protects `$.route`. `?screen=<name>&params=<json>` in
  * the page URL navigates there once the app is ready.
@@ -105,7 +105,7 @@ interface ViewState {
     app: JsonRecord;
     screens: JsonRecord;
     route?: Json;
-    /** An instance's `{ active }`: the persona's choice of theme and overlays (`$.theme.active`) */
+    /** An instance's `{ active }`: the person's choice of theme and overlays (`$.theme.active`) */
     theme?: Json;
 }
 
@@ -195,7 +195,7 @@ function articulation(value: Json): Json | undefined {
 /**
  * The part of a runtime change that is synced, or undefined: `$.data`, and below `$.app` the articulation (no `_`
  * content, no `component`, `on`, `layout`, `placement` or `theme` of a node). An instance also syncs the articulation
- * below `$.screens.{name}`, `$.route` and `$.theme.active` (the persona's choice of theme and overlays, never the
+ * below `$.screens.{name}`, `$.route` and `$.theme.active` (the person's choice of theme and overlays, never the
  * tokens). `$.locale` stays in the view
  */
 function toSyncedChange(path: string, op: ChangeOp, value: Json | undefined, instance: boolean): { path: string; op: ChangeOp; value?: Json } | undefined {
@@ -341,7 +341,7 @@ export class LiveView {
     private readonly namespace: string;
     /** The key chords the page handles itself (`data-host-keys`), sent in `load` as `keys` */
     private readonly hostKeys: string[];
-    /** An owner app's view: the state is the default persona's instance */
+    /** An owner app's view: the state is a person's instance */
     private readonly instance: boolean;
     /** `?screen=` and `?params=`: where the view navigates once the app is first ready */
     private openAt: { screen: string; params?: Json } | undefined;
@@ -382,7 +382,7 @@ export class LiveView {
     private mode: string | undefined;
     /**
      * The overlay this view applied for the server (a screenshot's mode, `?mode=`), by kind: the change it causes stays
-     * in this view and is not synced as the persona's choice. Any other change of that kind clears it
+     * in this view and is not synced as the person's choice. Any other change of that kind clears it
      */
     private readonly viewThemes = new Map<string, string>();
     private locale: string | undefined;
@@ -1049,7 +1049,7 @@ export class LiveView {
     }
 
     /**
-     * A grid asks for its records as a CSV file: the server builds it from the persona's own instance and the page saves
+     * A grid asks for its records as a CSV file: the server builds it from the person's own instance and the page saves
      * it (the frame cannot download), answered with `fileExported`. It waits until the frame's changes before it are
      * acknowledged, so an edit made just before is in the file
      */

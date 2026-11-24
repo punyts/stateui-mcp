@@ -31,7 +31,7 @@ export type { NodeServerOptions, RunningNodeServer } from './config/startNodeSer
 export type { ToolOutcome, UiToolDefinition } from './infrastructure/mcp/toolKit.js';
 export { copyAppParts } from './application/copyAppParts.js';
 export type { CopiedPart, CopyAppOptions, CopyAppResult } from './application/copyAppParts.js';
-export { DEFAULT_PERSONA, isPersonaName } from './domain/InstanceKey.js';
+export { isPersonId } from './domain/InstanceKey.js';
 export { appNamespace } from './infrastructure/sync/FileNamespaceStorage.js';
 export type { RevokedApp } from './infrastructure/http/HttpServer.js';
 export { StatenetViews } from './infrastructure/statenet/StatenetViews.js';
@@ -66,7 +66,7 @@ export type {
     UiPartSummary,
     UiPartWriteResult
 } from './application/ports/UiPartRepository.js';
-export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonaDataset, UiInstanceRepository, WholeInstance } from './application/ports/UiInstanceRepository.js';
+export type { InstanceDiff, InstanceRead, InstanceWriteFence, PersonDataset, UiInstanceRepository, WholeInstance } from './application/ports/UiInstanceRepository.js';
 export type { InstancePlacement } from './application/ports/InstancePlacement.js';
 export type { AddUiFileInput, AddUiFileResult, ReleaseUiFileOutcome, UiFileRepository, UiFileUsage } from './application/ports/UiFileRepository.js';
 export type { ByteRange, SaveFileResult, UiFileStore } from './application/ports/UiFileStore.js';

@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **An instance is keyed by the person, and personas are gone** (docs/design/person-state.md). Breaking.
+  `InstanceKey` is `{ person, ownerId, appId }` with text `{person}.{ownerId}.{appId}`; a person is an owner id, and
+  the owner's own instance is the one whose person is the owner. `DEFAULT_PERSONA` and `isPersonaName` are removed;
+  `isPersonId` checks an id that reaches a path. `userStateAddress(person, appId, owners?)` and
+  `instanceOfAddress(address, owners?)` no longer take the workspace, and `instanceOfAddress` answers the person's id.
+  The run-time tools lose their `persona` argument (an unknown argument is refused). The binding scope is
+  `scope: "person"` in tool descriptions and the guide; `WritePersonaData` is `WritePersonData` (`not-person`), and
+  `PersonaDataset` is `PersonDataset`. File storage keeps instances under `people/<person>/` (the owner's own under
+  the owner's id), and `PartFolders.personDataDir` and `personDataFile` take the person. Tests:
+  `src/domain/InstanceKey.test.ts`, `src/domain/StateAddress.test.ts`, `src/config/instanceStates.test.ts`,
+  `src/config/placement.test.ts`, `test/runTools.test.ts`.
 - **Views sync over protocol 4** (docs/design/statenet-wire-format.md, W2). Breaking: a view's socket
   (`GET /apps/:appId/sync`), the view page's statenet socket and the server's link to the statenet speak state-sync's
   protocol 4: a `hello` as text, then binary frames (`binaryType = 'arraybuffer'` in the browser), with

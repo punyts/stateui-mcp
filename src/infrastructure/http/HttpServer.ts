@@ -20,7 +20,6 @@ import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { AuthoritySession } from '@punyts/state-sync/authority';
-import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
 import { createSyncWire, REVOKED_CODE, wireTypeOf } from '@punyts/state-sync';
 import type { SyncWire } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
@@ -49,10 +48,10 @@ export interface HttpTenant {
      */
     readonly retain?: (close: (reason: string, revoked?: boolean) => void) => () => void;
     /**
-     * The persona whose instance of the app the views sync with; default the owner's own (`DEFAULT_PERSONA`). Another
-     * person given an app keeps their own state in it under a persona of their own (`isPersonaName`)
+     * The person (an owner id) whose instance of the app the views sync with; default the owner's own. Another person
+     * given an app keeps their own state in it under their own id (`isPersonId`)
      */
-    readonly persona?: string;
+    readonly person?: string;
     /**
      * What the request may do: `owner` (default) anything; `use` run the app with its own state, but not upload or
      * release the app's files; `view` that and no change to the state either: each change a view sends is rejected
@@ -265,11 +264,11 @@ const PREVIEW_CATEGORY = 'stateui-mcp.preview';
  * | Route | What |
  * |---|---|
  * | `GET /` | the app parts, with a link to each |
- * | `GET /apps/:appId` | the live view of an app part: assembled, with the default persona's instance |
+ * | `GET /apps/:appId` | the live view of an app part: assembled, with the owner's own instance |
  * | `GET /apps/:appId/sync?view=<uuid>&kind=browser\|headless` | the WebSocket of a view: the state-sync protocol with the app's authority, and `{ type: 'view', message }` frames for the document, commands, locale, theme and deletion |
  * | `POST /apps/:appId/report` | what a view tells the server: ready, rendered, errors |
  * | `POST /apps/:appId/files` | an upload from a `fileField` (multipart, one field `file`) |
- * | `POST /apps/:appId/export` | a CSV file of records in the persona's own instance: `{ source, name, request }` (`RecordExportRequest`), filtered and sorted here; never rows from the browser |
+ * | `POST /apps/:appId/export` | a CSV file of records in the person's own instance: `{ source, name, request }` (`RecordExportRequest`), filtered and sorted here; never rows from the browser |
  * | `DELETE /apps/:appId/files/:fileId` | releases an upload: `204` removed, `409` kept because the app's definition or live state still references it, `404` no such file |
  * | `GET /paths/<owner>/apps/:appId/files/:fileId` | the bytes of an upload by its statenet path (`pathsRoute`): byte ranges, inline for pictures, audio and video, read with the session or a `/paths` token `?g=` (`PathTokens`) |
  * | `GET /assets/host.js`, `/assets/page.css` | the host script and the stylesheet |
@@ -435,7 +434,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         );
     }
 
-    async function appRoute({ instances, persona, forget, reader }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
+    async function appRoute({ instances, person, forget, reader }: HttpTenant, request: IncomingMessage, response: ServerResponse, appId: string): Promise<void> {
         const part = await instances.find(appId);
         if (part === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
         const headless = /HeadlessChrome/.test(request.headers['user-agent'] ?? '');
@@ -454,7 +453,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                 ...(chunk3d !== undefined && { chunk3d: chunk3d.hash }),
                 ...(inPage !== undefined && { pageBundle: inPage.hash }),
                 viewKind: headless ? 'headless' : 'browser',
-                namespace: instances.namespace(part, persona),
+                namespace: instances.namespace(part, person),
                 ...(forget !== undefined && forget.length > 0 && { forget }),
                 paths: appPaths(instances.owner, part.id),
                 grant: await grants.issue(instances.owner, part.id, reader)
@@ -472,7 +471,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     /**
      * A CSV export (`fileExport` of the runtime, through the host page): the records at `source` in the requesting
-     * persona's own instance, so the file holds only what that persona can read (a shared dataset whole, a persona
+     * person's own instance, so the file holds only what that person can read (a shared dataset whole, a person
      * binding's own records, another owner's share), filtered, sorted and cut to the columns as the grid shows them. The
      * browser sends the settings, never rows; nothing is stored. Logs the app, the source and the row count, never a value
      */
@@ -480,7 +479,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         const body = await readJsonBody(request, MAX_EXPORT_BODY_BYTES);
         const app = await tenant.instances.find(appId);
         if (app === undefined) throw new HttpError(404, 'No app with this id', 'not_found');
-        const result = await buildRecordsCsv(appId, body, async (source) => (await tenant.instances.authority(app, tenant.persona ?? DEFAULT_PERSONA)).get(source), report);
+        const result = await buildRecordsCsv(appId, body, async (source) => (await tenant.instances.authority(app, tenant.person)).get(source), report);
         if (result.kind === 'refused') throw new HttpError(result.status, result.message, result.code);
         const { 'content-type': contentType, ...headers } = csvHeaders(result.name, result.rows);
         send(response, 200, contentType as string, result.csv, { ...headers, 'Content-Security-Policy': FILE_CSP });
@@ -704,13 +703,13 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             return;
         }
         if (!('tenant' in answer)) return refuseUpgrade(socket, answer.refuse, answer.refuse === 404 ? 'Not Found' : answer.refuse === 401 ? 'Unauthorized' : 'Forbidden');
-        const { instances, liveViews, hub, retain, persona, reader } = answer.tenant;
+        const { instances, liveViews, hub, retain, person, reader } = answer.tenant;
         const readOnly = answer.tenant.access === 'view';
         const part = await instances.find(appId);
         if (part === undefined) return refuseUpgrade(socket, 404, 'Not Found');
         const first = await liveViews.attachMessage(appId);
         if (first === undefined) return refuseUpgrade(socket, 404, 'Not Found');
-        // The view syncs with its persona's instance of the app (the owner's own unless the tenant names another), here
+        // The view syncs with its person's instance of the app (the owner's own unless the tenant names another), here
         // or on the server that runs it; the session is asked for once the socket is open
         sockets.handleUpgrade(request, socket, head, (ws: WebSocket) => {
             const sendView = (message: ViewMessage): void => {
@@ -729,7 +728,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             const early: (string | Uint8Array)[] = [];
             const refusals = createSyncWire();
             instances
-                .connect(part, persona ?? DEFAULT_PERSONA, {
+                .connect(part, person, {
                     send: (data) => {
                         if (ws.readyState === ws.OPEN) ws.send(data);
                     },

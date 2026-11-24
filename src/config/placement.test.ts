@@ -5,9 +5,8 @@ import type { Access, Authority, AuthorityConnection, AuthoritySession, Upstream
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { IndexedUiPartRepository } from '../application/IndexedUiPartRepository.js';
 import type { InstancePlacement } from '../application/ports/InstancePlacement.js';
-import type { InstanceWriteFence, PersonaDataset, UiInstanceRepository } from '../application/ports/UiInstanceRepository.js';
+import type { InstanceWriteFence, PersonDataset, UiInstanceRepository } from '../application/ports/UiInstanceRepository.js';
 import { WritePart } from '../application/use-cases/WritePart.js';
-import { DEFAULT_PERSONA } from '../domain/InstanceKey.js';
 import type { JsonObject } from '../domain/JsonValue.js';
 import { userStateAddress } from '../domain/StateAddress.js';
 import type { UiPart, UiPartBodies } from '../domain/UiPart.js';
@@ -35,7 +34,7 @@ class FencedInstances extends FileUiInstanceRepository implements UiInstanceRepo
         this.fences.push(fence);
         return super.write(appId, definition, current);
     }
-    override async writeData(appId: string, binding: string, dataset: PersonaDataset, fence?: InstanceWriteFence) {
+    override async writeData(appId: string, binding: string, dataset: PersonDataset, fence?: InstanceWriteFence) {
         this.fences.push(fence);
         return super.writeData(appId, binding, dataset);
     }
@@ -95,7 +94,7 @@ describe('instances with a placement', () => {
         // Arrange
         const { placed, claimed } = placement();
         const { states, authorities } = server(placed);
-        const address = userStateAddress(OWNER, DEFAULT_PERSONA, app.id);
+        const address = userStateAddress(OWNER, app.id);
 
         // Act
         await states.write(app, '$.app.note', 'hello');
@@ -113,11 +112,11 @@ describe('instances with a placement', () => {
         const { states, authorities } = server(placed);
 
         // Act
-        await states.connect(app, DEFAULT_PERSONA, { send: () => undefined, close: () => undefined });
+        await states.connect(app, OWNER, { send: () => undefined, close: () => undefined });
 
         // Assert
-        expect(tunnelled).toEqual([userStateAddress(OWNER, DEFAULT_PERSONA, app.id)]);
-        await expect(states.hosted(userStateAddress(OWNER, DEFAULT_PERSONA, app.id))).rejects.toThrow('runs on another server');
+        expect(tunnelled).toEqual([userStateAddress(OWNER, app.id)]);
+        await expect(states.hosted(userStateAddress(OWNER, app.id))).rejects.toThrow('runs on another server');
         await authorities.close();
     });
 
@@ -125,11 +124,11 @@ describe('instances with a placement', () => {
         // Arrange
         const { placed, owned } = placement();
         const { states, authorities } = server(placed);
-        const address = userStateAddress(OWNER, DEFAULT_PERSONA, app.id);
+        const address = userStateAddress(OWNER, app.id);
         owned.set(address, 3);
         const hosted = await states.hosted(address);
         let closed = false;
-        await states.connect(app, DEFAULT_PERSONA, { send: () => undefined, close: () => (closed = true) });
+        await states.connect(app, OWNER, { send: () => undefined, close: () => (closed = true) });
 
         // Act
         await states.release(address);

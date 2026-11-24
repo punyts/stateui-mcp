@@ -11,9 +11,9 @@ function deepFreeze<T>(value: T): T {
     return value;
 }
 
-/** A shop with a persona bag of lines and totals, and a price field on its home screen */
+/** A shop with a person bag of lines and totals, and a price field on its home screen */
 const SHOP = deepFreeze({
-    uses: { data: { bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } } },
+    uses: { data: { bag: { model: 'bag-line', scope: 'person' }, totals: { model: 'cart-totals', scope: 'person' } } },
     start: 'home',
     app: { component: 'app' },
     screens: { home: { root: { component: 'form', children: { price: { component: 'textField', _label: 'Price' } } } } }

@@ -24,9 +24,9 @@ const CUSTOMERS_APP = deepFreeze({
     screens: { home: { root: SAMPLE } }
 }) as unknown as UiPartBodies['apps'];
 
-/** A shop with a home and a detail screen, a persona bag and totals, and a machine over the totals' status */
+/** A shop with a home and a detail screen, a person bag and totals, and a machine over the totals' status */
 const SHOP = deepFreeze({
-    uses: { data: { bag: { model: 'bag-line', scope: 'persona' }, totals: { model: 'cart-totals', scope: 'persona' } } },
+    uses: { data: { bag: { model: 'bag-line', scope: 'person' }, totals: { model: 'cart-totals', scope: 'person' } } },
     start: 'home',
     app: { component: 'app' },
     screens: {
