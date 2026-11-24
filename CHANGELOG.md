@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- **The logic guide says `is` and `was` take a list, and which rules run at start.** Follows stateui-app. Test:
+  `test/toolSet.test.ts` (the guide's size).
 - **Server logic reads a screen value nobody wrote as the definition's.** Fix: `AppLogic` read `$.screens` only
   from the authority, which keeps it sparse, so a rule saw nothing for a field left at its default; it now lays the
   stored value over the document's with the shape defaults, as for `$.app`. Test:
