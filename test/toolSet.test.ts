@@ -154,7 +154,7 @@ describe('the server instructions', () => {
         const instructions = harness.client.getInstructions() ?? '';
 
         // Assert: one pointer line per graphics topic, and none of their texts
-        for (const topic of ['drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play']) {
+        for (const topic of ['drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play', 'scene3d-modeling']) {
             const guide = await call(harness.client, GUIDE_TOOL, { topic });
             expect(instructions, topic).toContain(`read ui_guide topic ${topic}.`);
             expect(instructions, topic).not.toContain(String(guide.body['text']));
