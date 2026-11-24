@@ -24,6 +24,7 @@ import type { UiDocument } from '../../domain/UiApp.js';
 /** The roots logic watches; guards are registered on each */
 const ROOTS = ['$.app', '$.data', '$.server', '$.screens', ROUTE_PATH];
 const APP_ROOT = '$.app';
+const SCREENS_ROOT = '$.screens';
 
 /** What the app server learns from an app's logic: an `emit` or a failure, for `ui_events_read` */
 export type AppLogicEvent = (name: string, payload: JsonValue | undefined) => void;
@@ -78,8 +79,8 @@ export interface DataGate {
  * the view gets `sync.rejected`. Tool writes go through `write`, which asks the guards and runs the logic the same way.
  * A transition's writes are pushed as one `changes` message (`writeAll`).
  *
- * The authority keeps `$.app` sparse, so `$.app` is read through the document: the authority's value laid over the
- * document's value with the shape defaults. `notify` and `logic.failed` are sent to the views as app events;
+ * The authority keeps `$.app` and `$.screens` sparse, so both are read through the document: the authority's value laid
+ * over the document's value with the shape defaults. `notify` and `logic.failed` are sent to the views as app events;
  * `emit` and failures also go to `onEvent`, for the agent. The value a client change replaces is read before it is
  * applied (`onChange`), for `$previous`. Timers run on `setTimeout` without keeping the process alive; `call` goes to
  * `onCall`
@@ -165,7 +166,7 @@ export class AppLogic {
         const valid = logicFor(readLogic(logic, { resolve: index.resolve, ...(this.functions === undefined ? {} : { functions: this.functions }) }).logic, 'server');
         const read = (path: string): AppValue | undefined => {
             const stored = this.authority.get(path) as AppValue | undefined;
-            return covers(APP_ROOT, path) ? overlay(index.initial(path), stored) : stored;
+            return covers(APP_ROOT, path) || covers(SCREENS_ROOT, path) ? overlay(index.initial(path), stored) : stored;
         };
         this.read = read;
         const host: LogicHost = {

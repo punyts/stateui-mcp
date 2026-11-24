@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Server logic reads a screen value nobody wrote as the definition's.** Fix: `AppLogic` read `$.screens` only
+  from the authority, which keeps it sparse, so a rule saw nothing for a field left at its default; it now lays the
+  stored value over the document's with the shape defaults, as for `$.app`. Test:
+  `src/infrastructure/sync/AppLogic.test.ts` ("AppLogic screens").
 - **Northwind Ops and the Lumen desktop install with the showcase** (docs/design/magnetic-starter-apps.md). Two
   starter apps of parts, rebuilt from the example's apps with no host functions, are committed as part bodies in
   `showcase/starters/` and built into `showcase/parts` by `npm run showcase:build` (`STARTER_APPS`, `starterParts`);

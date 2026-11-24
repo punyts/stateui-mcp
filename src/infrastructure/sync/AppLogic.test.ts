@@ -450,6 +450,31 @@ const SCREENS_DOCUMENT = Object.freeze({
     }
 }) as unknown as UiDocument;
 
+describe('AppLogic screens', () => {
+    it("should read a screen value nobody wrote as the definition's, and a written one as written", async () => {
+        // Arrange
+        const document = Object.freeze({
+            data: { go: '', copied: '' },
+            app: { component: 'page' },
+            screens: { 'new-order': { root: { component: 'page', children: { qty: { component: 'textField', value: '3' } } } } },
+            start: 'new-order',
+            logic: { rules: { copy: { when: { path: '$.data.go' }, do: [{ command: 'set', target: '$.data.copied', value: '{{ $.screens.new-order.children.qty.value }}' }] } } }
+        }) as unknown as UiDocument;
+        const { authority, logic, failures } = await setup(document);
+
+        // Act
+        logic.write('$.data.go', 'first');
+        const unwritten = authority.get('$.data.copied');
+        logic.write('$.screens.new-order.children.qty.value', '7');
+        logic.write('$.data.go', 'second');
+
+        // Assert
+        expect(unwritten).toBe('3');
+        expect(authority.get('$.data.copied')).toBe('7');
+        expect(failures).toEqual([]);
+    });
+});
+
 describe('AppLogic navigate', () => {
     it('should run navigate on the server and write $.route', async () => {
         const { authority, logic, failures } = await setup(SCREENS_DOCUMENT);
