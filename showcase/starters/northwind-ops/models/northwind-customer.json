@@ -1,0 +1,39 @@
+{
+    "fields": {
+        "id": {
+            "type": "string",
+            "required": true
+        },
+        "name": {
+            "type": "string",
+            "required": true
+        },
+        "email": {
+            "type": "string",
+            "default": ""
+        },
+        "city": {
+            "type": "string",
+            "default": ""
+        },
+        "tier": {
+            "type": "string",
+            "default": "Bronze",
+            "validators": {
+                "oneOf": [
+                    "Gold",
+                    "Silver",
+                    "Bronze"
+                ]
+            }
+        },
+        "tierTone": {
+            "type": "string",
+            "default": "accent"
+        },
+        "since": {
+            "type": "string",
+            "default": ""
+        }
+    }
+}

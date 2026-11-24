@@ -1,0 +1,265 @@
+{
+    "model": "lumen-file",
+    "records": {
+        "welcome": {
+            "name": "Welcome.md",
+            "folder": "documents",
+            "kind": "note",
+            "icon": "file-text",
+            "modified": "2026-11-24T09:00:00.000Z",
+            "text": "# Welcome to Lumen\n\nLumen is a small desktop that lives in this app. Everything you make is kept in your own space, so it is still here the next time you open it.\n\n- **Files** shows your folders. Double-click a note to open it.\n- **Notes** edits Markdown, like this note, with a live preview.\n- **Viewer** shows the pictures in *Pictures*.\n- **Settings** picks the wallpaper.\n\nDrag a window by its title bar, resize it by its edge, and use the taskbar to bring it back.\n",
+            "sortKey": "welcome.md",
+            "detail": "Note, 2026-11-24"
+        },
+        "ideas": {
+            "name": "Ideas.md",
+            "folder": "documents",
+            "kind": "note",
+            "icon": "file-text",
+            "modified": "2026-11-24T09:05:00.000Z",
+            "text": "# Ideas\n\n1. A reading list for the winter\n2. Plan the garden beds\n3. Learn the names of the stars in Orion\n",
+            "sortKey": "ideas.md",
+            "detail": "Note, 2026-11-24"
+        },
+        "groceries": {
+            "name": "Groceries.md",
+            "folder": "documents",
+            "kind": "note",
+            "icon": "file-text",
+            "modified": "2026-11-24T09:10:00.000Z",
+            "text": "# Groceries\n\n- [ ] Oats\n- [ ] Apples\n- [ ] Coffee beans\n- [ ] Lemons\n",
+            "sortKey": "groceries.md",
+            "detail": "Note, 2026-11-24"
+        },
+        "dawn": {
+            "name": "Dawn",
+            "folder": "pictures",
+            "kind": "picture",
+            "icon": "photo",
+            "modified": "2026-11-24T09:00:00.000Z",
+            "paints": {
+                "sky": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#2b3a67"
+                        },
+                        "s1": {
+                            "offset": 0.33,
+                            "color": "#7a6fa8"
+                        },
+                        "s2": {
+                            "offset": 0.67,
+                            "color": "#f2a97e"
+                        },
+                        "s3": {
+                            "offset": 1,
+                            "color": "#ffd9a8"
+                        }
+                    }
+                },
+                "glow": {
+                    "kind": "radial",
+                    "center": [
+                        0.5,
+                        0.5
+                    ],
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#fff3d6"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#ffd9a800"
+                        }
+                    }
+                },
+                "far": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#5a4a7a"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#3a3358"
+                        }
+                    }
+                },
+                "near": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#3a3358"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#3a3358"
+                        }
+                    }
+                }
+            },
+            "sortKey": "dawn",
+            "detail": "Picture, 2026-11-24"
+        },
+        "dusk": {
+            "name": "Dusk",
+            "folder": "pictures",
+            "kind": "picture",
+            "icon": "photo",
+            "modified": "2026-11-24T09:00:00.000Z",
+            "paints": {
+                "sky": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#0d1b2a"
+                        },
+                        "s1": {
+                            "offset": 0.33,
+                            "color": "#1b3a5b"
+                        },
+                        "s2": {
+                            "offset": 0.67,
+                            "color": "#46406f"
+                        },
+                        "s3": {
+                            "offset": 1,
+                            "color": "#a35d6a"
+                        }
+                    }
+                },
+                "glow": {
+                    "kind": "radial",
+                    "center": [
+                        0.5,
+                        0.5
+                    ],
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#ffd1a6"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#ffd1a600"
+                        }
+                    }
+                },
+                "far": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#22304a"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#141d30"
+                        }
+                    }
+                },
+                "near": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#141d30"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#141d30"
+                        }
+                    }
+                }
+            },
+            "sortKey": "dusk",
+            "detail": "Picture, 2026-11-24"
+        },
+        "meadow": {
+            "name": "Meadow",
+            "folder": "pictures",
+            "kind": "picture",
+            "icon": "photo",
+            "modified": "2026-11-24T09:00:00.000Z",
+            "paints": {
+                "sky": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#7cc6e8"
+                        },
+                        "s1": {
+                            "offset": 0.5,
+                            "color": "#b6e0ee"
+                        },
+                        "s2": {
+                            "offset": 1,
+                            "color": "#e6f4ea"
+                        }
+                    }
+                },
+                "glow": {
+                    "kind": "radial",
+                    "center": [
+                        0.5,
+                        0.5
+                    ],
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#fffbe0"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#fffbe000"
+                        }
+                    }
+                },
+                "far": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#6ea86a"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#3f7d4a"
+                        }
+                    }
+                },
+                "near": {
+                    "kind": "linear",
+                    "angle": 90,
+                    "stops": {
+                        "s0": {
+                            "offset": 0,
+                            "color": "#3f7d4a"
+                        },
+                        "s1": {
+                            "offset": 1,
+                            "color": "#3f7d4a"
+                        }
+                    }
+                }
+            },
+            "sortKey": "meadow",
+            "detail": "Picture, 2026-11-24"
+        }
+    }
+}

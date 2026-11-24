@@ -1,0 +1,73 @@
+{
+  "id": "322e7ce5-125b-534f-9eff-3d1105bfda90",
+  "kind": "data",
+  "name": "northwind-revenue",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "northwind-month",
+    "records": {
+      "m202512": {
+        "label": "Dec 25",
+        "revenue": 19606,
+        "orders": 351
+      },
+      "m202601": {
+        "label": "Jan 26",
+        "revenue": 18403,
+        "orders": 350
+      },
+      "m202602": {
+        "label": "Feb 26",
+        "revenue": 20975,
+        "orders": 305
+      },
+      "m202603": {
+        "label": "Mar 26",
+        "revenue": 17880,
+        "orders": 333
+      },
+      "m202604": {
+        "label": "Apr 26",
+        "revenue": 20078,
+        "orders": 365
+      },
+      "m202605": {
+        "label": "May 26",
+        "revenue": 19416,
+        "orders": 377
+      },
+      "m202606": {
+        "label": "Jun 26",
+        "revenue": 21618,
+        "orders": 353
+      },
+      "m202607": {
+        "label": "Jul 26",
+        "revenue": 20337,
+        "orders": 415
+      },
+      "m202608": {
+        "label": "Aug 26",
+        "revenue": 23754,
+        "orders": 400
+      },
+      "m202609": {
+        "label": "Sep 26",
+        "revenue": 22358,
+        "orders": 423
+      },
+      "m202610": {
+        "label": "Oct 26",
+        "revenue": 27632,
+        "orders": 469
+      },
+      "m202611": {
+        "label": "Nov 26",
+        "revenue": 27149,
+        "orders": 470
+      }
+    }
+  }
+}

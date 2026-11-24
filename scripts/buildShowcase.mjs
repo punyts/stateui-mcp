@@ -1,8 +1,10 @@
 // Builds the component showcase: the parts of the app `component-showcase` that the server installs on a new data
 // directory. It reads the component catalog of @punyts/stateui-components and the hand-written examples under
-// showcase/examples, and writes showcase/parts in the layout of a data directory (see PartFolders). Ids and timestamps
-// are fixed, so the same catalog and examples always give the same files. Run it with `npm run showcase:build` after
-// a component is added to the library or an example changes; a test checks that the committed parts are up to date.
+// showcase/examples, adds the starter apps under showcase/starters (Northwind Ops and the Lumen desktop, part bodies
+// as the agent's tools made them), and writes showcase/parts in the layout of a data directory (see PartFolders). Ids
+// and timestamps are fixed, so the same catalog, examples and starters always give the same files. Run it with
+// `npm run showcase:build` after a component is added to the library or an example or starter changes; a test checks
+// that the committed parts are up to date.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -19,6 +21,16 @@ export const SHOWCASE_APP = 'component-showcase';
 export const EXAMPLES_DIR = join(root, 'showcase', 'examples');
 export const FILES_DIR = join(root, 'showcase', 'files');
 export const PARTS_DIR = join(root, 'showcase', 'parts');
+
+/**
+ * The starter apps that ship beside the showcase, each a folder of part bodies under showcase/starters/<app>/<kind>/
+ * <name>.json. Every part of a starter is named with its prefix, so starters and the showcase never share a part
+ */
+export const STARTERS_DIR = join(root, 'showcase', 'starters');
+export const STARTER_APPS = Object.freeze({ 'northwind-ops': 'northwind-', 'lumen-desktop': 'lumen-' });
+
+/** The part kinds, as the folders of a data directory name them (PART_KINDS of @punyts/stateui-app) */
+const PART_KINDS = Object.freeze(['apps', 'themes', 'logic', 'models', 'data', 'components', 'patterns']);
 
 /**
  * Catalog components the showcase leaves out, each with the reason. Every other component has a card on the screen
@@ -357,7 +369,7 @@ function appNode() {
  * Builds every file of showcase/parts from the catalog and the examples: a map from the path under showcase/parts
  * (forward slashes) to its content, a string for JSON and a Buffer for a shipped file
  */
-export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DIR, filesDir = FILES_DIR) {
+export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DIR, filesDir = FILES_DIR, startersDir = STARTERS_DIR) {
     const output = new Map();
     const appId = stableId(`apps/${SHOWCASE_APP}`);
     const shipped = shippedFiles(appId, filesDir);
@@ -444,6 +456,36 @@ export function buildShowcase(catalog = loadCatalog(), examplesDir = EXAMPLES_DI
     if (shipped.files.size > 0) {
         output.set(`${appId}/files.json`, json([...shipped.files.values()].map((file) => file.entry)));
         for (const file of shipped.files.values()) output.set(`${appId}/files/${file.entry.id}`, file.bytes);
+    }
+
+    for (const [path, content] of starterParts(startersDir)) {
+        if (output.has(path)) throw new Error(`The starter part ${path} has the id of a showcase part`);
+        output.set(path, content);
+    }
+    return output;
+}
+
+/**
+ * The parts of every starter app, by their path under showcase/parts: each body file becomes a part with a stable id.
+ * Fails when a starter is missing its app part, a folder is not a part kind, or a part is not named with the starter's
+ * prefix
+ */
+export function starterParts(startersDir = STARTERS_DIR) {
+    const output = new Map();
+    for (const [app, prefix] of Object.entries(STARTER_APPS)) {
+        const dir = join(startersDir, app);
+        const kinds = readdirSync(dir).sort();
+        const unknown = kinds.filter((kind) => !PART_KINDS.includes(kind));
+        if (unknown.length > 0) throw new Error(`The starter ${app} has folders that are no part kind: ${unknown.join(', ')}`);
+        for (const kind of kinds) {
+            for (const file of readdirSync(join(dir, kind)).filter((name) => name.endsWith('.json')).sort()) {
+                const name = file.slice(0, -'.json'.length);
+                if (!(kind === 'apps' ? name === app : name.startsWith(prefix))) throw new Error(`The starter part ${kind}/${name} of ${app} is not named with ${kind === 'apps' ? app : prefix}`);
+                const part = partFile(kind, name, readJson(join(dir, kind, file)));
+                output.set(`${kind}/${part.id}.json`, json(part));
+            }
+        }
+        if (!output.has(`apps/${stableId(`apps/${app}`)}.json`)) throw new Error(`The starter ${app} has no app part apps/${app}.json`);
     }
     return output;
 }

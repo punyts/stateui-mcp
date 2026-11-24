@@ -1,0 +1,54 @@
+{
+  "id": "4d7c9297-0590-5ddb-b185-d9fbfd12e2b7",
+  "kind": "models",
+  "name": "lumen-file",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "name": {
+        "type": "string",
+        "required": true
+      },
+      "folder": {
+        "type": "string",
+        "default": ""
+      },
+      "kind": {
+        "type": "string",
+        "default": "note",
+        "validators": {
+          "oneOf": [
+            "note",
+            "picture"
+          ]
+        }
+      },
+      "text": {
+        "type": "string",
+        "default": ""
+      },
+      "paints": {
+        "type": "object",
+        "default": {}
+      },
+      "modified": {
+        "type": "string",
+        "default": ""
+      },
+      "icon": {
+        "type": "string",
+        "default": "file-text"
+      },
+      "detail": {
+        "type": "string",
+        "default": ""
+      },
+      "sortKey": {
+        "type": "string",
+        "default": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,229 @@
+{
+  "id": "bee2f018-a3a3-5b44-b693-111f67424544",
+  "kind": "data",
+  "name": "northwind-customers",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "northwind-customer",
+    "records": {
+      "c001": {
+        "id": "c001",
+        "name": "Ada Andersen",
+        "email": "ada.andersen@example.com",
+        "city": "Graz",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2023-04-14"
+      },
+      "c002": {
+        "id": "c002",
+        "name": "Diego Ivanova",
+        "email": "diego.ivanova@example.com",
+        "city": "Lyon",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2020-07-14"
+      },
+      "c003": {
+        "id": "c003",
+        "name": "Diego Fischer",
+        "email": "diego.fischer@example.com",
+        "city": "Madrid",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2021-09-12"
+      },
+      "c004": {
+        "id": "c004",
+        "name": "Olga Costa",
+        "email": "olga.costa@example.com",
+        "city": "Lisbon",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2021-05-16"
+      },
+      "c005": {
+        "id": "c005",
+        "name": "Bruno Novak",
+        "email": "bruno.novak@example.com",
+        "city": "Graz",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2024-09-15"
+      },
+      "c006": {
+        "id": "c006",
+        "name": "Olga Moreau",
+        "email": "olga.moreau@example.com",
+        "city": "Lisbon",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2022-04-10"
+      },
+      "c007": {
+        "id": "c007",
+        "name": "Bruno Lopez",
+        "email": "bruno.lopez@example.com",
+        "city": "Vienna",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2022-09-16"
+      },
+      "c008": {
+        "id": "c008",
+        "name": "Liam Eriksen",
+        "email": "liam.eriksen@example.com",
+        "city": "Lisbon",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2020-09-12"
+      },
+      "c009": {
+        "id": "c009",
+        "name": "Diego Jensen",
+        "email": "diego.jensen@example.com",
+        "city": "Berlin",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2024-09-14"
+      },
+      "c010": {
+        "id": "c010",
+        "name": "Nils Jensen",
+        "email": "nils.jensen@example.com",
+        "city": "Lisbon",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2023-06-18"
+      },
+      "c011": {
+        "id": "c011",
+        "name": "Pavel Moreau",
+        "email": "pavel.moreau@example.com",
+        "city": "Turin",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2025-05-17"
+      },
+      "c012": {
+        "id": "c012",
+        "name": "Ada Huber",
+        "email": "ada.huber@example.com",
+        "city": "Bern",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2023-07-18"
+      },
+      "c013": {
+        "id": "c013",
+        "name": "Ines Moreau",
+        "email": "ines.moreau@example.com",
+        "city": "Graz",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2024-05-12"
+      },
+      "c014": {
+        "id": "c014",
+        "name": "Diego Andersen",
+        "email": "diego.andersen@example.com",
+        "city": "Turin",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2025-06-10"
+      },
+      "c015": {
+        "id": "c015",
+        "name": "Jonas Ivanova",
+        "email": "jonas.ivanova@example.com",
+        "city": "Turin",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2021-09-15"
+      },
+      "c016": {
+        "id": "c016",
+        "name": "Maya Jensen",
+        "email": "maya.jensen@example.com",
+        "city": "Lisbon",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2025-05-15"
+      },
+      "c017": {
+        "id": "c017",
+        "name": "Clara Fischer",
+        "email": "clara.fischer@example.com",
+        "city": "Aarhus",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2025-07-15"
+      },
+      "c018": {
+        "id": "c018",
+        "name": "Pavel Jensen",
+        "email": "pavel.jensen@example.com",
+        "city": "Turin",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2022-03-15"
+      },
+      "c019": {
+        "id": "c019",
+        "name": "Maya Moreau",
+        "email": "maya.moreau@example.com",
+        "city": "Madrid",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2022-05-11"
+      },
+      "c020": {
+        "id": "c020",
+        "name": "Elena Garcia",
+        "email": "elena.garcia@example.com",
+        "city": "Lisbon",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2020-02-10"
+      },
+      "c021": {
+        "id": "c021",
+        "name": "Pavel Andersen",
+        "email": "pavel.andersen@example.com",
+        "city": "Vienna",
+        "tier": "Gold",
+        "tierTone": "warning",
+        "since": "2022-07-13"
+      },
+      "c022": {
+        "id": "c022",
+        "name": "Femi Lopez",
+        "email": "femi.lopez@example.com",
+        "city": "Aarhus",
+        "tier": "Bronze",
+        "tierTone": "accent",
+        "since": "2023-08-13"
+      },
+      "c023": {
+        "id": "c023",
+        "name": "Jonas Eriksen",
+        "email": "jonas.eriksen@example.com",
+        "city": "Bern",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2020-03-17"
+      },
+      "c024": {
+        "id": "c024",
+        "name": "Nils Lopez",
+        "email": "nils.lopez@example.com",
+        "city": "Oslo",
+        "tier": "Silver",
+        "tierTone": "neutral",
+        "since": "2025-03-13"
+      }
+    }
+  }
+}

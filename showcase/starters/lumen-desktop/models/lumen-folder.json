@@ -1,0 +1,16 @@
+{
+    "fields": {
+        "name": {
+            "type": "string",
+            "required": true
+        },
+        "parent": {
+            "type": "string",
+            "default": ""
+        },
+        "modified": {
+            "type": "string",
+            "default": ""
+        }
+    }
+}

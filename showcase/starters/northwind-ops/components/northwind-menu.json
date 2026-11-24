@@ -1,0 +1,69 @@
+{
+    "tree": {
+        "component": "nav",
+        "collapseBelow": "md",
+        "_label": "Sections",
+        "children": {
+            "dashboard": {
+                "component": "menuItem",
+                "icon": "layout-dashboard",
+                "_label": "Dashboard",
+                "screen": "home"
+            },
+            "orders": {
+                "component": "menuItem",
+                "icon": "receipt",
+                "_label": "Orders",
+                "screen": "orders"
+            },
+            "fulfilment": {
+                "component": "menuItem",
+                "icon": "layout-kanban",
+                "_label": "Fulfilment",
+                "screen": "fulfilment"
+            },
+            "customers": {
+                "component": "menuItem",
+                "icon": "users",
+                "_label": "Customers",
+                "screen": "customers"
+            },
+            "products": {
+                "component": "menuItem",
+                "icon": "box",
+                "_label": "Products",
+                "screen": "products"
+            },
+            "newOrder": {
+                "component": "menuItem",
+                "icon": "clipboard-plus",
+                "_label": "New order",
+                "screen": "create"
+            },
+            "help": {
+                "component": "menuItem",
+                "icon": "help-circle",
+                "_label": "Help",
+                "screen": "help"
+            }
+        },
+        "footer": {
+            "component": "text",
+            "textRole": "caption",
+            "_text": "The data is a demo."
+        }
+    },
+    "exposes": [
+        {
+            "path": "children",
+            "description": "The menu items, one per screen"
+        }
+    ],
+    "summary": "The side menu of Northwind Ops: a screen per section; a menu button on a phone",
+    "category": "navigation",
+    "purposes": [
+        "menu of every Northwind Ops screen",
+        "move between the Northwind Ops sections",
+        "open orders, customers or products of Northwind"
+    ]
+}

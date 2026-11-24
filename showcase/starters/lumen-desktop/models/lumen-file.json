@@ -1,0 +1,46 @@
+{
+    "fields": {
+        "name": {
+            "type": "string",
+            "required": true
+        },
+        "folder": {
+            "type": "string",
+            "default": ""
+        },
+        "kind": {
+            "type": "string",
+            "default": "note",
+            "validators": {
+                "oneOf": [
+                    "note",
+                    "picture"
+                ]
+            }
+        },
+        "text": {
+            "type": "string",
+            "default": ""
+        },
+        "paints": {
+            "type": "object",
+            "default": {}
+        },
+        "modified": {
+            "type": "string",
+            "default": ""
+        },
+        "icon": {
+            "type": "string",
+            "default": "file-text"
+        },
+        "detail": {
+            "type": "string",
+            "default": ""
+        },
+        "sortKey": {
+            "type": "string",
+            "default": ""
+        }
+    }
+}

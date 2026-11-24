@@ -1,0 +1,24 @@
+{
+  "id": "08942dff-01c8-5017-a31d-4a7f44284749",
+  "kind": "models",
+  "name": "northwind-month",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "label": {
+        "type": "string",
+        "required": true
+      },
+      "revenue": {
+        "type": "number",
+        "default": 0
+      },
+      "orders": {
+        "type": "integer",
+        "default": 0
+      }
+    }
+  }
+}

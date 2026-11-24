@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildShowcase, CATEGORY_ORDER, EXCLUDED, PARTS_DIR, SHOWCASE_APP as BUILT_APP, loadCatalog } from '../scripts/buildShowcase.mjs';
+import { buildShowcase, CATEGORY_ORDER, EXCLUDED, PARTS_DIR, SHOWCASE_APP as BUILT_APP, STARTER_APPS, loadCatalog, starterParts } from '../scripts/buildShowcase.mjs';
 import { holdsParts, installShowcase, SHOWCASE_APP } from '../src/config/showcase.js';
 import { call, createApp, httpHarness, inMemoryHarness, noBrowser, silentReport, tempData } from './helpers.js';
 import type { TempData } from './helpers.js';
@@ -46,7 +46,9 @@ function componentsIn(value: unknown, found: Set<string> = new Set()): Set<strin
 /** The body of the built showcase app */
 function builtApp(): ShowcaseApp {
     for (const [path, content] of buildShowcase()) {
-        if (path.startsWith('apps/')) return (JSON.parse(content.toString()) as { body: ShowcaseApp }).body;
+        if (!path.startsWith('apps/')) continue;
+        const part = JSON.parse(content.toString()) as { name: string; body: ShowcaseApp };
+        if (part.name === BUILT_APP) return part.body;
     }
     throw new Error('The showcase has no app');
 }
@@ -142,6 +144,59 @@ describe('the showcase build', () => {
     });
 });
 
+describe('the starter apps', () => {
+    let data: TempData;
+
+    beforeEach(async () => {
+        data = await tempData();
+    });
+
+    afterEach(async () => {
+        await data.cleanup();
+    });
+
+    it('should build every starter into the showcase parts, each with its app part', () => {
+        // Act
+        const apps = [...buildShowcase()].filter(([path]) => path.startsWith('apps/')).map(([, content]) => (JSON.parse(content.toString()) as { name: string }).name);
+
+        // Assert
+        expect(apps.sort()).toEqual([BUILT_APP, ...Object.keys(STARTER_APPS)].sort());
+    });
+
+    it('should refuse a starter part that is not named with its prefix', async () => {
+        // Arrange
+        for (const app of Object.keys(STARTER_APPS)) await mkdir(join(data.dir, app, 'apps'), { recursive: true });
+        for (const app of Object.keys(STARTER_APPS)) await writeFile(join(data.dir, app, 'apps', `${app}.json`), '{}');
+        await mkdir(join(data.dir, 'lumen-desktop', 'themes'), { recursive: true });
+        await writeFile(join(data.dir, 'lumen-desktop', 'themes', 'dusk.json'), '{}');
+
+        // Act
+        const build = (): unknown => starterParts(data.dir);
+
+        // Assert
+        expect(build).toThrow('The starter part themes/dusk of lumen-desktop is not named with lumen-');
+    });
+
+    it('should install every starter app beside the showcase, each valid', async () => {
+        // Arrange
+        await installShowcase({ dataDir: data.dir, report: silentReport });
+        const harness = await inMemoryHarness(data.dir);
+        try {
+            for (const app of Object.keys(STARTER_APPS)) {
+                // Act
+                const validated = await call(harness.client, 'ui_validate', { app });
+
+                // Assert
+                expect(validated.isError, JSON.stringify(validated.body)).toBe(false);
+                expect(validated.body['errors'], app).toEqual([]);
+                expect(validated.body['valid'], app).toBe(true);
+            }
+        } finally {
+            await harness.close();
+        }
+    });
+});
+
 describe('installing the showcase', () => {
     let data: TempData;
 
@@ -165,8 +220,8 @@ describe('installing the showcase', () => {
             // Assert
             expect(installed).toBe(true);
             expect(JSON.stringify(listed.body)).toContain(SHOWCASE_APP);
-            expect(Object.keys(names['apps'] ?? {})).toEqual([SHOWCASE_APP]);
-            expect(Object.keys(names['themes'] ?? {})).toHaveLength(4);
+            expect(Object.keys(names['apps'] ?? {})).toEqual([SHOWCASE_APP, ...Object.keys(STARTER_APPS)].sort());
+            expect(Object.keys(names['themes'] ?? {}).filter((name) => name.startsWith('showcase-'))).toHaveLength(4);
             expect(validated.isError, JSON.stringify(validated.body)).toBe(false);
             expect(validated.body['errors']).toEqual([]);
             expect(validated.body['valid']).toBe(true);

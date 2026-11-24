@@ -1,0 +1,112 @@
+{
+  "id": "756ed4d5-afbc-51d2-9e9c-8a1e1860b0ca",
+  "kind": "components",
+  "name": "northwind-header",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "tree": {
+      "component": "toolbar",
+      "align": "between",
+      "children": {
+        "brand": {
+          "component": "toolbar",
+          "children": {
+            "logo": {
+              "component": "icon",
+              "name": "building-store",
+              "size": "lg",
+              "tone": "accent"
+            },
+            "title": {
+              "component": "text",
+              "_text": "Northwind Ops",
+              "textRole": "title",
+              "element": "h1"
+            },
+            "env": {
+              "component": "badge",
+              "_text": "Demo data",
+              "tone": "info",
+              "icon": "info-circle"
+            }
+          }
+        },
+        "tools": {
+          "component": "toolbar",
+          "children": {
+            "dark": {
+              "component": "button",
+              "variant": "ghost",
+              "icon": "moon",
+              "iconPosition": "only",
+              "_title": "Dark mode",
+              "on": {
+                "press": {
+                  "command": "set",
+                  "target": "$.theme.active.mode",
+                  "value": "dark"
+                }
+              }
+            },
+            "light": {
+              "component": "button",
+              "variant": "ghost",
+              "icon": "sun",
+              "iconPosition": "only",
+              "_title": "Light mode",
+              "on": {
+                "press": {
+                  "command": "set",
+                  "target": "$.theme.active.mode",
+                  "value": "light"
+                }
+              }
+            },
+            "account": {
+              "component": "menu",
+              "anchor": "bottomEnd",
+              "_label": "Account",
+              "trigger": {
+                "component": "button",
+                "variant": "soft",
+                "icon": "user",
+                "iconPosition": "only",
+                "_title": "Account"
+              },
+              "children": {
+                "profile": {
+                  "component": "menuItem",
+                  "icon": "user",
+                  "_label": "Signed in as Dana",
+                  "_description": "Operations lead",
+                  "disabled": true
+                },
+                "help": {
+                  "component": "menuItem",
+                  "icon": "help-circle",
+                  "_label": "Help",
+                  "screen": "help"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "exposes": [
+      {
+        "path": "children.brand.children.title._text",
+        "description": "The app name in the header"
+      }
+    ],
+    "summary": "The header of Northwind Ops: the brand, a demo badge, light or dark, and the account menu",
+    "category": "layout",
+    "purposes": [
+      "header of every Northwind Ops screen",
+      "show the Northwind brand and a demo badge",
+      "switch Northwind Ops between light and dark"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+    "fields": {
+        "label": {
+            "type": "string",
+            "required": true
+        },
+        "revenue": {
+            "type": "number",
+            "default": 0
+        },
+        "orders": {
+            "type": "integer",
+            "default": 0
+        }
+    }
+}

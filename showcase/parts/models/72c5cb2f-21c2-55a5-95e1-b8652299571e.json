@@ -1,0 +1,47 @@
+{
+  "id": "72c5cb2f-21c2-55a5-95e1-b8652299571e",
+  "kind": "models",
+  "name": "northwind-customer",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true
+      },
+      "name": {
+        "type": "string",
+        "required": true
+      },
+      "email": {
+        "type": "string",
+        "default": ""
+      },
+      "city": {
+        "type": "string",
+        "default": ""
+      },
+      "tier": {
+        "type": "string",
+        "default": "Bronze",
+        "validators": {
+          "oneOf": [
+            "Gold",
+            "Silver",
+            "Bronze"
+          ]
+        }
+      },
+      "tierTone": {
+        "type": "string",
+        "default": "accent"
+      },
+      "since": {
+        "type": "string",
+        "default": ""
+      }
+    }
+  }
+}

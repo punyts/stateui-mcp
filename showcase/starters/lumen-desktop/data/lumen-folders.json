@@ -1,0 +1,20 @@
+{
+    "model": "lumen-folder",
+    "records": {
+        "home": {
+            "name": "Home",
+            "parent": "",
+            "modified": "2026-11-24T09:00:00.000Z"
+        },
+        "documents": {
+            "name": "Documents",
+            "parent": "home",
+            "modified": "2026-11-24T09:00:00.000Z"
+        },
+        "pictures": {
+            "name": "Pictures",
+            "parent": "home",
+            "modified": "2026-11-24T09:00:00.000Z"
+        }
+    }
+}

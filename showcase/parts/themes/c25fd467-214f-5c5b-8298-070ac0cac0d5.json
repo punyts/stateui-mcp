@@ -1,0 +1,11 @@
+{
+  "id": "c25fd467-214f-5c5b-8298-070ac0cac0d5",
+  "kind": "themes",
+  "name": "northwind-theme",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "tokens": {}
+  }
+}

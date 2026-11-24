@@ -1,0 +1,124 @@
+{
+  "id": "af106a16-9dbb-5749-bddf-704c5640cdd1",
+  "kind": "models",
+  "name": "northwind-order",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "number": {
+        "type": "integer",
+        "required": true
+      },
+      "label": {
+        "type": "string",
+        "default": ""
+      },
+      "customerId": {
+        "type": "string",
+        "required": true
+      },
+      "customer": {
+        "type": "string",
+        "default": ""
+      },
+      "email": {
+        "type": "string",
+        "default": ""
+      },
+      "product": {
+        "type": "string",
+        "required": true
+      },
+      "productName": {
+        "type": "string",
+        "default": ""
+      },
+      "sku": {
+        "type": "string",
+        "default": ""
+      },
+      "quantity": {
+        "type": "integer",
+        "default": 1,
+        "validators": {
+          "range": {
+            "min": 1
+          }
+        }
+      },
+      "unitPrice": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "default": "pending",
+        "validators": {
+          "oneOf": [
+            "pending",
+            "paid",
+            "packed",
+            "shipped",
+            "delivered",
+            "cancelled"
+          ]
+        }
+      },
+      "statusTone": {
+        "type": "string",
+        "default": "warning"
+      },
+      "progress": {
+        "type": "number",
+        "default": 10
+      },
+      "revenue": {
+        "type": "number",
+        "default": 0
+      },
+      "channel": {
+        "type": "string",
+        "default": "web",
+        "validators": {
+          "oneOf": [
+            "web",
+            "phone",
+            "marketplace"
+          ]
+        }
+      },
+      "priority": {
+        "type": "string",
+        "default": "standard",
+        "validators": {
+          "oneOf": [
+            "standard",
+            "express"
+          ]
+        }
+      },
+      "created": {
+        "type": "string",
+        "default": ""
+      },
+      "shipped": {
+        "type": "string",
+        "default": ""
+      },
+      "rank": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string",
+        "default": ""
+      }
+    }
+  }
+}

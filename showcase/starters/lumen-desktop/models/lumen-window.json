@@ -1,0 +1,104 @@
+{
+    "fields": {
+        "title": {
+            "type": "string",
+            "required": true
+        },
+        "icon": {
+            "type": "string",
+            "default": "app-window"
+        },
+        "open": {
+            "type": "boolean",
+            "default": false
+        },
+        "minimized": {
+            "type": "boolean",
+            "default": false
+        },
+        "active": {
+            "type": "boolean",
+            "default": false
+        },
+        "snap": {
+            "type": "string",
+            "default": "free",
+            "validators": {
+                "oneOf": [
+                    "free",
+                    "left",
+                    "right",
+                    "max"
+                ]
+            }
+        },
+        "x": {
+            "type": "number",
+            "default": 160
+        },
+        "y": {
+            "type": "number",
+            "default": 40
+        },
+        "width": {
+            "type": "number",
+            "default": 640
+        },
+        "height": {
+            "type": "number",
+            "default": 480
+        },
+        "z": {
+            "type": "integer",
+            "default": 0
+        },
+        "hidden": {
+            "type": "boolean",
+            "default": true
+        },
+        "closed": {
+            "type": "boolean",
+            "default": true
+        },
+        "maximized": {
+            "type": "boolean",
+            "default": false
+        },
+        "variant": {
+            "type": "string",
+            "default": "ghost"
+        },
+        "placement": {
+            "type": "object",
+            "default": {}
+        },
+        "caption": {
+            "type": "string",
+            "default": ""
+        },
+        "doc": {
+            "type": "string",
+            "default": ""
+        },
+        "folder": {
+            "type": "string",
+            "default": ""
+        },
+        "selected": {
+            "type": "string",
+            "default": ""
+        },
+        "draftName": {
+            "type": "string",
+            "default": ""
+        },
+        "draftText": {
+            "type": "string",
+            "default": ""
+        },
+        "selectedKind": {
+            "type": "string",
+            "default": ""
+        }
+    }
+}

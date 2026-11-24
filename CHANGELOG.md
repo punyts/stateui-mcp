@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Northwind Ops and the Lumen desktop install with the showcase** (docs/design/magnetic-starter-apps.md). Two
+  starter apps of parts, rebuilt from the example's apps with no host functions, are committed as part bodies in
+  `showcase/starters/` and built into `showcase/parts` by `npm run showcase:build` (`STARTER_APPS`, `starterParts`);
+  a part not named with its app's prefix fails the build. A new data directory or workspace gets them with the
+  showcase. Tests: `test/showcase.test.ts` ("the starter apps").
 - **An instance is keyed by the person, and personas are gone** (docs/design/person-state.md). Breaking.
   `InstanceKey` is `{ person, ownerId, appId }` with text `{person}.{ownerId}.{appId}`; a person is an owner id, and
   the owner's own instance is the one whose person is the owner. `DEFAULT_PERSONA` and `isPersonaName` are removed;

@@ -1,0 +1,50 @@
+{
+    "fields": {
+        "id": {
+            "type": "string",
+            "required": true
+        },
+        "name": {
+            "type": "string",
+            "required": true
+        },
+        "sku": {
+            "type": "string",
+            "default": ""
+        },
+        "category": {
+            "type": "string",
+            "default": ""
+        },
+        "price": {
+            "type": "number",
+            "default": 0,
+            "validators": {
+                "range": {
+                    "min": 0
+                }
+            }
+        },
+        "stock": {
+            "type": "integer",
+            "default": 0,
+            "validators": {
+                "range": {
+                    "min": 0
+                }
+            }
+        },
+        "reorderAt": {
+            "type": "integer",
+            "default": 20
+        },
+        "stockLabel": {
+            "type": "string",
+            "default": "in stock"
+        },
+        "stockTone": {
+            "type": "string",
+            "default": "success"
+        }
+    }
+}

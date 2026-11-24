@@ -1,0 +1,24 @@
+{
+  "id": "ed76e6c2-184f-54cd-a9e1-ca04e6163caa",
+  "kind": "models",
+  "name": "lumen-folder",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "fields": {
+      "name": {
+        "type": "string",
+        "required": true
+      },
+      "parent": {
+        "type": "string",
+        "default": ""
+      },
+      "modified": {
+        "type": "string",
+        "default": ""
+      }
+    }
+  }
+}

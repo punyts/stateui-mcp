@@ -1,0 +1,28 @@
+{
+  "id": "22f6053c-1019-5988-aa10-931691ab7245",
+  "kind": "data",
+  "name": "lumen-folders",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "lumen-folder",
+    "records": {
+      "home": {
+        "name": "Home",
+        "parent": "",
+        "modified": "2026-11-24T09:00:00.000Z"
+      },
+      "documents": {
+        "name": "Documents",
+        "parent": "home",
+        "modified": "2026-11-24T09:00:00.000Z"
+      },
+      "pictures": {
+        "name": "Pictures",
+        "parent": "home",
+        "modified": "2026-11-24T09:00:00.000Z"
+      }
+    }
+  }
+}

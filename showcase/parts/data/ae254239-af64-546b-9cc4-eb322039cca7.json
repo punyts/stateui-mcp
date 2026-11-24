@@ -1,0 +1,101 @@
+{
+  "id": "ae254239-af64-546b-9cc4-eb322039cca7",
+  "kind": "data",
+  "name": "northwind-products",
+  "revision": 1,
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T00:00:00.000Z",
+  "body": {
+    "model": "northwind-product",
+    "records": {
+      "chai": {
+        "id": "chai",
+        "name": "Chai tea",
+        "sku": "NW-CHA-107",
+        "category": "Beverages",
+        "price": 18,
+        "stock": 57,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "chang": {
+        "id": "chang",
+        "name": "Chang beer",
+        "sku": "NW-CHA-114",
+        "category": "Beverages",
+        "price": 19,
+        "stock": 99,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "syrup": {
+        "id": "syrup",
+        "name": "Aniseed syrup",
+        "sku": "NW-SYR-121",
+        "category": "Condiments",
+        "price": 10,
+        "stock": 48,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "cajun": {
+        "id": "cajun",
+        "name": "Cajun seasoning",
+        "sku": "NW-CAJ-128",
+        "category": "Condiments",
+        "price": 22,
+        "stock": 116,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "gumbo": {
+        "id": "gumbo",
+        "name": "Gumbo mix",
+        "sku": "NW-GUM-135",
+        "category": "Condiments",
+        "price": 21.35,
+        "stock": 66,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "marmalade": {
+        "id": "marmalade",
+        "name": "Sir Rodney's marmalade",
+        "sku": "NW-MAR-142",
+        "category": "Confections",
+        "price": 81,
+        "stock": 52,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      },
+      "cheese": {
+        "id": "cheese",
+        "name": "Queso Cabrales",
+        "sku": "NW-CHE-149",
+        "category": "Dairy",
+        "price": 21,
+        "stock": 14,
+        "reorderAt": 20,
+        "stockLabel": "low",
+        "stockTone": "warning"
+      },
+      "coffee": {
+        "id": "coffee",
+        "name": "Ipoh coffee",
+        "sku": "NW-COF-156",
+        "category": "Beverages",
+        "price": 46,
+        "stock": 64,
+        "reorderAt": 20,
+        "stockLabel": "in stock",
+        "stockTone": "success"
+      }
+    }
+  }
+}

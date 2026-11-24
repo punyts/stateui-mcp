@@ -1,0 +1,1959 @@
+{
+    "title": "Lumen",
+    "uses": {
+        "themes": [
+            "lumen-theme"
+        ],
+        "data": {
+            "windows": {
+                "dataset": "lumen-windows"
+            },
+            "folders": {
+                "dataset": "lumen-folders"
+            },
+            "files": {
+                "dataset": "lumen-files"
+            }
+        }
+    },
+    "start": "home",
+    "app": {
+        "_title": "Lumen",
+        "toasts": {
+            "component": "toastRegion",
+            "position": "bottomEnd",
+            "max": 3,
+            "_label": "Notifications",
+            "messages": {
+                "noteSaved": {
+                    "tone": "success",
+                    "_title": "Note saved",
+                    "_text": "It is in your files."
+                },
+                "itemDeleted": {
+                    "tone": "info",
+                    "_title": "Deleted",
+                    "_text": "The item is gone for good."
+                }
+            }
+        },
+        "component": "app"
+    },
+    "screens": {
+        "home": {
+            "title": "Home",
+            "root": {
+                "component": "panel",
+                "padding": "none",
+                "layout": {
+                    "type": "column",
+                    "gap": "none"
+                },
+                "children": {
+                    "surface": {
+                        "component": "panel",
+                        "padding": "none",
+                        "placement": {
+                            "height": "calc(100dvh - 60px)"
+                        },
+                        "layout": {
+                            "type": "adhoc",
+                            "clip": true
+                        },
+                        "children": {
+                            "wallpaper": {
+                                "component": "drawing",
+                                "_title": "Wallpaper",
+                                "fit": "cover",
+                                "theme": {
+                                    "drawing": {
+                                        "height": "100%"
+                                    }
+                                },
+                                "viewBox": {
+                                    "x": 0,
+                                    "y": 0,
+                                    "width": 1600,
+                                    "height": 900
+                                },
+                                "placement": {
+                                    "x": "0px",
+                                    "y": "0px",
+                                    "width": "100%",
+                                    "height": "100%",
+                                    "z": 0
+                                },
+                                "paints": {
+                                    "sky": {
+                                        "kind": "linear",
+                                        "angle": 90,
+                                        "stops": {
+                                            "s0": {
+                                                "offset": 0,
+                                                "color": "#2b3a67"
+                                            },
+                                            "s1": {
+                                                "offset": 0.33,
+                                                "color": "#7a6fa8"
+                                            },
+                                            "s2": {
+                                                "offset": 0.67,
+                                                "color": "#f2a97e"
+                                            },
+                                            "s3": {
+                                                "offset": 1,
+                                                "color": "#ffd9a8"
+                                            }
+                                        }
+                                    },
+                                    "glow": {
+                                        "kind": "radial",
+                                        "center": [
+                                            0.5,
+                                            0.5
+                                        ],
+                                        "stops": {
+                                            "s0": {
+                                                "offset": 0,
+                                                "color": "#fff3d6"
+                                            },
+                                            "s1": {
+                                                "offset": 1,
+                                                "color": "#ffd9a800"
+                                            }
+                                        }
+                                    },
+                                    "far": {
+                                        "kind": "linear",
+                                        "angle": 90,
+                                        "stops": {
+                                            "s0": {
+                                                "offset": 0,
+                                                "color": "#5a4a7a"
+                                            },
+                                            "s1": {
+                                                "offset": 1,
+                                                "color": "#3a3358"
+                                            }
+                                        }
+                                    },
+                                    "near": {
+                                        "kind": "linear",
+                                        "angle": 90,
+                                        "stops": {
+                                            "s0": {
+                                                "offset": 0,
+                                                "color": "#3a3358"
+                                            },
+                                            "s1": {
+                                                "offset": 1,
+                                                "color": "#3a3358"
+                                            }
+                                        }
+                                    }
+                                },
+                                "children": {
+                                    "sky": {
+                                        "component": "rect",
+                                        "x": 0,
+                                        "y": 0,
+                                        "width": 1600,
+                                        "height": 900,
+                                        "fill": "sky"
+                                    },
+                                    "glow": {
+                                        "component": "circle",
+                                        "cx": 1120,
+                                        "cy": 560,
+                                        "r": 420,
+                                        "fill": "glow"
+                                    },
+                                    "sun": {
+                                        "component": "circle",
+                                        "cx": 1120,
+                                        "cy": 560,
+                                        "r": 70,
+                                        "fill": "#fff4dc",
+                                        "opacity": 0.9
+                                    },
+                                    "far": {
+                                        "component": "path",
+                                        "d": "M0 640 C 260 540 520 600 760 560 C 1000 520 1260 600 1600 540 L 1600 900 L 0 900 Z",
+                                        "fill": "far"
+                                    },
+                                    "near": {
+                                        "component": "path",
+                                        "d": "M0 760 C 300 690 620 780 900 730 C 1180 680 1400 740 1600 700 L 1600 900 L 0 900 Z",
+                                        "fill": "near"
+                                    }
+                                }
+                            },
+                            "icons": {
+                                "component": "panel",
+                                "padding": "none",
+                                "placement": {
+                                    "x": "16px",
+                                    "y": "16px",
+                                    "width": "120px",
+                                    "height": "220px",
+                                    "z": 0
+                                },
+                                "layout": {
+                                    "type": "column",
+                                    "gap": "sm"
+                                },
+                                "children": {
+                                    "files": {
+                                        "component": "button",
+                                        "_title": "Files",
+                                        "icon": "folder",
+                                        "variant": "soft",
+                                        "tone": "neutral"
+                                    },
+                                    "notes": {
+                                        "component": "button",
+                                        "_title": "Notes",
+                                        "icon": "notes",
+                                        "variant": "soft",
+                                        "tone": "neutral"
+                                    },
+                                    "viewer": {
+                                        "component": "button",
+                                        "_title": "Viewer",
+                                        "icon": "photo",
+                                        "variant": "soft",
+                                        "tone": "neutral"
+                                    },
+                                    "settings": {
+                                        "component": "button",
+                                        "_title": "Settings",
+                                        "icon": "settings",
+                                        "variant": "soft",
+                                        "tone": "neutral"
+                                    }
+                                }
+                            },
+                            "files": {
+                                "component": "window",
+                                "_title": "Files",
+                                "icon": "folder",
+                                "controls": [
+                                    "snapLeft",
+                                    "snapRight",
+                                    "minimize",
+                                    "maximize",
+                                    "close"
+                                ],
+                                "_snapLeftLabel": "Snap to the left half",
+                                "_snapRightLabel": "Snap to the right half",
+                                "<-hidden": "$.data.windows.files.hidden",
+                                "<-placement": "$.data.windows.files.placement",
+                                "<-active": "$.data.windows.files.active",
+                                "<-maximized": "$.data.windows.files.maximized",
+                                "layout": {
+                                    "type": "column",
+                                    "gap": "sm"
+                                },
+                                "children": {
+                                    "bar": {
+                                        "component": "toolbar",
+                                        "align": "between",
+                                        "children": {
+                                            "up": {
+                                                "component": "button",
+                                                "_title": "Up one folder",
+                                                "icon": "arrow-up",
+                                                "variant": "ghost",
+                                                "size": "sm",
+                                                "iconPosition": "only",
+                                                "tone": "neutral"
+                                            },
+                                            "path": {
+                                                "component": "text",
+                                                "textRole": "label",
+                                                "<-_text": "$.data.windows.files.caption"
+                                            },
+                                            "open": {
+                                                "component": "button",
+                                                "_title": "Open",
+                                                "icon": "folder-open",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            }
+                                        }
+                                    },
+                                    "browse": {
+                                        "component": "panel",
+                                        "padding": "none",
+                                        "placement": {
+                                            "grow": 1
+                                        },
+                                        "layout": {
+                                            "type": "row",
+                                            "gap": "sm",
+                                            "align": "stretch"
+                                        },
+                                        "children": {
+                                            "tree": {
+                                                "component": "tree",
+                                                "placement": {
+                                                    "grow": 1
+                                                },
+                                                "parentField": "parent",
+                                                "labelField": "name",
+                                                "selectable": "single",
+                                                "expanded": [
+                                                    "home"
+                                                ],
+                                                "<-records": "$.data.folders",
+                                                "<-selected": "$.data.windows.files.folder",
+                                                "row": {
+                                                    "component": "panel",
+                                                    "padding": "none",
+                                                    "layout": {
+                                                        "type": "row",
+                                                        "gap": "sm",
+                                                        "align": "center"
+                                                    },
+                                                    "children": {
+                                                        "icon": {
+                                                            "component": "icon",
+                                                            "name": "folder",
+                                                            "decorative": true
+                                                        },
+                                                        "name": {
+                                                            "component": "text",
+                                                            "truncate": 1,
+                                                            "<-_text": "$row.name"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "listing": {
+                                                "component": "list",
+                                                "placement": {
+                                                    "grow": 2
+                                                },
+                                                "divided": true,
+                                                "selectable": "single",
+                                                "<-selected": "$.data.windows.files.selected",
+                                                "_empty": "This folder is empty",
+                                                "row": {
+                                                    "component": "panel",
+                                                    "padding": "none",
+                                                    "layout": {
+                                                        "type": "row",
+                                                        "gap": "sm",
+                                                        "align": "center"
+                                                    },
+                                                    "children": {
+                                                        "icon": {
+                                                            "component": "icon",
+                                                            "<-name": "$row.icon",
+                                                            "decorative": true
+                                                        },
+                                                        "name": {
+                                                            "component": "text",
+                                                            "placement": {
+                                                                "grow": 1
+                                                            },
+                                                            "truncate": 1,
+                                                            "<-_text": "$row.name"
+                                                        },
+                                                        "detail": {
+                                                            "component": "text",
+                                                            "textRole": "caption",
+                                                            "<-_text": "$row.detail"
+                                                        }
+                                                    }
+                                                },
+                                                "items": [],
+                                                "total": 0
+                                            }
+                                        }
+                                    },
+                                    "edit": {
+                                        "component": "toolbar",
+                                        "wrap": true,
+                                        "children": {
+                                            "name": {
+                                                "component": "textField",
+                                                "size": "sm",
+                                                "titlePosition": "hidden",
+                                                "width": 22,
+                                                "_label": "Name",
+                                                "_placeholder": "Name",
+                                                "<-value": "$.data.windows.files.draftName"
+                                            },
+                                            "newFolder": {
+                                                "component": "button",
+                                                "_title": "New folder",
+                                                "icon": "folder-plus",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            },
+                                            "newNote": {
+                                                "component": "button",
+                                                "_title": "New note",
+                                                "icon": "file-plus",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            },
+                                            "rename": {
+                                                "component": "button",
+                                                "_title": "Rename",
+                                                "icon": "pencil",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            },
+                                            "remove": {
+                                                "component": "button",
+                                                "_title": "Delete",
+                                                "icon": "trash",
+                                                "variant": "soft",
+                                                "size": "sm",
+                                                "tone": "danger",
+                                                "on": {
+                                                    "press": {
+                                                        "command": "open",
+                                                        "target": "$.screens.home.children.surface.children.files.children.confirm"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "confirm": {
+                                        "component": "confirmDialog",
+                                        "_title": "Delete this item?",
+                                        "body": {
+                                            "_text": "The selected file is deleted for good. With no file selected, the open folder is deleted when it is empty."
+                                        },
+                                        "footer": {
+                                            "children": {
+                                                "confirm": {
+                                                    "_title": "Delete",
+                                                    "on": {
+                                                        "press": {
+                                                            "command": "close",
+                                                            "target": "^confirmDialog"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "on": {}
+                            },
+                            "notes": {
+                                "component": "window",
+                                "_title": "Notes",
+                                "icon": "notes",
+                                "controls": [
+                                    "snapLeft",
+                                    "snapRight",
+                                    "minimize",
+                                    "maximize",
+                                    "close"
+                                ],
+                                "_snapLeftLabel": "Snap to the left half",
+                                "_snapRightLabel": "Snap to the right half",
+                                "<-hidden": "$.data.windows.notes.hidden",
+                                "<-placement": "$.data.windows.notes.placement",
+                                "<-active": "$.data.windows.notes.active",
+                                "<-maximized": "$.data.windows.notes.maximized",
+                                "layout": {
+                                    "type": "column",
+                                    "gap": "sm"
+                                },
+                                "children": {
+                                    "bar": {
+                                        "component": "toolbar",
+                                        "children": {
+                                            "name": {
+                                                "component": "textField",
+                                                "size": "sm",
+                                                "titlePosition": "hidden",
+                                                "width": 26,
+                                                "_label": "Note name",
+                                                "<-value": "$.data.windows.notes.draftName"
+                                            },
+                                            "fresh": {
+                                                "component": "button",
+                                                "_title": "New",
+                                                "icon": "file-plus",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            },
+                                            "save": {
+                                                "component": "button",
+                                                "_title": "Save",
+                                                "icon": "device-floppy",
+                                                "size": "sm",
+                                                "on": {
+                                                    "press": {
+                                                        "command": "show",
+                                                        "target": "$.app.toasts",
+                                                        "value": "noteSaved"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "split": {
+                                        "component": "panel",
+                                        "padding": "none",
+                                        "placement": {
+                                            "grow": 1
+                                        },
+                                        "layout": {
+                                            "type": "row",
+                                            "gap": "md",
+                                            "align": "stretch"
+                                        },
+                                        "children": {
+                                            "text": {
+                                                "component": "textarea",
+                                                "placement": {
+                                                    "grow": 1
+                                                },
+                                                "rows": 16,
+                                                "_label": "Markdown",
+                                                "<-value": "$.data.windows.notes.draftText"
+                                            },
+                                            "preview": {
+                                                "component": "panel",
+                                                "placement": {
+                                                    "grow": 1
+                                                },
+                                                "bordered": true,
+                                                "padding": "sm",
+                                                "_title": "Preview",
+                                                "children": {
+                                                    "markdown": {
+                                                        "component": "markdown",
+                                                        "<-_text": "$.data.windows.notes.draftText"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "viewer": {
+                                "component": "window",
+                                "_title": "Viewer",
+                                "icon": "photo",
+                                "controls": [
+                                    "snapLeft",
+                                    "snapRight",
+                                    "minimize",
+                                    "maximize",
+                                    "close"
+                                ],
+                                "_snapLeftLabel": "Snap to the left half",
+                                "_snapRightLabel": "Snap to the right half",
+                                "<-hidden": "$.data.windows.viewer.hidden",
+                                "<-placement": "$.data.windows.viewer.placement",
+                                "<-active": "$.data.windows.viewer.active",
+                                "<-maximized": "$.data.windows.viewer.maximized",
+                                "layout": {
+                                    "type": "column",
+                                    "gap": "sm"
+                                },
+                                "children": {
+                                    "bar": {
+                                        "component": "toolbar",
+                                        "align": "between",
+                                        "children": {
+                                            "name": {
+                                                "component": "text",
+                                                "textRole": "label",
+                                                "<-_text": "$.data.windows.viewer.caption"
+                                            },
+                                            "wallpaper": {
+                                                "component": "button",
+                                                "_title": "Use as wallpaper",
+                                                "icon": "photo",
+                                                "variant": "soft",
+                                                "size": "sm"
+                                            }
+                                        }
+                                    },
+                                    "picture": {
+                                        "component": "drawing",
+                                        "_title": "Picture",
+                                        "placement": {
+                                            "grow": 1
+                                        },
+                                        "fit": "contain",
+                                        "viewBox": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 1600,
+                                            "height": 900
+                                        },
+                                        "paints": {
+                                            "sky": {
+                                                "kind": "linear",
+                                                "angle": 90,
+                                                "stops": {
+                                                    "s0": {
+                                                        "offset": 0,
+                                                        "color": "#2b3a67"
+                                                    },
+                                                    "s1": {
+                                                        "offset": 0.33,
+                                                        "color": "#7a6fa8"
+                                                    },
+                                                    "s2": {
+                                                        "offset": 0.67,
+                                                        "color": "#f2a97e"
+                                                    },
+                                                    "s3": {
+                                                        "offset": 1,
+                                                        "color": "#ffd9a8"
+                                                    }
+                                                }
+                                            },
+                                            "glow": {
+                                                "kind": "radial",
+                                                "center": [
+                                                    0.5,
+                                                    0.5
+                                                ],
+                                                "stops": {
+                                                    "s0": {
+                                                        "offset": 0,
+                                                        "color": "#fff3d6"
+                                                    },
+                                                    "s1": {
+                                                        "offset": 1,
+                                                        "color": "#ffd9a800"
+                                                    }
+                                                }
+                                            },
+                                            "far": {
+                                                "kind": "linear",
+                                                "angle": 90,
+                                                "stops": {
+                                                    "s0": {
+                                                        "offset": 0,
+                                                        "color": "#5a4a7a"
+                                                    },
+                                                    "s1": {
+                                                        "offset": 1,
+                                                        "color": "#3a3358"
+                                                    }
+                                                }
+                                            },
+                                            "near": {
+                                                "kind": "linear",
+                                                "angle": 90,
+                                                "stops": {
+                                                    "s0": {
+                                                        "offset": 0,
+                                                        "color": "#3a3358"
+                                                    },
+                                                    "s1": {
+                                                        "offset": 1,
+                                                        "color": "#3a3358"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "children": {
+                                            "sky": {
+                                                "component": "rect",
+                                                "x": 0,
+                                                "y": 0,
+                                                "width": 1600,
+                                                "height": 900,
+                                                "fill": "sky"
+                                            },
+                                            "glow": {
+                                                "component": "circle",
+                                                "cx": 1120,
+                                                "cy": 560,
+                                                "r": 420,
+                                                "fill": "glow"
+                                            },
+                                            "sun": {
+                                                "component": "circle",
+                                                "cx": 1120,
+                                                "cy": 560,
+                                                "r": 70,
+                                                "fill": "#fff4dc",
+                                                "opacity": 0.9
+                                            },
+                                            "far": {
+                                                "component": "path",
+                                                "d": "M0 640 C 260 540 520 600 760 560 C 1000 520 1260 600 1600 540 L 1600 900 L 0 900 Z",
+                                                "fill": "far"
+                                            },
+                                            "near": {
+                                                "component": "path",
+                                                "d": "M0 760 C 300 690 620 780 900 730 C 1180 680 1400 740 1600 700 L 1600 900 L 0 900 Z",
+                                                "fill": "near"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "settings": {
+                                "component": "window",
+                                "_title": "Settings",
+                                "icon": "settings",
+                                "controls": [
+                                    "minimize",
+                                    "close"
+                                ],
+                                "resizable": false,
+                                "<-hidden": "$.data.windows.settings.hidden",
+                                "<-placement": "$.data.windows.settings.placement",
+                                "<-active": "$.data.windows.settings.active",
+                                "<-maximized": "$.data.windows.settings.maximized",
+                                "layout": {
+                                    "type": "column",
+                                    "gap": "md"
+                                },
+                                "children": {
+                                    "heading": {
+                                        "component": "text",
+                                        "textRole": "label",
+                                        "_text": "Wallpaper"
+                                    },
+                                    "wallpaper": {
+                                        "component": "segmented",
+                                        "_label": "Wallpaper",
+                                        "<-value": "$.data.windows.settings.doc",
+                                        "options": {
+                                            "dawn": {
+                                                "_label": "Dawn"
+                                            },
+                                            "dusk": {
+                                                "_label": "Dusk"
+                                            },
+                                            "meadow": {
+                                                "_label": "Meadow"
+                                            }
+                                        }
+                                    },
+                                    "about": {
+                                        "component": "text",
+                                        "textRole": "caption",
+                                        "_text": "Lumen keeps your folders, notes and window positions in your own space. Pictures in the Pictures folder can be set as the wallpaper from the Viewer too."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "taskbar": {
+                        "component": "panel",
+                        "padding": "sm",
+                        "elevation": "raised",
+                        "layout": {
+                            "type": "row",
+                            "gap": "md",
+                            "align": "center"
+                        },
+                        "children": {
+                            "launcher": {
+                                "component": "menu",
+                                "anchor": "topStart",
+                                "_label": "Apps",
+                                "trigger": {
+                                    "component": "button",
+                                    "icon": "apps",
+                                    "size": "sm",
+                                    "_title": "Lumen"
+                                },
+                                "children": {
+                                    "files": {
+                                        "component": "menuItem",
+                                        "icon": "folder",
+                                        "_label": "Files"
+                                    },
+                                    "notes": {
+                                        "component": "menuItem",
+                                        "icon": "notes",
+                                        "_label": "Notes"
+                                    },
+                                    "viewer": {
+                                        "component": "menuItem",
+                                        "icon": "photo",
+                                        "_label": "Viewer"
+                                    },
+                                    "settings": {
+                                        "component": "menuItem",
+                                        "icon": "settings",
+                                        "_label": "Settings"
+                                    }
+                                }
+                            },
+                            "tasks": {
+                                "component": "toolbar",
+                                "placement": {
+                                    "grow": 1
+                                },
+                                "children": {
+                                    "files": {
+                                        "component": "button",
+                                        "_title": "Files",
+                                        "icon": "folder",
+                                        "size": "sm",
+                                        "tone": "neutral",
+                                        "<-hidden": "$.data.windows.files.closed",
+                                        "<-variant": "$.data.windows.files.variant"
+                                    },
+                                    "notes": {
+                                        "component": "button",
+                                        "_title": "Notes",
+                                        "icon": "notes",
+                                        "size": "sm",
+                                        "tone": "neutral",
+                                        "<-hidden": "$.data.windows.notes.closed",
+                                        "<-variant": "$.data.windows.notes.variant"
+                                    },
+                                    "viewer": {
+                                        "component": "button",
+                                        "_title": "Viewer",
+                                        "icon": "photo",
+                                        "size": "sm",
+                                        "tone": "neutral",
+                                        "<-hidden": "$.data.windows.viewer.closed",
+                                        "<-variant": "$.data.windows.viewer.variant"
+                                    },
+                                    "settings": {
+                                        "component": "button",
+                                        "_title": "Settings",
+                                        "icon": "settings",
+                                        "size": "sm",
+                                        "tone": "neutral",
+                                        "<-hidden": "$.data.windows.settings.closed",
+                                        "<-variant": "$.data.windows.settings.variant"
+                                    }
+                                }
+                            },
+                            "brand": {
+                                "component": "text",
+                                "textRole": "label",
+                                "_text": "Lumen"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "logic": {
+        "rules": {
+            "windowFocus": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.activate",
+                    "if": "!$.data.windows.{app}.active || $.data.windows.{app}.minimized"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "iconOpen": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.icons.children.{app}.press"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "launcherOpen": {
+                "when": {
+                    "path": "$.raised.screens.home.children.taskbar.children.launcher.children.{app}.press"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "taskPress": {
+                "when": {
+                    "path": "$.raised.screens.home.children.taskbar.children.tasks.children.{app}.press"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.z",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized ? $.data.windows.{app}.z : coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized ? $.data.windows.files.active : false }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized ? $.data.windows.notes.active : false }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized ? $.data.windows.viewer.active : false }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized ? $.data.windows.settings.active : false }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": "{{ $.data.windows.{app}.active && !$.data.windows.{app}.minimized }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": "{{ !$.data.windows.{app}.minimized }}"
+                    }
+                ]
+            },
+            "windowMinimize": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.minimize"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": false
+                    }
+                ]
+            },
+            "windowClose": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.close"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.open",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.minimized",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "free"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.z",
+                        "value": 0
+                    }
+                ]
+            },
+            "windowMaximize": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.maximize"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "{{ $.data.windows.{app}.snap === 'max' ? 'free' : 'max' }}"
+                    }
+                ]
+            },
+            "windowSnapLeft": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.snapLeft"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "left"
+                    }
+                ]
+            },
+            "windowSnapRight": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.snapRight"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "right"
+                    }
+                ]
+            },
+            "windowMoved": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.move"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.x",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.x, 0, -2)), $.data.windows.{app}.x) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.y",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.y, 0, -2)), $.data.windows.{app}.y) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.width",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.width, 0, -2)), $.data.windows.{app}.width) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.height",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.height, 0, -2)), $.data.windows.{app}.height) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "free"
+                    }
+                ]
+            },
+            "windowResized": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.{app}.resize"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.x",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.x, 0, -2)), $.data.windows.{app}.x) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.y",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.y, 0, -2)), $.data.windows.{app}.y) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.width",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.width, 0, -2)), $.data.windows.{app}.width) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.height",
+                        "value": "{{ coalesce(number(slice($.data.windows.{app}.placement.height, 0, -2)), $.data.windows.{app}.height) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.{app}.snap",
+                        "value": "free"
+                    }
+                ]
+            },
+            "folderListing": {
+                "when": {
+                    "path": "$.data.windows.files.folder"
+                },
+                "do": [
+                    {
+                        "command": "query",
+                        "from": "$.data.files",
+                        "filter": "$record.folder === $.data.windows.files.folder",
+                        "sort": "sortKey",
+                        "into": "$.screens.home.children.surface.children.files.children.browse.children.listing"
+                    }
+                ]
+            },
+            "filesListing": {
+                "when": {
+                    "path": "$.data.files"
+                },
+                "do": [
+                    {
+                        "command": "query",
+                        "from": "$.data.files",
+                        "filter": "$record.folder === $.data.windows.files.folder",
+                        "sort": "sortKey",
+                        "into": "$.screens.home.children.surface.children.files.children.browse.children.listing"
+                    }
+                ]
+            },
+            "folderRoot": {
+                "when": {
+                    "path": "$.data.windows.files.folder",
+                    "is": ""
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.folder",
+                        "value": "home"
+                    }
+                ]
+            },
+            "folderCaption": {
+                "when": {
+                    "path": "$.data.windows.files.folder",
+                    "if": "$trigger !== ''"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.folders.{{ $trigger }}.name",
+                        "target": "$.data.windows.files.caption"
+                    }
+                ]
+            },
+            "folderRenamed": {
+                "when": {
+                    "path": "$.data.folders.{id}.name",
+                    "if": "$id === $.data.windows.files.folder"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.folders.{id}.name",
+                        "target": "$.data.windows.files.caption"
+                    }
+                ]
+            },
+            "fileSort": {
+                "when": {
+                    "path": "$.data.files.{id}.name"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{id}.sortKey",
+                        "value": "{{ lower($.data.files.{id}.name) }}"
+                    }
+                ]
+            },
+            "fileDetail": {
+                "when": {
+                    "path": "$.data.files.{id}.modified"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{id}.detail",
+                        "value": "{{ ($.data.files.{id}.kind === 'picture' ? 'Picture' : 'Note') + ', ' + slice($.data.files.{id}.modified, 0, 10) }}"
+                    }
+                ]
+            },
+            "filesUp": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.bar.children.up.press"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.folders.{{ $.data.windows.files.folder }}.parent",
+                        "target": "$.data.windows.files.folder"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.selected",
+                        "value": ""
+                    }
+                ]
+            },
+            "openNote": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.bar.children.open.press",
+                    "if": "$.data.windows.files.selected !== '' && $.data.windows.files.selectedKind === 'note'"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.windows.files.selected",
+                        "target": "$.data.windows.notes.doc"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "openPicture": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.bar.children.open.press",
+                    "if": "$.data.windows.files.selected !== '' && $.data.windows.files.selectedKind === 'picture'"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.windows.files.selected",
+                        "target": "$.data.windows.viewer.doc"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "activateNote": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.browse.children.listing.activate",
+                    "if": "$.data.windows.files.selectedKind === 'note'"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.doc",
+                        "value": "{{ $trigger }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "activatePicture": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.browse.children.listing.activate",
+                    "if": "$.data.windows.files.selectedKind === 'picture'"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.doc",
+                        "value": "{{ $trigger }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.z",
+                        "value": "{{ coalesce(max($.data.windows, 'z'), 0) + 1 }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.settings.active",
+                        "value": false
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.active",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.open",
+                        "value": true
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.viewer.minimized",
+                        "value": false
+                    }
+                ]
+            },
+            "filesNewNote": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.edit.children.newNote.press"
+                },
+                "do": [
+                    {
+                        "command": "save-data",
+                        "into": "$.data.files",
+                        "value": {
+                            "name": "{{ coalesce(trim($.data.windows.files.draftName), 'Untitled.md') }}",
+                            "folder": "{{ $.data.windows.files.folder }}",
+                            "kind": "note",
+                            "text": "",
+                            "paints": {},
+                            "modified": "{{ now() }}",
+                            "icon": "file-text",
+                            "detail": "",
+                            "sortKey": ""
+                        }
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.selected",
+                        "value": "{{ $key }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.draftName",
+                        "value": ""
+                    }
+                ]
+            },
+            "filesNewFolder": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.edit.children.newFolder.press"
+                },
+                "do": [
+                    {
+                        "command": "save-data",
+                        "into": "$.data.folders",
+                        "value": {
+                            "name": "{{ coalesce(trim($.data.windows.files.draftName), 'New folder') }}",
+                            "parent": "{{ $.data.windows.files.folder }}",
+                            "modified": "{{ now() }}"
+                        }
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.draftName",
+                        "value": ""
+                    }
+                ]
+            },
+            "filesRename": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.edit.children.rename.press",
+                    "if": "$.data.windows.files.selected !== '' && trim($.data.windows.files.draftName) !== ''"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{{ $.data.windows.files.selected }}.name",
+                        "value": "{{ trim($.data.windows.files.draftName) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{{ $.data.windows.files.selected }}.modified",
+                        "value": "{{ now() }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.draftName",
+                        "value": ""
+                    }
+                ]
+            },
+            "filesRenameFolder": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.edit.children.rename.press",
+                    "if": "$.data.windows.files.selected === '' && trim($.data.windows.files.draftName) !== ''"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.folders.{{ $.data.windows.files.folder }}.name",
+                        "value": "{{ trim($.data.windows.files.draftName) }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.draftName",
+                        "value": ""
+                    }
+                ]
+            },
+            "filesDelete": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.confirm.footer.children.confirm.press",
+                    "if": "$.data.windows.files.selected !== ''"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.doc",
+                        "value": "{{ $.data.windows.notes.doc === $.data.windows.files.selected ? '' : $.data.windows.notes.doc }}"
+                    },
+                    {
+                        "command": "delete-data",
+                        "target": "$.data.files.{{ $.data.windows.files.selected }}"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.selected",
+                        "value": ""
+                    }
+                ]
+            },
+            "folderDelete": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.files.children.confirm.footer.children.confirm.press",
+                    "if": "$.data.windows.files.selected === '' && $.data.windows.files.folder !== 'home' && count($.data.files, 'folder', $.data.windows.files.folder) === 0 && count($.data.folders, 'parent', $.data.windows.files.folder) === 0"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.folders.{{ $.data.windows.files.folder }}.parent",
+                        "target": "$.data.windows.files.doc"
+                    },
+                    {
+                        "command": "delete-data",
+                        "target": "$.data.folders.{{ $.data.windows.files.folder }}"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.windows.files.doc",
+                        "target": "$.data.windows.files.folder"
+                    }
+                ]
+            },
+            "noteLoad": {
+                "when": {
+                    "path": "$.data.windows.notes.doc",
+                    "if": "$trigger !== ''"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.name",
+                        "target": "$.data.windows.notes.draftName"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.text",
+                        "target": "$.data.windows.notes.draftText"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.name",
+                        "target": "$.data.windows.notes.caption"
+                    },
+                    {
+                        "command": "emit",
+                        "target": "notes.loaded"
+                    }
+                ]
+            },
+            "noteNew": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.notes.children.bar.children.fresh.press"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.doc",
+                        "value": ""
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.draftName",
+                        "value": "Untitled.md"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.draftText",
+                        "value": ""
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.caption",
+                        "value": "New note"
+                    }
+                ]
+            },
+            "noteSave": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.notes.children.bar.children.save.press",
+                    "if": "$.data.windows.notes.doc !== ''"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{{ $.data.windows.notes.doc }}.name",
+                        "value": "{{ coalesce(trim($.data.windows.notes.draftName), 'Untitled.md') }}"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.windows.notes.draftText",
+                        "target": "$.data.files.{{ $.data.windows.notes.doc }}.text"
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.files.{{ $.data.windows.notes.doc }}.modified",
+                        "value": "{{ now() }}"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $.data.windows.notes.doc }}.name",
+                        "target": "$.data.windows.notes.caption"
+                    }
+                ]
+            },
+            "noteCreate": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.notes.children.bar.children.save.press",
+                    "if": "$.data.windows.notes.doc === ''"
+                },
+                "do": [
+                    {
+                        "command": "save-data",
+                        "into": "$.data.files",
+                        "value": {
+                            "name": "{{ coalesce(trim($.data.windows.notes.draftName), 'Untitled.md') }}",
+                            "folder": "{{ $.data.windows.files.folder === '' ? 'documents' : $.data.windows.files.folder }}",
+                            "kind": "note",
+                            "text": "{{ $.data.windows.notes.draftText }}",
+                            "paints": {},
+                            "modified": "{{ now() }}",
+                            "icon": "file-text",
+                            "detail": "",
+                            "sortKey": ""
+                        }
+                    },
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.notes.doc",
+                        "value": "{{ $key }}"
+                    }
+                ]
+            },
+            "viewerLoad": {
+                "when": {
+                    "path": "$.data.windows.viewer.doc",
+                    "if": "$trigger !== ''"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.paints",
+                        "target": "$.screens.home.children.surface.children.viewer.children.picture.paints"
+                    },
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.name",
+                        "target": "$.data.windows.viewer.caption"
+                    }
+                ]
+            },
+            "viewerWallpaper": {
+                "when": {
+                    "path": "$.raised.screens.home.children.surface.children.viewer.children.bar.children.wallpaper.press"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.windows.viewer.doc",
+                        "target": "$.data.windows.settings.doc"
+                    }
+                ]
+            },
+            "wallpaper": {
+                "when": {
+                    "path": "$.data.windows.settings.doc",
+                    "if": "$trigger !== ''"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.paints",
+                        "target": "$.screens.home.children.surface.children.wallpaper.paints"
+                    }
+                ]
+            },
+            "selectedKind": {
+                "when": {
+                    "path": "$.data.windows.files.selected",
+                    "if": "$trigger !== ''"
+                },
+                "do": [
+                    {
+                        "command": "copy",
+                        "from": "$.data.files.{{ $trigger }}.kind",
+                        "target": "$.data.windows.files.selectedKind"
+                    }
+                ]
+            },
+            "selectedNone": {
+                "when": {
+                    "path": "$.data.windows.files.selected",
+                    "is": ""
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.selectedKind",
+                        "value": ""
+                    }
+                ]
+            },
+            "folderSelection": {
+                "when": {
+                    "path": "$.data.windows.files.folder"
+                },
+                "do": [
+                    {
+                        "command": "set",
+                        "target": "$.data.windows.files.selected",
+                        "value": ""
+                    }
+                ]
+            }
+        },
+        "tables": {
+            "windowShow": {
+                "inputs": {
+                    "open": {
+                        "path": "$.data.windows.{app}.open",
+                        "values": [
+                            true,
+                            false
+                        ]
+                    },
+                    "minimized": {
+                        "path": "$.data.windows.{app}.minimized",
+                        "values": [
+                            true,
+                            false
+                        ]
+                    },
+                    "active": {
+                        "path": "$.data.windows.{app}.active",
+                        "values": [
+                            true,
+                            false
+                        ]
+                    }
+                },
+                "outputs": {
+                    "hidden": "$.data.windows.{app}.hidden",
+                    "closed": "$.data.windows.{app}.closed",
+                    "variant": "$.data.windows.{app}.variant"
+                },
+                "rows": [
+                    {
+                        "open": false,
+                        "hidden": true,
+                        "closed": true,
+                        "variant": "ghost"
+                    },
+                    {
+                        "minimized": true,
+                        "hidden": true,
+                        "closed": false,
+                        "variant": "ghost"
+                    },
+                    {
+                        "active": true,
+                        "hidden": false,
+                        "closed": false,
+                        "variant": "soft"
+                    },
+                    {
+                        "hidden": false,
+                        "closed": false,
+                        "variant": "ghost"
+                    }
+                ]
+            },
+            "windowPlace": {
+                "inputs": {
+                    "snap": {
+                        "path": "$.data.windows.{app}.snap",
+                        "values": [
+                            "max",
+                            "left",
+                            "right",
+                            "*"
+                        ]
+                    },
+                    "x": "$.data.windows.{app}.x",
+                    "y": "$.data.windows.{app}.y",
+                    "width": "$.data.windows.{app}.width",
+                    "height": "$.data.windows.{app}.height",
+                    "z": "$.data.windows.{app}.z"
+                },
+                "outputs": {
+                    "placement": "$.data.windows.{app}.placement",
+                    "maximized": "$.data.windows.{app}.maximized"
+                },
+                "rows": [
+                    {
+                        "snap": "max",
+                        "placement": {
+                            "x": "0px",
+                            "y": "0px",
+                            "width": "100%",
+                            "height": "100%",
+                            "z": "{{ $z }}"
+                        },
+                        "maximized": true
+                    },
+                    {
+                        "snap": "left",
+                        "placement": {
+                            "x": "0px",
+                            "y": "0px",
+                            "width": "50%",
+                            "height": "100%",
+                            "z": "{{ $z }}"
+                        },
+                        "maximized": false
+                    },
+                    {
+                        "snap": "right",
+                        "placement": {
+                            "x": "50%",
+                            "y": "0px",
+                            "width": "50%",
+                            "height": "100%",
+                            "z": "{{ $z }}"
+                        },
+                        "maximized": false
+                    },
+                    {
+                        "placement": {
+                            "x": "min({{ $x }}px, max(0px, calc(100% - {{ $width }}px)))",
+                            "y": "min({{ $y }}px, max(0px, calc(100% - {{ $height }}px)))",
+                            "width": "min({{ $width }}px, 100%)",
+                            "height": "min({{ $height }}px, 100%)",
+                            "z": "{{ $z }}"
+                        },
+                        "maximized": false
+                    }
+                ]
+            }
+        }
+    }
+}
