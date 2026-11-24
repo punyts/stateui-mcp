@@ -329,7 +329,7 @@ describe('scene3dSection', () => {
 
         // Assert
         expect(text).not.toContain(scene3dSection().split('\n')[0]);
-        const at = ['paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play'].map((name) => text.indexOf(`read ui_guide topic ${name}.`));
+        const at = ['paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play', 'scene3d-modeling'].map((name) => text.indexOf(`read ui_guide topic ${name}.`));
         expect(at.every((position) => position >= 0)).toBe(true);
         expect(at).toEqual([...at].sort((left, right) => left - right));
     });
@@ -387,7 +387,7 @@ ${START_HERE}`;
         const text = buildServerInstructions(INDEX, PRESETS);
 
         // Assert
-        expect(pointed.map((topic) => topic.name)).toEqual(['parts', 'paths', 'revisions', 'modules', 'logic', 'saving', 'similar', 'tables', 'effects', 'functions', 'live-view', 'files', 'drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play', 'safety']);
+        expect(pointed.map((topic) => topic.name)).toEqual(['parts', 'paths', 'revisions', 'modules', 'logic', 'saving', 'similar', 'tables', 'effects', 'functions', 'live-view', 'files', 'drawing', 'paint-field', 'scene3d', 'scene3d-models', 'scene3d-behavior', 'scene3d-play', 'scene3d-modeling', 'safety']);
         expect(text.endsWith(`\n\n${pointed.map(pointerLine).join('\n')}`)).toBe(true);
         expect(pointerLine(guideTopic('logic')!)).toBe('Before a machine or rule, read ui_guide topic logic.');
         for (const topic of pointed) expect(text).not.toContain(topic.text({ index: INDEX, presets: PRESETS }));
