@@ -1,3 +1,4 @@
+import { testWire } from '../src/testing/syncWire.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,21 +47,22 @@ async function ageFiles(dataDir: string, appId: string): Promise<void> {
 }
 
 /** A view's socket to the server, after its hello to the namespace of the app's instance */
-async function openView(harness: HttpHarness, app: CreatedApp): Promise<WebSocket> {
+async function openView(harness: HttpHarness, app: CreatedApp): Promise<{ send(message: object): void; close(): void }> {
     const { origin } = harness.server;
     const found = await harness.server.services.useCases.findPartApp.execute(app.name);
     if (found.kind !== 'found') throw new Error('the app is stored');
     const namespace = harness.server.services.instanceViews.namespace(found.part);
     const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${app.id}/sync?view=${VIEW}&kind=browser`, { headers: { Origin: origin } });
     const frames: Record<string, unknown>[] = [];
-    socket.on('message', (data) => frames.push(JSON.parse(String(data)) as Record<string, unknown>));
+    const wire = testWire();
+    socket.on('message', (data, isBinary) => frames.push(wire.readSocket(data, isBinary)));
     await new Promise((resolve, reject) => {
         socket.once('open', resolve);
         socket.once('error', reject);
     });
-    socket.send(JSON.stringify({ type: 'hello', namespace, revision: 0, clientId: VIEW, protocol: 1 }));
+    socket.send(wire.write({ type: 'hello', namespace, revision: 0, clientId: VIEW, protocol: 4 }));
     await eventually(() => frames, (all) => all.some((frame) => frame['type'] === 'welcome' || frame['type'] === 'snapshot'));
-    return socket;
+    return { send: (message) => socket.send(wire.write(message)), close: () => socket.close() };
 }
 
 describe('the file sweep and files held only in live state (G2.5a)', () => {
@@ -103,7 +105,7 @@ describe('the file sweep and files held only in live state (G2.5a)', () => {
         const file = await upload(running.server.origin, app.id, PNG, 'sketch.png');
         const view = await openView(running, app);
         closers.push(() => view.close());
-        view.send(JSON.stringify({ type: 'change', change: { id: 'pick-1', path: HELD_AT, op: 'set', value: file, base: 0 } }));
+        view.send({ type: 'change', change: { id: 'pick-1', path: HELD_AT, op: 'set', value: file, base: 0 } });
         await heldLive(running, app, file.id);
 
         // Act
@@ -119,14 +121,14 @@ describe('the file sweep and files held only in live state (G2.5a)', () => {
         const file = await upload(running.server.origin, app.id, PNG, 'signature.png');
         const view = await openView(running, app);
         closers.push(() => view.close());
-        view.send(JSON.stringify({ type: 'change', change: { id: 'pick-1', path: HELD_AT, op: 'set', value: file, base: 0 } }));
+        view.send({ type: 'change', change: { id: 'pick-1', path: HELD_AT, op: 'set', value: file, base: 0 } });
         await heldLive(running, app, file.id);
         const url = `${running.server.origin}/apps/${app.id}/files/${file.id}`;
 
         // Act
         const held = await fetch(url, { method: 'DELETE' });
         const kept = await fetch(filePathOf(running.server, app.id, file.id));
-        view.send(JSON.stringify({ type: 'change', change: { id: 'pick-2', path: HELD_AT, op: 'set', value: '', base: 1 } }));
+        view.send({ type: 'change', change: { id: 'pick-2', path: HELD_AT, op: 'set', value: '', base: 1 } });
         await eventually(
             () => call(running.client, 'ui_state_get', { app: app.name }),
             (result) => !JSON.stringify(result.body['state'] ?? {}).includes(file.id)

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { isRejectionCode, type JsonValue, type SyncState } from '@punyts/state-sync';
+import { createSyncWire, type JsonValue, type SyncMessage, type SyncState, type SyncWire } from '@punyts/state-sync';
 import type { Authority, AuthoritySession } from '@punyts/state-sync/authority';
 import type { UseCaseReport } from '../../application/ports/UseCaseReport.js';
 import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
@@ -151,6 +151,8 @@ class AppBridge {
     private readonly pending = new Map<string, string>();
     private authority: Authority | undefined;
     private session: AuthoritySession | undefined;
+    /** The session's wire: a new one with each session */
+    private wire: SyncWire = createSyncWire();
     /** The authority's revision as this bridge last heard */
     private revision = 0;
     private stopped = false;
@@ -209,8 +211,13 @@ class AppBridge {
         if (this.stopped) return;
         this.authority = authority;
         let session: AuthoritySession | undefined;
+        const wire = createSyncWire();
+        this.wire = wire;
         session = authority.connect({
-            send: (text) => this.fromAuthority(text),
+            send: (data) => {
+                const parsed = wire.read(data);
+                if (parsed.ok) this.fromAuthority(parsed.message);
+            },
             close: () => {
                 if (this.session !== session) return;
                 this.session = undefined;
@@ -220,7 +227,7 @@ class AppBridge {
             }
         });
         this.session = session;
-        session.receive(JSON.stringify({ type: 'hello', namespace: this.link.namespace, revision: 0, clientId: `statenet-bridge-${randomUUID()}`, protocol: 1 }));
+        session.receive(wire.write({ type: 'hello', namespace: this.link.namespace, revision: 0, clientId: `statenet-bridge-${randomUUID()}`, protocol: 4 }));
         this.reconcile();
     }
 
@@ -231,42 +238,34 @@ class AppBridge {
         this.link.write(diffState(this.link.state, truth));
     }
 
-    private fromAuthority(text: string): void {
-        let message: Record<string, unknown>;
-        try {
-            message = JSON.parse(text) as Record<string, unknown>;
-        } catch {
-            return;
-        }
-        switch (message['type']) {
+    private fromAuthority(message: SyncMessage): void {
+        switch (message.type) {
             case 'welcome':
-                if (typeof message['revision'] === 'number') this.revision = message['revision'];
+                this.revision = message.revision;
                 return;
             case 'emit':
                 // the instance's emits (the requests of its shared bindings, `sync.requests`) go to its pages
-                if (typeof message['name'] === 'string') this.link.emit(message['name'], message['value'] as JsonValue | undefined);
+                this.link.emit(message.name, message.value);
                 return;
             case 'changes': {
-                const changes = Array.isArray(message['changes']) ? (message['changes'] as Record<string, unknown>[]) : [];
                 this.link.write(
-                    changes.map((change) => {
-                        if (typeof change['revision'] === 'number') this.revision = change['revision'];
-                        const op = change['op'] === 'replace' || change['op'] === 'merge' ? change['op'] : 'set';
-                        return change['op'] === 'delete' ? { path: String(change['path']) } : { path: String(change['path']), op, value: change['value'] as JsonValue };
+                    message.changes.map((change) => {
+                        this.revision = change.revision;
+                        const op = change.op === 'replace' || change.op === 'merge' ? change.op : 'set';
+                        return change.op === 'delete' ? { path: change.path } : { path: change.path, op, value: change.value as JsonValue };
                     })
                 );
                 return;
             }
             case 'ack': {
-                if (typeof message['revision'] === 'number') this.revision = Math.max(this.revision, message['revision']);
-                const id = String(message['id']);
-                const path = this.pending.get(id);
-                this.pending.delete(id);
-                if (path === undefined || message['result'] === 'applied') return;
+                if (message.revision !== undefined) this.revision = Math.max(this.revision, message.revision);
+                const path = this.pending.get(message.id);
+                this.pending.delete(message.id);
+                if (path === undefined || message.result === 'applied') return;
                 // The statenet applied the page's change first: it gets the authority's value back
                 const value = this.authority?.get(path);
                 this.link.write([value === undefined ? { path } : { path, value }]);
-                if (message['result'] === 'rejected') this.broadcast({ type: 'view', message: { type: 'rejected', path, reason: typeof message['reason'] === 'string' ? message['reason'] : 'Refused', ...(isRejectionCode(message['code']) ? { code: message['code'] } : {}) } });
+                if (message.result === 'rejected') this.broadcast({ type: 'view', message: { type: 'rejected', path, reason: message.reason ?? 'Refused', ...(message.code === undefined ? {} : { code: message.code }) } });
                 return;
             }
             default:
@@ -279,8 +278,8 @@ class AppBridge {
         if (this.session === undefined) return;
         const id = randomUUID();
         this.pending.set(id, path);
-        const change = value === undefined ? { id, path, op: 'delete', base: this.revision } : { id, path, op: 'set', value, base: this.revision };
-        this.session.receive(JSON.stringify({ type: 'change', change }));
+        const change = value === undefined ? { id, path, op: 'delete' as const, base: this.revision } : { id, path, op: 'set' as const, value, base: this.revision };
+        this.session.receive(this.wire.write({ type: 'change', change }));
     }
 
     private onEmit(name: string, value: JsonValue | undefined): void {
@@ -291,7 +290,7 @@ class AppBridge {
         // A page decides a request of the instance's bindings, or asks for them again (with no value: the instance's
         // own `sync.requests` carry the list and are not sent back)
         if (name === DECIDE_EMIT || (name === REQUESTS_EMIT && value === undefined)) {
-            this.session?.receive(JSON.stringify(value === undefined ? { type: 'emit', name } : { type: 'emit', name, value }));
+            this.session?.receive(this.wire.write(value === undefined ? { type: 'emit', name } : { type: 'emit', name, value }));
             return;
         }
         if (name !== VIEW_EMIT || !isRelayEnvelope(value) || value.from === undefined || !isAppId(value.from)) return;

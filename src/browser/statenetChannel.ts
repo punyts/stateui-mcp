@@ -124,9 +124,11 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
                 connect: (handlers) => {
                     const socket = new WebSocket(options.statenetUrl);
                     let closed = false;
+                    socket.binaryType = 'arraybuffer';
                     socket.addEventListener('open', () => handlers.onOpen());
                     socket.addEventListener('message', (event: MessageEvent<unknown>) => {
                         if (typeof event.data === 'string') handlers.onMessage(event.data);
+                        else if (event.data instanceof ArrayBuffer) handlers.onMessage(new Uint8Array(event.data));
                     });
                     socket.addEventListener('close', () => {
                         if (closed) return;
@@ -134,8 +136,8 @@ export function statenetChannel(options: StatenetChannelOptions): ViewChannel {
                         handlers.onClose();
                     });
                     return {
-                        send: (text) => {
-                            if (socket.readyState === WebSocket.OPEN) socket.send(text);
+                        send: (data) => {
+                            if (socket.readyState === WebSocket.OPEN) socket.send(data);
                         },
                         close: () => socket.close()
                     };

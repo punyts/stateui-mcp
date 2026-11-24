@@ -1,3 +1,4 @@
+import { testWire } from '../src/testing/syncWire.js';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -633,8 +634,9 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         const socket = new WebSocket(`${origin.replace('http', 'ws')}/apps/${id}/sync?view=${VIEW}&kind=browser`, { headers });
         const received: Record<string, unknown>[] = [];
         const waits: { match: (message: Record<string, unknown>) => boolean; resolve: (message: Record<string, unknown>) => void }[] = [];
-        socket.on('message', (data) => {
-            const message = JSON.parse(String(data)) as Record<string, unknown>;
+        const wire = testWire();
+        socket.on('message', (data, isBinary) => {
+            const message = wire.readSocket(data, isBinary);
             received.push(message);
             for (const wait of [...waits]) {
                 if (!wait.match(message)) continue;
@@ -651,7 +653,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
             });
         };
         return new Promise((resolve, reject) => {
-            socket.once('open', () => resolve({ socket, received, next, send: (message) => socket.send(JSON.stringify(message)) }));
+            socket.once('open', () => resolve({ socket, received, next, send: (message) => socket.send(wire.write(message)) }));
             socket.once('error', reject);
         });
     }
@@ -673,7 +675,7 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
     }
 
     function hello(view: OpenSocket): void {
-        view.send({ type: 'hello', namespace: appNamespace, revision: 0, clientId: VIEW, protocol: 1 });
+        view.send({ type: 'hello', namespace: appNamespace, revision: 0, clientId: VIEW, protocol: 4 });
     }
 
     function report(body: Record<string, unknown>): Promise<Response> {
@@ -759,6 +761,54 @@ describe('GET /apps/:appId/sync and POST /apps/:appId/report', () => {
         const notJson = await fetch(`${origin}/apps/${appId}/report`, { method: 'POST', body: 'x' });
 
         expect([noView.status, unknownType.status, state.status, emit.status, notJson.status]).toEqual([400, 400, 400, 400, 400]);
+    });
+});
+
+describe('GET /apps/:appId/sync for a tenant that may only look', () => {
+    const VIEW = '0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b';
+    const PATH = '$.screens.home.children.form.children.email.value';
+
+    it('should reject every change of the view with access, the path sent first by number after, and drop its emits', async () => {
+        // Arrange
+        const viewData = await tempData();
+        const viewHarness = await httpHarness(viewData.dir, noBrowser, { access: 'view' });
+        try {
+            const viewOrigin = viewHarness.server.origin;
+            const id = (await createApp(viewHarness.client, 'form', FORM_ROOT)).id;
+            const found = await viewHarness.server.services.useCases.findPartApp.execute('form');
+            if (found.kind !== 'found') throw new Error('the form app is stored');
+            const socket = new WebSocket(`${viewOrigin.replace('http', 'ws')}/apps/${id}/sync?view=${VIEW}&kind=browser`, { headers: { Origin: viewOrigin } });
+            const wire = testWire();
+            const received: Record<string, unknown>[] = [];
+            socket.on('message', (data, isBinary) => received.push(wire.readSocket(data, isBinary)));
+            await new Promise((resolve, reject) => {
+                socket.once('open', resolve);
+                socket.once('error', reject);
+            });
+            socket.send(wire.write({ type: 'hello', namespace: viewHarness.server.services.instanceViews.namespace(found.part), revision: 0, clientId: VIEW, protocol: 4 }));
+
+            // Act
+            socket.send(wire.write({ type: 'change', change: { id: 'look-1', path: PATH, op: 'set', value: 'x', base: 0 } }));
+            socket.send(wire.write({ type: 'emit', name: 'form.saved' }));
+            socket.send(wire.write({ type: 'change', change: { id: 'look-2', path: PATH, op: 'set', value: 'y', base: 0 } }));
+            const deadline = Date.now() + 5000;
+            while (received.filter((message) => message['type'] === 'ack').length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+            const events = await call(viewHarness.client, 'ui_events_read', { app: 'form' });
+            const state = await call(viewHarness.client, 'ui_state_get', { app: 'form' });
+            socket.close();
+
+            // Assert
+            expect(received.filter((message) => message['type'] === 'ack')).toEqual([
+                { type: 'ack', id: 'look-1', result: 'rejected', reason: 'This app is shared with you to look at only', code: 'access' },
+                { type: 'ack', id: 'look-2', result: 'rejected', reason: 'This app is shared with you to look at only', code: 'access' }
+            ]);
+            expect(received.some((message) => message['type'] === 'error')).toBe(false);
+            expect(events.body['events']).toEqual([]);
+            expect(JSON.stringify(state.body['state'])).not.toContain('"value":"x"');
+        } finally {
+            await viewHarness.close();
+            await viewData.cleanup();
+        }
     });
 });
 

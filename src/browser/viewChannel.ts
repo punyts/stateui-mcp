@@ -94,8 +94,13 @@ export function directChannel(appId: string, viewId: string, viewKind: string, p
             connect: (handlers) => {
                 const socket = new WebSocket(url);
                 let closed = false;
+                socket.binaryType = 'arraybuffer';
                 socket.addEventListener('open', () => handlers.onOpen());
                 socket.addEventListener('message', (event: MessageEvent<unknown>) => {
+                    if (event.data instanceof ArrayBuffer) {
+                        handlers.onMessage(new Uint8Array(event.data));
+                        return;
+                    }
                     if (typeof event.data !== 'string') return;
                     if (!event.data.startsWith(VIEW_FRAME)) {
                         handlers.onMessage(event.data);
@@ -114,8 +119,8 @@ export function directChannel(appId: string, viewId: string, viewKind: string, p
                     handlers.onClose();
                 });
                 return {
-                    send: (text) => {
-                        if (socket.readyState === WebSocket.OPEN) socket.send(text);
+                    send: (data) => {
+                        if (socket.readyState === WebSocket.OPEN) socket.send(data);
                     },
                     close: () => socket.close()
                 };

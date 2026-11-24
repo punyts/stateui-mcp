@@ -23,7 +23,7 @@ export function sessionTransport(open: (connection: AuthorityConnection) => Prom
         connect: (handlers) => {
             let session: AuthoritySession | undefined;
             let closed = false;
-            const early: string[] = [];
+            const early: (string | Uint8Array)[] = [];
             const end = (): void => {
                 if (closed) return;
                 closed = true;

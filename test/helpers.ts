@@ -117,6 +117,8 @@ export interface HttpHarnessOptions {
     readonly routes?: HttpServerOptions['routes'];
     readonly crossOriginPost?: HttpServerOptions['crossOriginPost'];
     readonly publicOrigins?: HttpServerOptions['publicOrigins'];
+    /** What the one tenant may do with the apps: the owner's by default */
+    readonly access?: 'owner' | 'use' | 'view';
 }
 
 /**
@@ -142,7 +144,7 @@ export async function httpHarness(dataDir: string, browser?: PreviewBrowser, ext
         host: '127.0.0.1',
         port: extra.port ?? 0,
         runtimePort: extra.runtimePort ?? 0,
-        tenant: { useCases: services.useCases, hub: services.hub, liveViews: services.liveViews, instances: services.instanceViews },
+        tenant: { useCases: services.useCases, hub: services.hub, liveViews: services.liveViews, instances: services.instanceViews, ...(extra.access !== undefined && { access: extra.access }) },
         runtime: loadRuntimeBundle(undefined, loadCatalogFile().components.map((component) => component.name)),
         ...(chunk3d !== undefined && { chunk3d }),
         hostScript: loadHostScript(),

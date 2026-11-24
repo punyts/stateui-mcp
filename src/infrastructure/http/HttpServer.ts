@@ -15,14 +15,14 @@ import type { ByteRange } from '../../application/ports/UiFileStore.js';
 import type { UploadFileResult } from '../../application/use-cases/UploadFile.js';
 import { buildRecordsCsv, csvHeaders } from '../../application/recordsCsv.js';
 import type { UiBuilderUseCases } from '../../config/createUiBuilder.js';
-import { isJsonObject } from '../../domain/JsonValue.js';
 import { MAX_FILE_BYTES } from '../../domain/UiFile.js';
 import { isAppId } from '../storage/PartFolders.js';
 import type { InstanceViews } from '../preview/InstanceViews.js';
 import type { LiveViews } from '../preview/LiveViews.js';
 import type { AuthoritySession } from '@punyts/state-sync/authority';
 import { DEFAULT_PERSONA } from '../../domain/InstanceKey.js';
-import { REVOKED_CODE } from '@punyts/state-sync';
+import { createSyncWire, REVOKED_CODE, wireTypeOf } from '@punyts/state-sync';
+import type { SyncWire } from '@punyts/state-sync';
 import type { PreviewHub, ViewConnection, ViewMessage } from '../preview/PreviewHub.js';
 import { takeViewReport } from '../preview/viewReports.js';
 import { appPage, indexPage, PAGE_CSS } from './pages.js';
@@ -660,19 +660,16 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
      * For a view that may only look: a change is rejected at once (its path shows the authority's value again) and an
      * event is dropped. True when the frame was one of them, so it never reaches the authority
      */
-    function refuseWrite(text: string, ws: WebSocket): boolean {
-        let frame: unknown;
-        try {
-            frame = JSON.parse(text);
-        } catch {
-            return false;
+    function refuseWrite(data: string | Uint8Array, refusals: SyncWire, ws: WebSocket): boolean {
+        const type = wireTypeOf(data);
+        if (type === 'emit') return true;
+        if (type !== 'change') return false;
+        // Every change of a read-only view comes here and none reaches the session, so this wire reads the paths
+        // the view numbers; an ack carries no path, so its bytes are what the session's wire would write
+        const read = refusals.read(data);
+        if (read.ok && read.message.type === 'change' && ws.readyState === ws.OPEN) {
+            ws.send(refusals.write({ type: 'ack', id: read.message.change.id, result: 'rejected', reason: 'This app is shared with you to look at only', code: 'access' }));
         }
-        if (!isJsonObject(frame)) return false;
-        if (frame['type'] === 'emit') return true;
-        if (frame['type'] !== 'change') return false;
-        const change = frame['change'];
-        const id = isJsonObject(change) && typeof change['id'] === 'string' ? change['id'] : undefined;
-        if (id !== undefined && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ack', id, result: 'rejected', reason: 'This app is shared with you to look at only', code: 'access' }));
         return true;
     }
 
@@ -684,7 +681,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     /**
      * `GET /apps/:appId/sync`: the WebSocket of one view. The view joins the hub (document, commands, locale, theme and
      * deletion reach it as `{ type: 'view', message }` frames, the attach message first) and connects to the instance's
-     * sync authority, which gets every other text frame. Closing the socket leaves both
+     * sync authority, which gets every other frame: its hello as text, then protocol 4's bytes. Closing the socket leaves both
      */
     async function syncUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
         if (!hostAllowed(request)) return refuseUpgrade(socket, 403, 'Forbidden');
@@ -729,11 +726,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             let session: AuthoritySession | undefined;
             let closed = false;
             /** What the view sent before its session was ready, passed on in order once it is */
-            const early: string[] = [];
+            const early: (string | Uint8Array)[] = [];
+            const refusals = createSyncWire();
             instances
                 .connect(part, persona ?? DEFAULT_PERSONA, {
-                    send: (text) => {
-                        if (ws.readyState === ws.OPEN) ws.send(text);
+                    send: (data) => {
+                        if (ws.readyState === ws.OPEN) ws.send(data);
                     },
                     close: () => ws.close()
                 })
@@ -741,7 +739,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     (made) => {
                         if (closed) return made.close();
                         session = made;
-                        for (const text of early.splice(0)) made.receive(text);
+                        for (const data of early.splice(0)) made.receive(data);
                     },
                     (error: unknown) => {
                         report.info('Sync connection failed', { app: appId, error: error instanceof Error ? error.message : String(error) });
@@ -761,10 +759,6 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
             let tokens = rate === undefined ? 0 : rate * 2;
             let filledAt = Date.now();
             ws.on('message', (data, isBinary) => {
-                if (isBinary) {
-                    ws.close(1003, 'Text frames only');
-                    return;
-                }
                 if (rate !== undefined) {
                     const now = Date.now();
                     tokens = Math.min(rate * 2, tokens + ((now - filledAt) / 1000) * rate);
@@ -776,10 +770,11 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
                     tokens -= 1;
                 }
                 hub.touch(appId, viewId);
-                const text = Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8');
-                if (readOnly && refuseWrite(text, ws)) return;
-                if (session === undefined) early.push(text);
-                else session.receive(text);
+                const buffer = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data);
+                const frame = isBinary ? new Uint8Array(buffer) : buffer.toString('utf8');
+                if (readOnly && refuseWrite(frame, refusals, ws)) return;
+                if (session === undefined) early.push(frame);
+                else session.receive(frame);
             });
             ws.on('error', () => ws.terminate());
             ws.on('close', () => {

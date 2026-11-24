@@ -1,3 +1,4 @@
+import { wiredSession } from '../../testing/syncWire.js';
 import { FunctionTable, hostCatalog, libraryFromCatalog } from '@punyts/stateui-app/core';
 import type { CatalogSource, FunctionCatalog, FunctionCode, LogicComputeFunction, LogicEffectFunction } from '@punyts/stateui-app/core';
 import { createAuthority, createMemoryNamespaceStorage } from '@punyts/state-sync/authority';
@@ -82,8 +83,7 @@ interface Message {
 }
 
 let counter = 0;
-const change = (path: string, value: unknown) =>
-    JSON.stringify({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: 0 } });
+const change = (path: string, value: unknown) => ({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: 0 } });
 
 async function setup(document: UiDocument = DOCUMENT) {
     const authority: Authority = await createAuthority({
@@ -97,10 +97,10 @@ async function setup(document: UiDocument = DOCUMENT) {
     const logic = new AppLogic(authority, library, (name, payload) => events.push([name, payload]), (_message, failure) => failures.push(failure.reason));
     logic.setDocument(document);
     const received: Message[] = [];
-    const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Message), close: () => undefined });
-    session.receive(JSON.stringify({ type: 'hello', namespace: NAMESPACE, revision: authority.revision(), clientId: 'view-1', protocol: 1 }));
+    const { send } = wiredSession((push) => authority.connect({ send: push, close: () => undefined }), received);
+    send({ type: 'hello', namespace: NAMESPACE, revision: authority.revision(), clientId: 'view-1', protocol: 4 });
     received.length = 0;
-    return { authority, logic, events, failures, received, session };
+    return { authority, logic, events, failures, received, send };
 }
 
 describe('AppLogic', () => {
@@ -112,12 +112,12 @@ describe('AppLogic', () => {
 
     it('should save a form when a view sets saved, and push each transition as one message', async () => {
         // Arrange
-        const { authority, events, failures, received, session } = await setup();
-        session.receive(change('$.app.children.addContact.body.children.name.value', 'Ana'));
+        const { authority, events, failures, received, send } = await setup();
+        send(change('$.app.children.addContact.body.children.name.value', 'Ana'));
         received.length = 0;
 
         // Act
-        session.receive(change('$.app.children.addContact.saved', true));
+        send(change('$.app.children.addContact.saved', true));
         // the save's result waits until the write is durable
         await authority.whenDurable();
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -141,9 +141,9 @@ describe('AppLogic', () => {
     });
 
     it('should reject a client change a guard refuses', async () => {
-        const { authority, received, session } = await setup();
+        const { authority, received, send } = await setup();
 
-        session.receive(change('$.data.contacts.c1', { name: 'draft' }));
+        send(change('$.data.contacts.c1', { name: 'draft' }));
 
         expect(authority.get('$.data.contacts')).toEqual({});
         expect(received.find((message) => message.type === 'ack')).toMatchObject({ result: 'rejected', reason: 'Draft is not a name' });
@@ -161,10 +161,10 @@ describe('AppLogic', () => {
     });
 
     it('should report a rejected save through its machine', async () => {
-        const { authority, session } = await setup();
-        session.receive(change('$.app.children.addContact.body.children.name.value', 'draft'));
+        const { authority, send } = await setup();
+        send(change('$.app.children.addContact.body.children.name.value', 'draft'));
 
-        session.receive(change('$.app.children.addContact.saved', true));
+        send(change('$.app.children.addContact.saved', true));
 
         expect(authority.get('$.data.contacts')).toEqual({});
         expect(authority.get('$.app.children.addContact.error')).toBe('Draft is not a name');
@@ -180,7 +180,7 @@ describe('AppLogic', () => {
         const second = await setup(document);
 
         // Act
-        first.session.receive(change('$.data.stats.contacts', 3));
+        first.send(change('$.data.stats.contacts', 3));
         second.logic.write('$.data.stats.contacts', 5);
         second.logic.write('$.data.stats.contacts', 6);
 
@@ -410,10 +410,10 @@ describe('AppLogic', () => {
                 }
             }
         } as unknown as UiDocument;
-        const { authority, session } = await setup(document);
+        const { authority, send } = await setup(document);
 
         // Act
-        session.receive(change('$.data.contacts.c1', { name: 'Bo' }));
+        send(change('$.data.contacts.c1', { name: 'Bo' }));
 
         // Assert
         expect(authority.get('$.data.stats.contacts')).toBe(1);

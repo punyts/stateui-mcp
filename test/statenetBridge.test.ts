@@ -1,3 +1,4 @@
+import { testWire } from '../src/testing/syncWire.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -38,6 +39,7 @@ class FakePage {
     readonly fromServer: Message[] = [];
     private readonly assembler = new RelayAssembler();
     private socket: WebSocket | undefined;
+    private readonly wire = testWire();
     revision = 0;
 
     constructor(
@@ -48,8 +50,8 @@ class FakePage {
     async open(): Promise<Message> {
         const socket = new WebSocket(this.url, { headers: { Origin: PAGE_ORIGIN } });
         this.socket = socket;
-        socket.on('message', (data) => {
-            const message = JSON.parse(String(data)) as Message;
+        socket.on('message', (data, isBinary) => {
+            const message = this.wire.readSocket(data, isBinary) as Message;
             this.received.push(message);
             if (typeof message['revision'] === 'number') this.revision = Math.max(this.revision, message['revision']);
             if (message['type'] === 'changes') for (const change of message['changes'] as Message[]) this.revision = Math.max(this.revision, change['revision'] as number);
@@ -64,12 +66,12 @@ class FakePage {
             socket.once('open', resolve);
             socket.once('error', reject);
         });
-        this.send({ type: 'hello', namespace: this.namespace, revision: 0, clientId: this.viewId, protocol: 1 });
+        this.send({ type: 'hello', namespace: this.namespace, revision: 0, clientId: this.viewId, protocol: 4 });
         return this.next((message) => message['type'] === 'welcome');
     }
 
     send(message: object): void {
-        this.socket?.send(JSON.stringify(message));
+        this.socket?.send(this.wire.write(message));
     }
 
     /** Sends a relay message to the server */

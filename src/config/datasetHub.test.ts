@@ -1,3 +1,4 @@
+import { wiredSession } from '../testing/syncWire.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -130,12 +131,12 @@ let counter = 0;
 /** A view of an instance: sends client changes and keeps the messages it gets */
 function view(authority: Authority): { change(path: string, value: unknown): void; emit(name: string, value?: unknown): void; received: Message[] } {
     const received: Message[] = [];
-    const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Message), close: () => undefined });
-    session.receive(JSON.stringify({ type: 'hello', namespace: authority.namespace, revision: authority.revision(), clientId: `view-${++counter}`, protocol: 1 }));
+    const { send } = wiredSession((push) => authority.connect({ send: push, close: () => undefined }), received);
+    send({ type: 'hello', namespace: authority.namespace, revision: authority.revision(), clientId: `view-${++counter}`, protocol: 4 });
     received.length = 0;
     return {
-        change: (path, value) => session.receive(JSON.stringify({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: authority.revision() } })),
-        emit: (name, value) => session.receive(JSON.stringify({ type: 'emit', name, value })),
+        change: (path, value) => send({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: authority.revision() } }),
+        emit: (name, value) => send(value === undefined ? { type: 'emit', name } : { type: 'emit', name, value }),
         received
     };
 }

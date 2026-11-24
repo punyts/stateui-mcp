@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Views sync over protocol 4** (docs/design/statenet-wire-format.md, W2). Breaking: a view's socket
+  (`GET /apps/:appId/sync`), the view page's statenet socket and the server's link to the statenet speak state-sync's
+  protocol 4: a `hello` as text, then binary frames (`binaryType = 'arraybuffer'` in the browser), with
+  `{ type: 'view' }` frames still text. The statenet bridge reads and writes its instance session through a wire
+  (`StatenetViews`). A tenant that may only look has every change acked `rejected` (`access`) and its emits dropped,
+  found by `wireTypeOf`; one wire per socket reads those changes, since they carry the paths the view numbers. Tests:
+  `test/http.test.ts` ("should reject every change of the view with access, the path sent first by number after, and
+  drop its emits"), and the socket and session tests over `src/testing/syncWire.ts`.
 - **The guide topic `scene3d-modeling`** (docs/design/stateui-mesh-editor.md, V4): custom geometry, `edit`, the
   operations of `editRequest` with the counter that repeats one, writing `geometry` from a tool, and the limits. The
   3D topic points to it. Tests: `src/infrastructure/mcp/instructions.test.ts`, `test/toolSet.test.ts`.

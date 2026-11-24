@@ -88,7 +88,8 @@ export class StatenetLink {
                     let closed = false;
                     socket.on('open', () => handlers.onOpen());
                     socket.on('message', (data, isBinary) => {
-                        if (!isBinary) handlers.onMessage(Array.isArray(data) ? Buffer.concat(data).toString('utf8') : Buffer.from(data as ArrayBuffer).toString('utf8'));
+                        const buffer = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data);
+                        handlers.onMessage(isBinary ? new Uint8Array(buffer) : buffer.toString('utf8'));
                     });
                     const close = (): void => {
                         if (closed) return;
@@ -101,8 +102,8 @@ export class StatenetLink {
                         close();
                     });
                     return {
-                        send: (text) => {
-                            if (socket.readyState === WebSocket.OPEN) socket.send(text);
+                        send: (data) => {
+                            if (socket.readyState === WebSocket.OPEN) socket.send(data);
                         },
                         // A close, not a terminate: what was sent just before (a last emit) still goes out first
                         close: () => {

@@ -1,3 +1,4 @@
+import { wiredSession } from '../src/testing/syncWire.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -49,9 +50,8 @@ async function syncView(app: CreatedApp): Promise<{ readonly received: Record<st
     if (found.kind !== 'found') throw new Error('the app is stored');
     const authority = await harness.services.instanceViews.authority(found.part);
     const received: Record<string, unknown>[] = [];
-    const session = authority.connect({ send: (text) => received.push(JSON.parse(text) as Record<string, unknown>), close: () => undefined });
-    const send = (message: object): void => session.receive(JSON.stringify(message));
-    send({ type: 'hello', namespace: harness.services.instanceViews.namespace(found.part), revision: 0, clientId: 'view-1', protocol: 1 });
+    const { send } = wiredSession((push) => authority.connect({ send: push, close: () => undefined }), received);
+    send({ type: 'hello', namespace: harness.services.instanceViews.namespace(found.part), revision: 0, clientId: 'view-1', protocol: 4 });
     return { received, send };
 }
 
