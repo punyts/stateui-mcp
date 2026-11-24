@@ -20,6 +20,8 @@ export interface CatalogFileComponent {
     readonly locales: readonly string[];
     readonly shape?: JsonObject;
     readonly placement?: JsonObject;
+    /** True for a component that lays out children of its own through `layout` (a panel, a card, a form...) */
+    readonly layout?: boolean;
     readonly slots?: readonly JsonObject[];
     readonly events?: readonly string[];
     readonly commands?: readonly string[];
