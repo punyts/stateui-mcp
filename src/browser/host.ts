@@ -52,9 +52,6 @@
  * - `snapshot()` is a copy of what the app frame shows: the document and its icons and revision, and the synced
  *   `data` and `route` (undefined before the server sent a document). An editor draws its other screens with it, each
  *   a panel of its own (`mount`), and keeps their data in step from `stateui:change`.
- * - `reconnect(namespace, run?)` syncs the live app with another of its instances from then on: `run` `test` is the
- *   owner's test runs' (docs/design/stateui-test-runs.md), none the one the page's tenant names. Magnetic's editor
- *   switches at each zoom between the editor (test runs) and the app alone.
  * - `mount(element, { document, icons?, keys?, inPage? })` puts a second runtime frame in `element` (with `inPage`, in
  *   the page surface, a runtime on an element of the page instead, whose `embeddedApp` nodes reach `apps`), driven by the page alone: it
  *   is loaded in `standalone` mode with the document given and the page's language and mode (`data-locale`,
@@ -341,14 +338,12 @@ export class LiveView {
     private readonly runtimeOrigin: string;
     /** The hash of the 3D renderer chunk the runtime origin serves (`data-chunk-3d`), sent in `load` as `chunks`; undefined when there is none */
     private readonly chunk3d: string | undefined;
-    private namespace: string;
+    private readonly namespace: string;
     /**
-     * Which of the owner's instances the view syncs with when its page may switch (`data-run`, sent as `run=` on the
-     * socket): `test`, the test runs' (docs/design/stateui-test-runs.md), or undefined, the one the page's tenant names
+     * Which of the owner's instances the page's view is (`data-run`, sent as `run=` on the socket): `test`, the test
+     * runs' (docs/design/stateui-test-runs.md), or undefined, the one the page's tenant names
      */
-    run: 'test' | undefined;
-    /** Makes the channel for this view; kept so a `reconnect` makes a new one */
-    private channelFor: ((view: LiveView) => ViewChannel) | undefined;
+    readonly run: 'test' | undefined;
     /** The key chords the page handles itself (`data-host-keys`), sent in `load` as `keys` */
     private readonly hostKeys: string[];
     /** An owner app's view: the state is a person's instance */
@@ -450,7 +445,6 @@ export class LiveView {
 
     /** Starts the view with the channel to its server, made for this view's id and kind */
     start(channelFor: (view: LiveView) => ViewChannel): void {
-        this.channelFor = channelFor;
         this.channel = channelFor(this);
         forgetListed(this.store, this.body.dataset['forget'], this.namespace);
         const revoked = this.body.dataset['revoked'];
@@ -466,32 +460,6 @@ export class LiveView {
         else window.addEventListener('keydown', (event) => this.runtime?.key(event), true);
         const cached: unknown = this.store.read(this.namespace, 'document');
         if (isAppMessage(cached)) this.onApp({ type: 'app', reason: 'attach', revision: cached.revision, document: cached.document, icons: cached.icons });
-        this.connectClient();
-    }
-
-    /**
-     * Syncs with another instance of the app from here on (`stateuiHost.reconnect`): an editor that zooms between the
-     * owner's test runs and the app as it is used (docs/design/stateui-test-runs.md). The sync client stops and a new
-     * one starts on `namespace` over a new channel; the app stays loaded and is given the other instance's state as it
-     * arrives. Nothing happens for the namespace the view syncs with already, or before `start`
-     */
-    reconnect(namespace: string, run: 'test' | undefined): void {
-        if (this.channelFor === undefined || this.client === undefined || namespace === this.namespace) return;
-        this.client.stop();
-        this.listeners.clear();
-        this.namespace = namespace;
-        this.run = run;
-        this.body.dataset['namespace'] = namespace;
-        if (run === undefined) delete this.body.dataset['run'];
-        else this.body.dataset['run'] = run;
-        this.synced = undefined;
-        this.ownRequests = [];
-        this.boundRequests = [];
-        this.boundWelcome = true;
-        this.announced.clear();
-        this.syncStatus = { mode: 'full', status: 'connecting', waiting: 0 };
-        this.body.dataset['sync'] = 'connecting';
-        this.channel = this.channelFor(this);
         this.connectClient();
     }
 
@@ -1405,8 +1373,6 @@ export function installHostApi(live: LiveView | undefined): void {
         inspect: (query: { at: { x: number; y: number } } | { paths: string[] }) => (live === undefined ? Promise.resolve(undefined) : live.inspect(query)),
         navigate: (screen: string, params?: Json) => live?.navigate(screen, params),
         snapshot: () => live?.snapshot(),
-        /** Syncs the live app with another of its instances: the owner's test runs' (`run` "test") or the one the page's tenant names */
-        reconnect: (namespace: string, run?: string) => live?.reconnect(namespace, run === 'test' ? 'test' : undefined),
         apps,
         /** The page's own pages, which its embeddedApp nodes open by name */
         pages: (provider: SitePages) => {
