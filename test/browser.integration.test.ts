@@ -1778,9 +1778,9 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
         return (await eventually(harness, 'ui_state_get', { app: 'parts', path }, (found) => check(found.body['value']))).body['value'];
     }
 
-    /** Sets the chosen part back to none, and waits until the instance has it */
+    /** Resets the test run, whose copy of the picks has the chosen part none again, and waits until the instance has it */
     async function reset(): Promise<void> {
-        await step(harness, 'ui_data_write', { dataset: 'picks', operations: [{ op: 'set', path: 'p1.chosen', value: 'none' }] });
+        await step(harness, 'ui_state_reset', { app: 'parts' });
         await valueWhen('$.data.ui.p1.chosen', (value) => value === 'none');
     }
 

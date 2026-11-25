@@ -1,3 +1,4 @@
+import { testPersonOf } from '../domain/InstanceKey.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,13 +69,15 @@ let dir: string;
 let parts: IndexedUiPartRepository;
 let instances: FencedInstances;
 let app: UiPart<'apps'>;
+let folders: PartFolders;
+let lock: KeyedLock;
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-placement-'));
-    const folders = new PartFolders(dir);
-    const lock = new KeyedLock();
+    folders = new PartFolders(dir);
+    lock = new KeyedLock();
     parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock));
-    instances = new FencedInstances(folders, lock, OWNER);
+    instances = new FencedInstances(folders, lock, OWNER, testPersonOf(OWNER));
     const written = await new WritePart(parts, parts, validator, QUIET).execute({ kind: 'apps', name: 'notes', body: APP } as never);
     if (written.kind !== 'written') throw new Error(JSON.stringify(written));
     app = (await parts.findByName('apps', 'notes')) as UiPart<'apps'>;
@@ -86,15 +89,15 @@ afterEach(async () => {
 
 const server = (placed: InstancePlacement) => {
     const authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET });
-    return { authorities, states: new AuthorityInstanceStates(parts, instances, authorities, OWNER, () => undefined, undefined, undefined, undefined, placed) };
+    return { authorities, states: new AuthorityInstanceStates(parts, instances, authorities, OWNER, () => undefined, undefined, (person) => (person === testPersonOf(OWNER) ? instances : new FencedInstances(folders, lock, OWNER, person)), undefined, placed) };
 };
 
 describe('instances with a placement', () => {
-    it('should claim the instance for a tool, and save it under the epoch it owns it under', async () => {
+    it('should claim the test instance for a tool, and save it under the epoch it owns it under', async () => {
         // Arrange
         const { placed, claimed } = placement();
         const { states, authorities } = server(placed);
-        const address = userStateAddress(OWNER, app.id);
+        const address = userStateAddress(testPersonOf(OWNER), app.id);
 
         // Act
         await states.write(app, '$.app.note', 'hello');

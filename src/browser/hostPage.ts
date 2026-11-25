@@ -10,7 +10,7 @@ import { directChannel } from './viewChannel.js';
 if (document.body.dataset['appId']) {
     const live = new LiveView(document.body);
     installHostApi(live);
-    live.start((view) => directChannel(view.appId, view.viewId, view.viewKind, view.paths));
+    live.start((view) => directChannel(view.appId, view.viewId, view.viewKind, view.paths, view.run));
 } else {
     installHostApi(undefined);
 }

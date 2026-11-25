@@ -111,15 +111,21 @@ describe('ui_state_set, ui_state_get and ui_state_reset on an instance', () => {
         expect(await partRevision()).toBe(1);
     });
 
-    it('should refuse a definition path and a shared dataset', async () => {
+    it('should refuse a definition path, and write a shared dataset to the copy of the test run until a reset', async () => {
         // Act
         const theme = await call(harness.client, 'ui_state_set', { app: 'shop', path: '$.theme', value: {} });
         const shared = await call(harness.client, 'ui_state_set', { app: 'shop', path: '$.data.products.p1.name', value: 'Desk' });
+        const copy = await call(harness.client, 'ui_state_get', { app: 'shop', path: '$.data.products.p1.name' });
+        const dataset = await call(harness.client, 'ui_data_query', { dataset: 'catalog' });
+        await call(harness.client, 'ui_state_reset', { app: 'shop' });
+        const reset = await call(harness.client, 'ui_state_get', { app: 'shop', path: '$.data.products.p1.name' });
 
         // Assert
         expect(theme.body).toMatchObject({ error: 'definition-path', app: 'shop' });
-        expect(shared.body).toMatchObject({ error: 'shared-dataset', app: 'shop' });
-        expect(shared.body['message']).toContain('ui_data_write');
+        expect(shared.body).toEqual({ app: 'shop', revision: 1, path: '$.data.products.p1.name' });
+        expect(copy.body['value']).toBe('Desk');
+        expect(dataset.body['records']).toEqual([{ key: 'p1', record: { name: 'Lamp' } }]);
+        expect(reset.body['value']).toBe('Lamp');
     });
 
     it('should reset the instance to the definition', async () => {

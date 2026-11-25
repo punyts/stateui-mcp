@@ -31,7 +31,7 @@ export type { NodeServerOptions, RunningNodeServer } from './config/startNodeSer
 export type { ToolOutcome, UiToolDefinition } from './infrastructure/mcp/toolKit.js';
 export { copyAppParts } from './application/copyAppParts.js';
 export type { CopiedPart, CopyAppOptions, CopyAppResult } from './application/copyAppParts.js';
-export { isPersonId } from './domain/InstanceKey.js';
+export { isPersonId, ownerOfTestPerson, testPersonOf } from './domain/InstanceKey.js';
 export { appNamespace } from './infrastructure/sync/FileNamespaceStorage.js';
 export type { RevokedApp } from './infrastructure/http/HttpServer.js';
 export { StatenetViews } from './infrastructure/statenet/StatenetViews.js';

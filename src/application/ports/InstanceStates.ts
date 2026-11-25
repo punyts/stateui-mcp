@@ -18,8 +18,8 @@ export interface InstanceWriteOptions {
 }
 
 /**
- * The running instances of owner apps, for the owner's own instance (whose person is the owner): one state-sync authority each, whose state is the
- * assembled view (`$.app` and `$.screens` sparse, `$.route`, `$.data` by binding) with the person's instance laid
+ * The running instances of owner apps, for the owner's test runs (`testPersonOf`, docs/design/stateui-test-runs.md),
+ * whose shared datasets are copies: one state-sync authority each, whose state is the assembled view (`$.app` and `$.screens` sparse, `$.route`, `$.data` by binding) with the person's instance laid
  * over it. The app is given as its part, so the caller has read it (and its revision) once
  */
 export interface InstanceStates {

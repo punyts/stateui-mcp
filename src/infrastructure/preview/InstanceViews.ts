@@ -1,3 +1,4 @@
+import { testPersonOf } from '../../domain/InstanceKey.js';
 import type { Authority, AuthorityConnection, AuthoritySession } from '@punyts/state-sync/authority';
 import { appIconNames } from '@punyts/stateui-app/core';
 import type { ComponentCatalog } from '../../application/ports/ComponentCatalog.js';
@@ -46,8 +47,11 @@ export class InstanceViews {
         return this.parts.findById('apps', appId);
     }
 
-    /** The sync namespace of a person's instance of the app (the owner's own unless a person is named), which the page's sync client names */
-    namespace(app: UiPart<'apps'>, person: string = this.ownerId): string {
+    /**
+     * The sync namespace of a person's instance of the app, which the page's sync client names: the owner's test runs'
+     * unless a person is named (docs/design/stateui-test-runs.md)
+     */
+    namespace(app: UiPart<'apps'>, person: string = testPersonOf(this.ownerId)): string {
         return appNamespace({ person, ownerId: this.ownerId, appId: app.id });
     }
 
@@ -82,20 +86,20 @@ export class InstanceViews {
     }
 
     /**
-     * The authority of a person's instance of the app (the owner's own unless a person is named); a changed definition
-     * restarts it, which closes the views' sockets
+     * The authority of a person's instance of the app (the owner's test runs' unless a person is named); a changed
+     * definition restarts it, which closes the views' sockets
      */
-    authority(app: UiPart<'apps'>, person: string = this.ownerId): Promise<Authority> {
+    authority(app: UiPart<'apps'>, person: string = testPersonOf(this.ownerId)): Promise<Authority> {
         return this.states.authority(app, person);
     }
 
     /**
      * A view's session with a person's instance of the app, wherever the instance runs (another server's, with a
-     * placement), the owner's own when no person is named; it closes when the instance restarts or moves, and the view
-     * connects again
+     * placement), the owner's test runs' when no person is named; it closes when the instance restarts or moves, and
+     * the view connects again
      */
     connect(app: UiPart<'apps'>, person: string | undefined, connection: AuthorityConnection): Promise<AuthoritySession> {
-        return this.states.connect(app, person ?? this.ownerId, connection);
+        return this.states.connect(app, person ?? testPersonOf(this.ownerId), connection);
     }
 
     /** The app parts that show a change of this part: the app itself, and every app that reaches the part */

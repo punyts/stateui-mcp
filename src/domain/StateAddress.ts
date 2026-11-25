@@ -1,3 +1,8 @@
+import { ownerOfTestPerson, testPersonOf } from './InstanceKey.js';
+
+/** What the address of an owner's test run of an app ends with, after the app's id (`<owner>/apps/<appId>.test`) */
+const TEST_SUFFIX = '.test';
+
 /** The branch of an owner's tree a namespace is under: its state of apps (`$.apps`), or its data (`$.data`) */
 export type StateBranch = 'apps' | 'data';
 
@@ -46,10 +51,13 @@ export function parseAddress(text: string): StateAddress | undefined {
 
 /**
  * The address of a person's own state of an app: `<person>/apps/<appId>`, the app's place in the person's tree. The
- * person is an owner id: the app's owner for their own state of it (a workspace's builders' preview is the workspace's
- * owner), anyone else for theirs, so a person's state of an app stays in their tree when the app moves into an org
+ * person is an owner id: the app's owner for their own state of it, anyone else for theirs, so a person's state of an
+ * app stays in their tree when the app moves into an org. The owner's test runs (`testPersonOf`) are at
+ * `<owner>/apps/<appId>.test`, beside the owner's own state
  */
 export function userStateAddress(person: string, appId: string, owners: OwnerNames = OWNER_IDS): string {
+    const tested = ownerOfTestPerson(person);
+    if (tested !== undefined) return formatAddress({ owner: owners.of(tested), branch: 'apps', key: `${appId}${TEST_SUFFIX}` });
     return formatAddress({ owner: owners.of(person), branch: 'apps', key: appId });
 }
 
@@ -58,7 +66,9 @@ export function instanceOfAddress(address: string, owners: OwnerNames = OWNER_ID
     const parsed = parseAddress(address);
     const id = parsed === undefined || parsed.branch !== 'apps' ? undefined : owners.idOf(parsed.owner);
     if (parsed === undefined || id === undefined) return undefined;
-    return { appId: parsed.key.toLowerCase(), person: id };
+    const key = parsed.key.toLowerCase();
+    if (key.endsWith(TEST_SUFFIX)) return { appId: key.slice(0, -TEST_SUFFIX.length), person: testPersonOf(id) };
+    return { appId: key, person: id };
 }
 
 /** The address of a dataset of a workspace: `<owner>/data/<dataset>`, the namespace that holds its records */

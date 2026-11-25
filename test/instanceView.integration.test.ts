@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import type { Browser, Frame, Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LOCAL_OWNER_ID } from '../src/config/createServices.js';
+import { testPersonOf } from '../src/domain/InstanceKey.js';
 import type { UiPart, UiPartBodies } from '../src/domain/UiPart.js';
 import { PartFolders } from '../src/infrastructure/storage/PartFolders.js';
 import { BrowserPreview } from '../src/infrastructure/preview/BrowserPreview.js';
@@ -182,14 +183,14 @@ describe.skipIf(!installed)('the live view of an owner app (Chromium through Pla
         expect(text).not.toContain('Welcome home');
     });
 
-    it('should sync a value typed on a screen to another view and store it in the instance', async () => {
+    it('should sync a value typed on a screen to another view and store it in the test instance', async () => {
         // Arrange
         const services = harness.server.services;
         const revision = services.instanceViews.revision(app.id) ?? 1;
         const page = await browser.newPage();
         await page.goto(`${harness.server.origin}/apps/${app.id}`);
         await page.waitForFunction(() => document.body.dataset['status'] === 'ready');
-        const file = new PartFolders(data.dir).instanceFile(LOCAL_OWNER_ID, app.id);
+        const file = new PartFolders(data.dir).instanceFile(LOCAL_OWNER_ID, app.id, testPersonOf(LOCAL_OWNER_ID));
 
         // Act
         const interacted = await services.browser.interact(app.id, revision, [{ action: 'fill', path: '$.screens.about.children.note', value: 'gift wrap' }]);

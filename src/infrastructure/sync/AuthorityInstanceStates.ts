@@ -4,7 +4,7 @@ import type { ExternalReads, ExternalUses } from './ExternalReads.js';
 import type { InstanceShape, InstanceStates, InstanceWriteOptions } from '../../application/ports/InstanceStates.js';
 import type { UiInstanceRepository } from '../../application/ports/UiInstanceRepository.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
-import { instanceKeyText, isPersonId } from '../../domain/InstanceKey.js';
+import { instanceKeyText, isPersonId, testPersonOf } from '../../domain/InstanceKey.js';
 import type { InstanceKey } from '../../domain/InstanceKey.js';
 import { instanceOfAddress, OWNER_IDS, userStateAddress } from '../../domain/StateAddress.js';
 import type { OwnerNames } from '../../domain/StateAddress.js';
@@ -32,12 +32,15 @@ interface Running {
 }
 
 /**
- * The running instances of the owner's apps, on `AppAuthorities`: the owner's own (whose person is the owner), which
- * the tools read and write, and those of other people (the people an app is shared with), which only views' sockets
- * reach (`authority` with a person). Each call assembles the app again; when the assembled document differs from the one the instance runs (the app or a part it reaches was written), the
- * instance's authority is closed, its state saved as its instance, and started again over the new definition, so the
+ * The running instances of the owner's apps, on `AppAuthorities`: the owner's test runs (`testPersonOf`), which the
+ * tools read and write and a view reaches when it names no person, whose shared datasets are copies that a reset drops;
+ * the owner's real use (whose person is the owner); and those of other people (the people an app is shared with). Only
+ * views' sockets reach the last two (`authority` with a person). Each call assembles the app again; when the assembled
+ * document differs from the one the instance runs (the app or a part it reaches was written), the instance's authority
+ * is closed, its state saved as its instance, and started again over the new definition, so the
  * views reconnect to it. A change of only the records of a shared dataset is not a definition change: the dataset hub
- * (`DatasetHub`), which the instance's authority is attached to when it starts, writes it into the running state.
+ * (`DatasetHub`), which the instance's authority is attached to when it starts, writes it into the running state, a
+ * test run's copy included.
  *
  * With a placement (several servers on one database), an instance runs only on the server that owns its address: the
  * tools claim it first, a view anywhere gets a session from the owner (`connect`), its saves are fenced by the owner's
@@ -46,6 +49,11 @@ interface Running {
 export class AuthorityInstanceStates implements InstanceStates {
     private readonly running = new Map<string, Running>();
     private readonly lock = new KeyedLock();
+    /**
+     * The person of the owner's test runs (docs/design/stateui-test-runs.md): the tools' instance, and a view's when it
+     * names no person. Its definition is the one the views are sent
+     */
+    private readonly tester: string;
 
     constructor(
         private readonly parts: UiPartRepository,
@@ -62,7 +70,9 @@ export class AuthorityInstanceStates implements InstanceStates {
         private readonly placement?: InstancePlacement,
         /** The names owners go by in addresses; their ids by default */
         private readonly owners: OwnerNames = OWNER_IDS
-    ) {}
+    ) {
+        this.tester = testPersonOf(ownerId);
+    }
 
     async shape(app: UiPart<'apps'>): Promise<InstanceShape> {
         const { start } = await this.started(app);
@@ -83,7 +93,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         return this.authorities.instanceState(running.start, running.storage as InstanceNamespaceStorage);
     }
 
-    /** Stops the app's instances, other people's too, and runs `whileStopped` before the owner's own may start again */
+    /** Stops the app's instances, real use and other people's too, and runs `whileStopped` before the test run may start again */
     async stop(app: UiPart<'apps'>, whileStopped: () => Promise<void>): Promise<void> {
         const key = this.key(app);
         // what the owner holds would be saved over what runs while it is stopped: it is stopped here
@@ -97,10 +107,10 @@ export class AuthorityInstanceStates implements InstanceStates {
     }
 
     /**
-     * The authority of the app's running instance for a view's socket: the owner's own, or another person's
-     * (`isPersonId`). Started, or restarted over a changed definition, first
+     * The authority of the app's running instance for a view's socket: the test run's, the owner's own, or another
+     * person's (`isPersonId`). Started, or restarted over a changed definition, first
      */
-    async authority(app: UiPart<'apps'>, person: string = this.ownerId): Promise<Authority> {
+    async authority(app: UiPart<'apps'>, person: string = this.tester): Promise<Authority> {
         this.checkPerson(person);
         await this.claim(this.key(app, person));
         return this.open(await this.started(app, person));
@@ -154,12 +164,12 @@ export class AuthorityInstanceStates implements InstanceStates {
     private instanceAt(address: string): { appId: string; person: string } | undefined {
         const found = instanceOfAddress(address, this.owners);
         if (found === undefined) return undefined;
-        if (found.person !== this.ownerId && (this.personInstances === undefined || !isPersonId(found.person))) return undefined;
+        if (found.person !== this.ownerId && found.person !== this.tester && (this.personInstances === undefined || !isPersonId(found.person))) return undefined;
         return found;
     }
 
     private checkPerson(person: string): void {
-        if (person !== this.ownerId && (this.personInstances === undefined || !isPersonId(person))) throw new Error(`No person "${person}"`);
+        if (person !== this.ownerId && person !== this.tester && (this.personInstances === undefined || !isPersonId(person))) throw new Error(`No person "${person}"`);
     }
 
     private addressOf(key: InstanceKey): string {
@@ -187,7 +197,7 @@ export class AuthorityInstanceStates implements InstanceStates {
      * reconnect, which starts them again over the app's definition as it is then
      */
     private async stopOthers(appId: string, stale: (running: Running) => boolean): Promise<void> {
-        const others = [...this.running].filter(([, running]) => running.key.appId === appId && running.key.person !== this.ownerId && stale(running));
+        const others = [...this.running].filter(([, running]) => running.key.appId === appId && running.key.person !== this.tester && stale(running));
         for (const [text] of others) {
             await this.lock.run(text, async () => {
                 const running = this.running.get(text);
@@ -217,7 +227,13 @@ export class AuthorityInstanceStates implements InstanceStates {
         return ready;
     }
 
-    private key(app: UiPart<'apps'>, person: string = this.ownerId): InstanceKey {
+    /** The instances of a person other than the owner: the test person's too, which needs the factory */
+    private instancesOf(person: string): UiInstanceRepository {
+        if (this.personInstances === undefined) throw new Error(`No instances of "${person}" here`);
+        return this.personInstances(person);
+    }
+
+    private key(app: UiPart<'apps'>, person: string = this.tester): InstanceKey {
         return this.keyOf(app.id, person);
     }
 
@@ -225,7 +241,7 @@ export class AuthorityInstanceStates implements InstanceStates {
         return { person, ownerId: this.ownerId, appId };
     }
 
-    private async started(app: UiPart<'apps'>, person: string = this.ownerId): Promise<Running> {
+    private async started(app: UiPart<'apps'>, person: string = this.tester): Promise<Running> {
         const key = this.key(app, person);
         const text = instanceKeyText(key);
         const running = await this.lock.run(text, async () => {
@@ -237,13 +253,13 @@ export class AuthorityInstanceStates implements InstanceStates {
                 return current;
             }
             if (current !== undefined) await this.forget(text);
-            const instances = person === this.ownerId ? this.instances : (this.personInstances as (person: string) => UiInstanceRepository)(person);
+            const instances = person === this.ownerId ? this.instances : this.instancesOf(person);
             const started: Running = { start, instances, document, key };
             this.running.set(text, started);
             return started;
         });
-        // The definition the owner's own instance runs is the one the views are sent: other people's instances over an older one restart
-        if (person === this.ownerId) await this.stopOthers(app.id, (other) => other.document !== running.document);
+        // The definition the test runs run is the one the views are sent: other instances over an older one restart
+        if (person === this.tester) await this.stopOthers(app.id, (other) => other.document !== running.document);
         return running;
     }
 }

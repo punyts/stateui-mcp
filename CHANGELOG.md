@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **The tools run an owner app as a test run, whose shared datasets are copies.** The run time tools, the view host
+  and a view with no person use the instance of the reserved person `test-<ownerId>` (`testPersonOf`), at
+  `<owner>/apps/<appId>.test`. A shared binding of a dataset with a model is a person binding there that names its
+  dataset: it starts as the dataset's records, takes each later change of the dataset as that change (`DatasetHub`
+  follows it read-only, as the owner), is checked against the model, and never writes the dataset; `ui_state_reset`
+  drops it. The owner's own instance is real use. `createUiBuilder` takes `ownInstances` beside `instances`, and
+  deleting an app resets both. `stateuiHost.reconnect(namespace, run?)` moves an open view to another instance, and
+  the socket sends `run=test` for a test run. Breaking: `ui_state_set` writes a shared dataset's copy instead of
+  refusing it (`shared-dataset` is left for a dataset with no model); the tools' instance is no longer the owner's own.
+  docs/design/stateui-test-runs.md. Tests: `src/config/datasetHub.test.ts` (the copy follows the dataset),
+  `src/config/instanceStates.test.ts`, `test/runTools.test.ts` (a copy written and reset),
+  `src/config/placement.test.ts`.
 - **The logic guide says `is` and `was` take a list, and which rules run at start.** Follows stateui-app. Test:
   `test/toolSet.test.ts` (the guide's size).
 - **Server logic reads a screen value nobody wrote as the definition's.** Fix: `AppLogic` read `$.screens` only

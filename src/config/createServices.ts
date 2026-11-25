@@ -36,6 +36,7 @@ import { FsAppFolderStore } from '../infrastructure/storage/FsAppFolderStore.js'
 import { FsUiFileStore } from '../infrastructure/storage/FsUiFileStore.js';
 import { KeyedLock } from '../infrastructure/storage/KeyedLock.js';
 import { instanceOfAddress, OWNER_IDS } from '../domain/StateAddress.js';
+import { testPersonOf } from '../domain/InstanceKey.js';
 import type { OwnerNames } from '../domain/StateAddress.js';
 import { ExternalReads } from '../infrastructure/sync/ExternalReads.js';
 import type { SharedData } from '../infrastructure/sync/ExternalReads.js';
@@ -315,7 +316,7 @@ export function createServices(options: ServicesOptions): Services {
     const fileStore = storage.fileStore;
     const previewLog = new LivePreviewLog(hub, storage.errorLog, fileRepository);
     const useCases = createUiBuilderUseCases(
-        { parts, instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders, ...(storage.removeApp !== undefined && { removeApp: (appId: string) => (storage.removeApp as (id: string) => Promise<void>).call(storage, appId) }), ...(options.catalogMeanings !== undefined && { meanings: options.catalogMeanings }) },
+        { parts, instances: instancesOf(testPersonOf(ownerId)), ownInstances: instances, instanceStates, validator, previewLog, catalog, patterns, fileRepository, fileStore, appFolders: storage.appFolders, ...(storage.removeApp !== undefined && { removeApp: (appId: string) => (storage.removeApp as (id: string) => Promise<void>).call(storage, appId) }), ...(options.catalogMeanings !== undefined && { meanings: options.catalogMeanings }) },
         { now, newId: randomUUID, report: options.report }
     );
     const viewPage = options.viewPage ?? ((appId: string) => `${options.origin()}/apps/${appId}`);

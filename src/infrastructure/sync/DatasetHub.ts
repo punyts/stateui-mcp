@@ -1,6 +1,7 @@
 import type { Report } from '@punyts/core';
 import type { JsonValue as SyncJson, SyncRequest } from '@punyts/state-sync';
 import type { Authority, ChangeContext, ChangeVerdict, ServerWrite } from '@punyts/state-sync/authority';
+import { ownerOfTestPerson } from '../../domain/InstanceKey.js';
 import { isJsonObject } from '../../domain/JsonValue.js';
 import type { JsonObject, JsonValue } from '../../domain/JsonValue.js';
 import type { InstanceDataGate } from './AppAuthorities.js';
@@ -33,6 +34,10 @@ interface Member {
     readonly base: string;
     readonly authority: Authority;
     readonly deliver: InstanceDelivery;
+    /** A test run's copy of the dataset: checked against its model, never sent to the dataset */
+    readonly copy: boolean;
+    /** A copy's last records of the dataset, whose changes it takes */
+    seen: JsonObject | undefined;
     session: DatasetSession | undefined;
     requests: readonly SyncRequest[];
 }
@@ -69,7 +74,10 @@ function asBinding(request: SyncRequest, base: string): SyncRequest {
  * - The binding's requests are emitted to the instance's clients as `sync.requests`, with paths below the binding; a
  *   client decides one with the emit `sync.decide` `{ action, id, note }` and asks for them again with `sync.requests`.
  *
- * Person bindings are the person's own and are never attached. Deliveries are server writes, which fire no
+ * A test run's copy (a person binding that names its `dataset`, docs/design/stateui-test-runs.md) is checked against
+ * the dataset's model the same way. Its session, as the owner, only reads: a change of the dataset (`ui_data_write`,
+ * the Data page) is applied to the copy as that change, so the copy's own writes to other records stay, and nothing
+ * the copy changes is sent. Other person bindings are the person's own and are never attached. Deliveries are server writes, which fire no
  * `onApplied`, so the hub never sends its own deliveries again
  */
 export class DatasetHub implements InstanceDataGate {
@@ -93,10 +101,10 @@ export class DatasetHub implements InstanceDataGate {
         const removers: (() => void)[] = [];
         const attached: Attached = { members, removers, closed: false };
         for (const [binding, declared] of Object.entries(bindings)) {
-            if (declared.scope !== 'shared' || declared.dataset === undefined) continue;
+            if (declared.dataset === undefined) continue;
             if (!(await this.exists(declared.dataset))) continue;
             await this.models.load(declared.dataset);
-            const member: Member = { namespace, dataset: declared.dataset, base: `$.data.${binding}`, authority, deliver, session: undefined, requests: [] };
+            const member: Member = { namespace, dataset: declared.dataset, base: `$.data.${binding}`, authority, deliver, copy: declared.scope === 'person', seen: undefined, session: undefined, requests: [] };
             members.push(member);
             removers.push(authority.onChange(member.base, (context) => this.guardClient(member, context)));
         }
@@ -105,6 +113,15 @@ export class DatasetHub implements InstanceDataGate {
         removers.push(authority.onApplied((change) => this.applied(namespace, [change])));
         removers.push(authority.onEmit((name, value) => this.emitted(attached, name, value)));
         for (const member of members) {
+            if (member.copy) {
+                member.session = await this.open(ownerOfTestPerson(person) ?? person, member.dataset, {
+                    onRecords: (records) => this.follow(member, records),
+                    onRequests: () => undefined,
+                    onRejected: (reason) => this.report.info('Shared data refused', { dataset: member.dataset, instance: namespace, reason })
+                });
+                if (attached.closed) member.session.close();
+                continue;
+            }
             member.session = await this.open(person, member.dataset, {
                 onRecords: (records) => this.reconcile(member, records),
                 onRequests: (requests) => {
@@ -146,6 +163,7 @@ export class DatasetHub implements InstanceDataGate {
     /** Server writes the instance applied (its logic, a tool): sent through the sessions of the bindings they touch */
     applied(namespace: string, writes: readonly ServerWrite[]): void {
         for (const member of this.attached.get(namespace)?.members ?? []) {
+            if (member.copy) continue;
             const changes = this.recordChanges(member, writes);
             if (changes.length > 0) member.session?.write(changes);
         }
@@ -198,6 +216,16 @@ export class DatasetHub implements InstanceDataGate {
     private reconcile(member: Member, records: JsonObject): void {
         const writes: DataWrite[] = [];
         dataWrites(member.base, objectOr(member.authority.get(member.base)), records, writes);
+        if (writes.length > 0) member.deliver(writes);
+    }
+
+    /** Applies to a copy what changed in the dataset since its last records; the first records are what it started from */
+    private follow(member: Member, records: JsonObject): void {
+        const seen = member.seen;
+        member.seen = records;
+        if (seen === undefined) return;
+        const writes: DataWrite[] = [];
+        dataWrites(member.base, seen, records, writes);
         if (writes.length > 0) member.deliver(writes);
     }
 

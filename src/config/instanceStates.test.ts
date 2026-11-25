@@ -1,3 +1,4 @@
+import { testPersonOf } from '../domain/InstanceKey.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -30,6 +31,8 @@ function deepFreeze<T>(value: T): T {
 }
 
 const OWNER = '00000000-0000-4000-8000-0000000000aa';
+/** The owner's test runs, whose instance the tools use */
+const TESTER = testPersonOf(OWNER);
 const { validator, library } = createStateUiAdapters();
 const QUIET = Object.freeze({ info: (): void => undefined });
 
@@ -79,6 +82,7 @@ let dir: string;
 let folders: PartFolders;
 let parts: IndexedUiPartRepository;
 let instances: FileUiInstanceRepository;
+let lock: KeyedLock;
 let writePart: WritePart;
 let appId: string;
 
@@ -93,7 +97,7 @@ interface Running {
 function server(): Running {
     const report = vi.fn();
     const authorities = new AppAuthorities(() => undefined, undefined, { library, report: QUIET });
-    const states = new AuthorityInstanceStates(parts, instances, authorities, OWNER, report);
+    const states = new AuthorityInstanceStates(parts, new FileUiInstanceRepository(folders, lock, OWNER), authorities, OWNER, report, undefined, (person) => new FileUiInstanceRepository(folders, lock, OWNER, person));
     return { authorities, states, setState: new SetPartState(parts, states, validator, QUIET), report };
 }
 
@@ -106,9 +110,9 @@ async function app(): Promise<UiPart<'apps'>> {
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stateui-instance-states-'));
     folders = new PartFolders(dir);
-    const lock = new KeyedLock();
+    lock = new KeyedLock();
     parts = new IndexedUiPartRepository(new FilePartRepository(folders, lock));
-    instances = new FileUiInstanceRepository(folders, lock, OWNER);
+    instances = new FileUiInstanceRepository(folders, lock, OWNER, TESTER);
     writePart = new WritePart(parts, parts, validator, QUIET);
     for (const [kind, name, body] of [...PARTS, ['apps', 'store', store(0.2)]] as const) {
         const written = await writePart.execute({ kind, name, body } as never);
@@ -175,7 +179,7 @@ describe('running instances of owner apps', () => {
         expect(state).toMatchObject(stored);
     });
 
-    it('should refuse paths of the definition and of a shared dataset, and name the tool for the dataset', async () => {
+    it('should refuse paths of the definition, and write a shared dataset to the copy of the test run, not the dataset', async () => {
         // Arrange
         const { setState, authorities } = server();
 
@@ -194,18 +198,17 @@ describe('running instances of owner apps', () => {
         // Assert
         expect(results.map((result) => (result.kind === 'refused' ? result.reason : result.kind))).toEqual([
             'definition-path',
-            'shared-dataset',
+            'written',
             'definition-path',
             'definition-path',
             'unknown-path',
             'unknown-path',
             'unknown-path'
         ]);
-        const shared = results[1];
-        expect(shared?.kind === 'refused' && shared.message).toBe('$.data.products is a shared dataset, the same records in every app that binds it: change them with ui_data_write');
         const unknown = results[4];
         expect(unknown?.kind === 'refused' && unknown.message).toBe('The app binds no data named "nothing"; it binds: products, bag, totals');
-        expect(await instances.get(appId)).toEqual({ value: {} });
+        expect((await instances.getData(appId, 'products')).value).toMatchObject({ records: { p1: { name: 'Lamp', price: 1 } } });
+        expect((await parts.findByName('data', 'catalog'))?.body).toMatchObject({ records: { p1: { name: 'Lamp', price: 30 } } });
     });
 
     it('should return a conflict for a stale revision and not-found for an app the owner does not have', async () => {
@@ -240,7 +243,7 @@ describe('running instances of owner apps', () => {
 
     it('should start from the definition when the instance file is corrupt, and report it', async () => {
         // Arrange
-        const path = folders.instanceFile(OWNER, appId);
+        const path = folders.instanceFile(OWNER, appId, TESTER);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, '{"app": ');
         const { states, authorities, report } = server();
@@ -292,7 +295,7 @@ describe('InstanceNamespaceStorage', () => {
         expect(loaded.revision).toBe(6000);
         expect(loaded.state['route']).toEqual({ screen: 'product', params: { id: 'p1' } });
         expect(loaded.state['data']).toMatchObject({ products: { p1: { name: 'Lamp', price: 30 } }, bag: LINES, note: 'mine' });
-        expect(JSON.stringify(await readFile(folders.instanceFile(OWNER, appId), 'utf8'))).not.toContain('secret');
+        expect(JSON.stringify(await readFile(folders.instanceFile(OWNER, appId, TESTER), 'utf8'))).not.toContain('secret');
     });
 
     describe('kept as one stored namespace', () => {
@@ -527,11 +530,12 @@ describe('instances of other people', () => {
 
     it("should refuse another person when only the owner's own instances exist, or an id that is not a person id", async () => {
         // Arrange
-        const plain = server();
+        const plain = { authorities: new AppAuthorities(() => undefined, undefined, { library, report: QUIET }) };
+        const plainStates = new AuthorityInstanceStates(parts, instances, plain.authorities, OWNER, vi.fn());
         const { states, authorities } = sharing();
 
         // Act / Assert
-        await expect(plain.states.authority(await app(), PERSON)).rejects.toThrow('No person');
+        await expect(plainStates.authority(await app(), PERSON)).rejects.toThrow('No person');
         await expect(states.authority(await app(), '../x')).rejects.toThrow('No person');
         await plain.authorities.close();
         await authorities.close();

@@ -39,14 +39,15 @@ const codeOf = (status: number): FileExportCode => {
 /**
  * Asks the server for the CSV of the runtime's `fileExport` (`source`, `name`, `request`) and saves it. `200` saves the
  * file and answers the rows the server wrote; a request that does not reach the server is `offline`; `413`, `404`,
- * `401`/`403` and any other status map to `too_large`, `not_found`, `unauthorized` and `internal`. It never throws
+ * `401`/`403` and any other status map to `too_large`, `not_found`, `unauthorized` and `internal`. `run` `test` reads the
+ * test run's instance (`?run=test`), as the view's socket does. It never throws
  */
-export async function exportRecordsFile(appId: string, message: { source: unknown; name: unknown; request: unknown }, fetcher: FileFetch, save: SaveFile = saveWithLink): Promise<FileExportOutcome> {
+export async function exportRecordsFile(appId: string, message: { source: unknown; name: unknown; request: unknown }, fetcher: FileFetch, save: SaveFile = saveWithLink, run?: 'test'): Promise<FileExportOutcome> {
     const { source, name, request } = message;
     if (typeof name !== 'string') return { ok: false, code: 'internal', message: 'The export has no file name' };
     let response: Response;
     try {
-        response = await fetcher(`/apps/${encodeURIComponent(appId)}/export`, {
+        response = await fetcher(`/apps/${encodeURIComponent(appId)}/export${run === undefined ? '' : `?run=${run}`}`, {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',

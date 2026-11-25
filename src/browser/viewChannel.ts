@@ -82,13 +82,14 @@ const VIEW_FRAME = '{"type":"view"';
 
 /**
  * The channel to the page's own server: the WebSocket, report and file routes of `startHttpServer`. `paths` is the app's
- * `/paths` URL (`data-paths`), under which its files are read
+ * `/paths` URL (`data-paths`), under which its files are read; `run` (`test`) asks for the owner's test runs'
+ * instance, which the server gives only to whoever may edit the app
  */
-export function directChannel(appId: string, viewId: string, viewKind: string, paths: string): ViewChannel {
+export function directChannel(appId: string, viewId: string, viewKind: string, paths: string, run?: 'test'): ViewChannel {
     const uploads = new Map<number, XMLHttpRequest>();
     let client: SyncClient | undefined;
     const fetcher: FileFetch = (url, init) => fetch(url, init);
-    const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${appId}/sync?view=${viewId}&kind=${viewKind}`;
+    const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/apps/${appId}/sync?view=${viewId}&kind=${viewKind}${run === undefined ? '' : `&run=${run}`}`;
     return {
         transport: (onMessage) => ({
             connect: (handlers) => {
@@ -170,6 +171,6 @@ export function directChannel(appId: string, viewId: string, viewKind: string, p
         cancelUpload: (requestId) => uploads.get(requestId)?.abort(),
         readFile: (id) => readStoredFile(`${paths}/files`, id, fetcher),
         releaseFile: (id) => releaseStoredFile(appId, id, fetcher),
-        exportFile: (message) => exportRecordsFile(appId, message, fetcher)
+        exportFile: (message) => exportRecordsFile(appId, message, fetcher, undefined, run)
     };
 }

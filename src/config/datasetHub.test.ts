@@ -210,8 +210,8 @@ afterEach(async () => {
 describe('DatasetHub', () => {
     it('should write a client change through to the dataset and apply it to the other instance', async () => {
         // Arrange
-        const a = await states.authority(shopA);
-        const b = await states.authority(shopB);
+        const a = await states.authority(shopA, OWNER);
+        const b = await states.authority(shopB, OWNER);
         const viewA = view(a);
         const viewB = view(b);
 
@@ -233,9 +233,9 @@ describe('DatasetHub', () => {
 
     it('should write the values a rule derives at start through to the dataset, and give them to the next instance', async () => {
         // Act
-        const a = await states.authority(shopA);
+        const a = await states.authority(shopA, OWNER);
         await hub.settled();
-        const b = await states.authority(shopB);
+        const b = await states.authority(shopB, OWNER);
         await hub.settled();
 
         // Assert
@@ -249,9 +249,9 @@ describe('DatasetHub', () => {
 
     it('should settle when a module rule on both instances writes the same derived value, with one delivery per change per other instance', async () => {
         // Arrange
-        const a = await states.authority(shopA);
-        const b = await states.authority(shopB);
-        const c = await states.authority(shopC);
+        const a = await states.authority(shopA, OWNER);
+        const b = await states.authority(shopB, OWNER);
+        const c = await states.authority(shopC, OWNER);
         await hub.settled();
         const receive = vi.spyOn(authorities, 'receiveInstance');
         const viewA = view(a);
@@ -272,7 +272,7 @@ describe('DatasetHub', () => {
 
     it('should reject a client change that leaves a record invalid, naming the record and the field', async () => {
         // Arrange
-        const a = await states.authority(shopA);
+        const a = await states.authority(shopA, OWNER);
         const viewA = view(a);
 
         // Act
@@ -289,7 +289,7 @@ describe('DatasetHub', () => {
         expect(await stored()).toEqual({ revision: 3, records: { p1: { name: 'Lamp', price: 30, gross: 60 }, p2: { name: 'Chair', price: 90, gross: 180 } } });
     });
 
-    it('should give a save-data with a bad field the rejected result and leave the dataset file unchanged', async () => {
+    it('should give a save-data with a bad field in the copy of a test run the rejected result and leave the dataset file unchanged', async () => {
         // Arrange
         await states.authority(shopA);
         await hub.settled();
@@ -314,12 +314,12 @@ describe('DatasetHub', () => {
 
         // Assert
         expect(refused).toContain('"name"');
-        expect((await states.authority(shopB)).get('$.data.products.p2')).toEqual({ name: 'Chair', price: 90, gross: 180 });
+        expect((await states.authority(shopB, OWNER)).get('$.data.products.p2')).toEqual({ name: 'Chair', price: 90, gross: 180 });
     });
 
     it('should take a change of someone without access out of their instance and report the refusal', async () => {
         // Arrange
-        const b = await states.authority(shopB);
+        const b = await states.authority(shopB, OWNER);
         await hub.settled();
         const guest = await states.authority(shopC, 'guest');
         await hub.settled();
@@ -339,7 +339,7 @@ describe('DatasetHub', () => {
     it('should write a change of someone with a write grant through to the dataset', async () => {
         // Arrange
         grants.set('guest', grantOf('guest', ['read', 'write']));
-        const b = await states.authority(shopB);
+        const b = await states.authority(shopB, OWNER);
         const guest = await states.authority(shopC, 'guest');
         await hub.settled();
 
@@ -355,7 +355,7 @@ describe('DatasetHub', () => {
     it('should keep a change of someone who may request as a request, listed to both instances, and apply it once the owner approves', async () => {
         // Arrange
         grants.set('guest', grantOf('guest', ['read', 'request']));
-        const owner = await states.authority(shopB);
+        const owner = await states.authority(shopB, OWNER);
         const guest = await states.authority(shopC, 'guest');
         await hub.settled();
         const ownerView = view(owner);
@@ -380,7 +380,7 @@ describe('DatasetHub', () => {
     it('should send the requests again when a client asks for them', async () => {
         // Arrange
         grants.set('guest', grantOf('guest', ['read', 'request']));
-        await states.authority(shopB);
+        await states.authority(shopB, OWNER);
         await hub.settled();
         const guest = await states.authority(shopC, 'guest');
         await hub.settled();
@@ -397,8 +397,8 @@ describe('DatasetHub', () => {
 
     it('should apply a write of the dataset from elsewhere to every instance, whose rules derive and write back, without restarting them', async () => {
         // Arrange
-        const a = await states.authority(shopA);
-        const b = await states.authority(shopB);
+        const a = await states.authority(shopA, OWNER);
+        const b = await states.authority(shopB, OWNER);
         await hub.settled();
 
         // Act
@@ -410,14 +410,33 @@ describe('DatasetHub', () => {
         expect(a.get('$.data.products')).toEqual(expected);
         expect(b.get('$.data.products')).toEqual(expected);
         expect((await stored()).records).toEqual(expected);
-        expect(await states.authority(shopA)).toBe(a);
+        expect(await states.authority(shopA, OWNER)).toBe(a);
         expect((await states.shape(shopA)).document['data']).toMatchObject({ products: expected });
+    });
+
+    it("should take a change of the dataset into a test run's copy, keep the copy's own writes, and send none of them to the dataset", async () => {
+        // Arrange
+        const test = await states.authority(shopB);
+        await hub.settled();
+        const before = await stored();
+        view(test).change('$.data.products.p1.name', 'Desk lamp');
+        await hub.settled();
+
+        // Act
+        await writeData.execute({ name: 'catalog', operations: [{ op: 'set', path: 'p2.price', value: 95 }] });
+        await hub.settled();
+
+        // Assert
+        expect(test.get('$.data.products')).toEqual({ p1: { name: 'Desk lamp', price: 30, gross: 60 }, p2: { name: 'Chair', price: 95, gross: 190 } });
+        expect((await stored()).records).toEqual({ p1: { name: 'Lamp', price: 30 }, p2: { name: 'Chair', price: 95 } });
+        expect(before.records).toEqual({ p1: { name: 'Lamp', price: 30 }, p2: { name: 'Chair', price: 90 } });
+        expect(await states.authority(shopB)).toBe(test);
     });
 
     it('should not share a person binding', async () => {
         // Arrange
-        const a = await states.authority(shopA);
-        const b = await states.authority(shopB);
+        const a = await states.authority(shopA, OWNER);
+        const b = await states.authority(shopB, OWNER);
         const viewA = view(a);
 
         // Act
@@ -435,7 +454,7 @@ describe('DatasetHub', () => {
         it('should say Saved only once the shared record is stored', async () => {
             // Arrange
             await parts.write('apps', 'shop-a', shop(SAVE_FORM), shopA.revision);
-            const a = await states.authority(await part('shop-a'));
+            const a = await states.authority(await part('shop-a'), OWNER);
             await hub.settled();
             let release!: () => void;
             hold = new Promise<void>((resolve) => (release = resolve));

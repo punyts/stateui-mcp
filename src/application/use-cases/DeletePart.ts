@@ -29,11 +29,12 @@ export type DeletePartResult =
     | { readonly kind: 'not-found'; readonly nearest: readonly string[]; readonly missingApp?: string };
 
 /**
- * What deleting an app removes besides the part: its running instances, the owner's own stored instance and
- * person records, every other person's with `removeApp`, and its side folder
+ * What deleting an app removes besides the part: its running instances, the owner's own stored instance and person
+ * records and their test runs', every other person's with `removeApp`, and its side folder
  */
 export interface AppCleanup {
-    readonly instances: Pick<UiInstanceRepository, 'reset'>;
+    /** The owner's own instances and their test runs' */
+    readonly instances: readonly Pick<UiInstanceRepository, 'reset'>[];
     readonly folder: AppFolderStore;
     /** The running instances: the one of the deleted app is stopped first, so it cannot save its state again */
     readonly states?: Pick<InstanceStates, 'stop'>;
@@ -91,7 +92,7 @@ export class DeletePart {
             }
             if (deleted.kind === 'not-found') return;
             if (cleanup !== undefined) {
-                await cleanup.instances.reset(part.id);
+                for (const instances of cleanup.instances) await instances.reset(part.id);
                 await cleanup.removeApp?.(part.id);
                 await cleanup.folder.remove(part.id);
             }

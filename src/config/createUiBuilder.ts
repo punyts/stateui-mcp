@@ -57,8 +57,13 @@ import { msSince } from '../infrastructure/msSince.js';
 export interface UiBuilderPorts {
     /** The owner's parts with their usage index (`IndexedUiPartRepository` over `FilePartRepository` in the server) */
     readonly parts: UiPartRepository & UsageSource;
-    /** The owner's own instances of owner apps (`FileUiInstanceRepository`) */
+    /**
+     * The instances of the owner's test runs (docs/design/stateui-test-runs.md), which the tools reset and write person
+     * records in
+     */
     readonly instances: UiInstanceRepository;
+    /** The owner's own instances, removed with an app as the test runs' are */
+    readonly ownInstances: Pick<UiInstanceRepository, 'reset'>;
     /** The running instances of owner apps (`AuthorityInstanceStates`) */
     readonly instanceStates: InstanceStates;
     readonly validator: UiAppValidator;
@@ -160,7 +165,7 @@ export function createUiBuilderUseCases(ports: UiBuilderPorts, options: UiBuilde
         writeIcons: new WriteIcons(parts, validator, report),
         listParts: new ListParts(parts, report),
         getPart: new GetPart(parts, validator, report),
-        deletePart: new DeletePart(parts, parts, report, { instances, states: instanceStates, folder: appFolders, ...(ports.removeApp !== undefined && { removeApp: ports.removeApp }) }),
+        deletePart: new DeletePart(parts, parts, report, { instances: [ports.ownInstances, instances], states: instanceStates, folder: appFolders, ...(ports.removeApp !== undefined && { removeApp: ports.removeApp }) }),
         writePart,
         renamePart: new RenamePart(parts, parts, report),
         writeData: new WriteData(parts, validator, newId, report),
