@@ -101,3 +101,76 @@ describe.skipIf(!installed)('the component showcase in the headless browser', ()
         expect(problemsIn((state.body['preview'] as { errors: unknown[] }).errors)).toEqual([]);
     });
 });
+
+describe.skipIf(!installed)('the starter apps in the headless browser', () => {
+    let data: TempData;
+    let harness: HttpHarness;
+
+    beforeAll(async () => {
+        data = await tempData();
+        harness = await httpHarness(data.dir, undefined, { showcase: true });
+    });
+
+    afterAll(async () => {
+        await harness.close();
+        await data.cleanup();
+    });
+
+    it('should open, minimize, restore and close a Lumen window, keeping what shows on the window and its taskbar button', async () => {
+        // Arrange
+        const app = 'lumen-desktop';
+        const home = '$.screens.home.children';
+        const task = `${home}.taskbar.children.tasks.children.notes`;
+        await call(harness.client, 'ui_preview', { app, screen: 'home' });
+        const read = async (path: string): Promise<unknown> => (await call(harness.client, 'ui_state_get', { app, path })).body['value'];
+        const shown = async (): Promise<unknown> => ({
+            window: await read(`${home}.surface.children.notes.hidden`),
+            task: await read(`${task}.hidden`),
+            variant: await read(`${task}.variant`)
+        });
+        const click = async (path: string): Promise<boolean> => (await call(harness.client, 'ui_interact', { app, actions: [{ action: 'click', path }] })).isError;
+
+        // Act
+        const opened = await click(`${home}.surface.children.icons.children.notes`);
+        await expect.poll(shown).toEqual({ window: false, task: false, variant: 'soft' });
+        const minimized = await click(task);
+        await expect.poll(shown).toEqual({ window: true, task: false, variant: 'ghost' });
+        const restored = await click(task);
+        await expect.poll(shown).toEqual({ window: false, task: false, variant: 'soft' });
+        // The close control is inside the window, not a node of its own: the write is what the rule on its event makes
+        const closed = await call(harness.client, 'ui_state_set', { app, path: '$.data.windows.notes.open', value: false });
+        await expect.poll(shown).toEqual({ window: true, task: true, variant: 'ghost' });
+        const events = await call(harness.client, 'ui_events_read', { app });
+
+        // Assert
+        expect([opened, minimized, restored, closed.isError]).toEqual([false, false, false, false]);
+        expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
+    });
+
+    it('should label a new Northwind order with its number after a hash', async () => {
+        // Arrange
+        const app = 'northwind-ops';
+        const content = '$.screens.create.children.content.children';
+        await call(harness.client, 'ui_preview', { app, screen: 'create' });
+        const labels = async (): Promise<unknown> => {
+            const orders = (await call(harness.client, 'ui_state_get', { app, path: '$.data.orders' })).body['value'] as Record<string, { label: string; number: number }>;
+            return Object.values(orders).map((order) => order.label === `#${order.number}`);
+        };
+        const before = ((await labels()) as boolean[]).length;
+
+        // Act
+        const created = await call(harness.client, 'ui_interact', {
+            app,
+            actions: [
+                { action: 'select', path: `${content}.form.children.customer`, value: 'c001' },
+                { action: 'select', path: `${content}.form.children.product`, value: 'chai' },
+                { action: 'click', path: `${content}.actions.children.create` }
+            ]
+        });
+
+        // Assert
+        expect(created.isError, JSON.stringify(created.body)).toBe(false);
+        await expect.poll(labels).toHaveLength(before + 1);
+        expect(await labels()).not.toContain(false);
+    });
+});

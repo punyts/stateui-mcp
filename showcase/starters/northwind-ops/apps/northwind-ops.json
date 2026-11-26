@@ -2076,7 +2076,7 @@
                         "target": "$.data.orders.o{{ max($.data.orders, 'number') + 1 }}",
                         "value": {
                             "number": "{{ max($.data.orders, 'number') + 1 }}",
-                            "label": "#{{ max($.data.orders, 'number') + 1 }}",
+                            "label": "{{ '#' + string(max($.data.orders, 'number') + 1) }}",
                             "customerId": "$.screens.create.children.content.children.form.children.customer.value",
                             "customer": "",
                             "email": "",

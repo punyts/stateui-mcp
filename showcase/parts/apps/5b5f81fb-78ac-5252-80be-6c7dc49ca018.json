@@ -253,10 +253,10 @@
                   ],
                   "_snapLeftLabel": "Snap to the left half",
                   "_snapRightLabel": "Snap to the right half",
-                  "<-hidden": "$.data.windows.files.hidden",
+                  "hidden": false,
                   "<-placement": "$.data.windows.files.placement",
                   "<-active": "$.data.windows.files.active",
-                  "<-maximized": "$.data.windows.files.maximized",
+                  "maximized": false,
                   "layout": {
                     "type": "column",
                     "gap": "sm"
@@ -465,10 +465,10 @@
                   ],
                   "_snapLeftLabel": "Snap to the left half",
                   "_snapRightLabel": "Snap to the right half",
-                  "<-hidden": "$.data.windows.notes.hidden",
+                  "hidden": true,
                   "<-placement": "$.data.windows.notes.placement",
                   "<-active": "$.data.windows.notes.active",
-                  "<-maximized": "$.data.windows.notes.maximized",
+                  "maximized": false,
                   "layout": {
                     "type": "column",
                     "gap": "sm"
@@ -560,10 +560,10 @@
                   ],
                   "_snapLeftLabel": "Snap to the left half",
                   "_snapRightLabel": "Snap to the right half",
-                  "<-hidden": "$.data.windows.viewer.hidden",
+                  "hidden": true,
                   "<-placement": "$.data.windows.viewer.placement",
                   "<-active": "$.data.windows.viewer.active",
-                  "<-maximized": "$.data.windows.viewer.maximized",
+                  "maximized": false,
                   "layout": {
                     "type": "column",
                     "gap": "sm"
@@ -716,10 +716,10 @@
                     "close"
                   ],
                   "resizable": false,
-                  "<-hidden": "$.data.windows.settings.hidden",
+                  "hidden": true,
                   "<-placement": "$.data.windows.settings.placement",
                   "<-active": "$.data.windows.settings.active",
-                  "<-maximized": "$.data.windows.settings.maximized",
+                  "maximized": false,
                   "layout": {
                     "type": "column",
                     "gap": "md"
@@ -810,8 +810,8 @@
                       "icon": "folder",
                       "size": "sm",
                       "tone": "neutral",
-                      "<-hidden": "$.data.windows.files.closed",
-                      "<-variant": "$.data.windows.files.variant"
+                      "hidden": false,
+                      "variant": "soft"
                     },
                     "notes": {
                       "component": "button",
@@ -819,8 +819,8 @@
                       "icon": "notes",
                       "size": "sm",
                       "tone": "neutral",
-                      "<-hidden": "$.data.windows.notes.closed",
-                      "<-variant": "$.data.windows.notes.variant"
+                      "hidden": true,
+                      "variant": "ghost"
                     },
                     "viewer": {
                       "component": "button",
@@ -828,8 +828,8 @@
                       "icon": "photo",
                       "size": "sm",
                       "tone": "neutral",
-                      "<-hidden": "$.data.windows.viewer.closed",
-                      "<-variant": "$.data.windows.viewer.variant"
+                      "hidden": true,
+                      "variant": "ghost"
                     },
                     "settings": {
                       "component": "button",
@@ -837,8 +837,8 @@
                       "icon": "settings",
                       "size": "sm",
                       "tone": "neutral",
-                      "<-hidden": "$.data.windows.settings.closed",
-                      "<-variant": "$.data.windows.settings.variant"
+                      "hidden": true,
+                      "variant": "ghost"
                     }
                   }
                 },
@@ -1860,9 +1860,9 @@
             }
           },
           "outputs": {
-            "hidden": "$.data.windows.{app}.hidden",
-            "closed": "$.data.windows.{app}.closed",
-            "variant": "$.data.windows.{app}.variant"
+            "hidden": "$.screens.home.children.surface.children.{app}.hidden",
+            "closed": "$.screens.home.children.taskbar.children.tasks.children.{app}.hidden",
+            "variant": "$.screens.home.children.taskbar.children.tasks.children.{app}.variant"
           },
           "rows": [
             {
@@ -1909,7 +1909,7 @@
           },
           "outputs": {
             "placement": "$.data.windows.{app}.placement",
-            "maximized": "$.data.windows.{app}.maximized"
+            "maximized": "$.screens.home.children.surface.children.{app}.maximized"
           },
           "rows": [
             {

@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+- **The showcase and the starter apps validate with no warnings.** The Lumen desktop keeps what a window shows on its
+  nodes, not in `$.data`: each window node holds its own `hidden` and `maximized`, each taskbar button its own `hidden`
+  and `variant`, as literals, and the tables `windowShow` and `windowPlace` write them at their state paths
+  (`$.screens.home.children.surface.children.{app}.hidden`, `…taskbar.children.tasks.children.{app}.hidden` and
+  `.variant`). The model `lumen-window` and the dataset `lumen-windows` lose `hidden`, `closed`, `variant` and
+  `maximized` (`SUI-LINK-OWN`). Northwind Ops writes a new order's label as one expression
+  (`{{ '#' + string(…) }}`), where `#{{ … }}` read as a node reference with a template in it
+  (`SUI-LOGIC-TEXT-PATH`). Tests: `test/showcase.test.ts` ("should install every starter app beside the showcase,
+  each valid with no warnings", "should install the parts … and validate with no errors or warnings"),
+  `test/showcase.integration.test.ts` ("should open, minimize, restore and close a Lumen window, …", "should label a
+  new Northwind order with its number after a hash").
 - **The view keeps its app in IndexedDB** (docs/design/state-definitions-and-instances.md, offline). The view host's
   sync client keeps the confirmed state, the outbox, the device's `@local` changes and the document in IndexedDB
   (`openIndexedDbLocalStore` of `@punyts/state-sync`, database `stateui-sync`) in place of `localStorage`; `start`

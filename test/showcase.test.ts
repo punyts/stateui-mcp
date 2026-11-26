@@ -177,7 +177,7 @@ describe('the starter apps', () => {
         expect(build).toThrow('The starter part themes/dusk of lumen-desktop is not named with lumen-');
     });
 
-    it('should install every starter app beside the showcase, each valid', async () => {
+    it('should install every starter app beside the showcase, each valid with no warnings', async () => {
         // Arrange
         await installShowcase({ dataDir: data.dir, report: silentReport });
         const harness = await inMemoryHarness(data.dir);
@@ -189,6 +189,7 @@ describe('the starter apps', () => {
                 // Assert
                 expect(validated.isError, JSON.stringify(validated.body)).toBe(false);
                 expect(validated.body['errors'], app).toEqual([]);
+                expect(validated.body['warnings'], app).toEqual([]);
                 expect(validated.body['valid'], app).toBe(true);
             }
         } finally {
@@ -208,7 +209,7 @@ describe('installing the showcase', () => {
         await data.cleanup();
     });
 
-    it('should install the parts and names.json on an empty data directory, and validate with no errors', async () => {
+    it('should install the parts and names.json on an empty data directory, and validate with no errors or warnings', async () => {
         // Act
         const installed = await installShowcase({ dataDir: data.dir, report: silentReport });
         const harness = await inMemoryHarness(data.dir);
@@ -224,6 +225,7 @@ describe('installing the showcase', () => {
             expect(Object.keys(names['themes'] ?? {}).filter((name) => name.startsWith('showcase-'))).toHaveLength(4);
             expect(validated.isError, JSON.stringify(validated.body)).toBe(false);
             expect(validated.body['errors']).toEqual([]);
+            expect(validated.body['warnings']).toEqual([]);
             expect(validated.body['valid']).toBe(true);
         } finally {
             await harness.close();

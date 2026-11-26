@@ -52,22 +52,6 @@
             "type": "integer",
             "default": 0
         },
-        "hidden": {
-            "type": "boolean",
-            "default": true
-        },
-        "closed": {
-            "type": "boolean",
-            "default": true
-        },
-        "maximized": {
-            "type": "boolean",
-            "default": false
-        },
-        "variant": {
-            "type": "string",
-            "default": "ghost"
-        },
         "placement": {
             "type": "object",
             "default": {}
