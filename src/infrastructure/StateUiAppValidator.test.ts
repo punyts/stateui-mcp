@@ -166,9 +166,9 @@ describe('StateUiAppValidator', () => {
         it('should accept a node reference to an exposed or stored property and reject one to a property the component lacks', () => {
             const blueprint = (target: string): AppBlueprint => appWith({ customers: { component: 'list' }, detail: { component: 'text', '<-_text': target } });
 
-            expect(check(blueprint('^home.children.customers.current.name'))).toEqual([]);
-            expect(check(blueprint('^home.children.customers.divided'))).toEqual([]);
-            expect(check(blueprint('^home.children.customers.nope')).map((error) => error.code)).toEqual(['SUI-LINK-MISSING']);
+            expect(check(blueprint('#home.children.customers.current.name'))).toEqual([]);
+            expect(check(blueprint('#home.children.customers.divided'))).toEqual([]);
+            expect(check(blueprint('#home.children.customers.nope')).map((error) => error.code)).toEqual(['SUI-LINK-MISSING']);
         });
 
         it('should report a target that is not $.data, $row or a node reference', () => {

@@ -722,7 +722,7 @@
                           "on": {
                             "press": {
                               "command": "open",
-                              "target": "^cancelDialog"
+                              "target": "#cancelDialog"
                             }
                           }
                         }
@@ -931,7 +931,7 @@
                           "press": [
                             {
                               "command": "close",
-                              "target": "^confirmDialog"
+                              "target": "#confirmDialog"
                             },
                             {
                               "command": "show",

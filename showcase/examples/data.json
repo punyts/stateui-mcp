@@ -206,7 +206,7 @@
                             "form": {
                                 "children": {
                                     "description": null,
-                                    "role": { "component": "textField", "_label": "Role", "<-value": "^masterDetail.children.list.current.role" }
+                                    "role": { "component": "textField", "_label": "Role", "<-value": "#masterDetail.children.list.current.role" }
                                 }
                             }
                         }

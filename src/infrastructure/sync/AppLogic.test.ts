@@ -36,7 +36,7 @@ const DOCUMENT = Object.freeze({
                         when: { path: '$.app.children.addContact.saved', is: true },
                         do: [
                             { command: 'set', target: '$.app.children.addContact.saved', value: false },
-                            { command: 'save-data', into: '$.data.contacts', value: { form: '^addContact.body' }, as: 'save' }
+                            { command: 'save-data', into: '$.data.contacts', value: { form: '#addContact.body' }, as: 'save' }
                         ],
                         to: 'saving'
                     },
@@ -44,8 +44,8 @@ const DOCUMENT = Object.freeze({
                         from: 'saving',
                         when: { result: 'save', is: 'accepted' },
                         do: [
-                            { command: 'reset', target: '^addContact.body' },
-                            { command: 'set', target: '^addContact.open', value: false },
+                            { command: 'reset', target: '#addContact.body' },
+                            { command: 'set', target: '#addContact.open', value: false },
                             { command: 'notify', target: 'toast', value: { text: 'Contact added' } },
                             { command: 'emit', target: 'contactAdded', value: '$result.key' }
                         ],
@@ -54,7 +54,7 @@ const DOCUMENT = Object.freeze({
                     {
                         from: 'saving',
                         when: { result: 'save', is: 'rejected' },
-                        do: [{ command: 'set', target: '^addContact.error', value: '{{ $result.reason }}' }],
+                        do: [{ command: 'set', target: '#addContact.error', value: '{{ $result.reason }}' }],
                         to: 'editing'
                     }
                 ]

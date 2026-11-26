@@ -435,7 +435,7 @@
                                                     "on": {
                                                         "press": {
                                                             "command": "close",
-                                                            "target": "^confirmDialog"
+                                                            "target": "#confirmDialog"
                                                         }
                                                     }
                                                 }

@@ -112,7 +112,7 @@
                     "component": "confirmDialog",
                     "_title": "Delete the project?",
                     "body": { "_text": "Moonshot and its 14 tasks will be deleted. This cannot be undone." },
-                    "footer": { "children": { "confirm": { "_title": "Delete project", "on": { "press": [{ "command": "close", "target": "^confirmDialog" }, { "command": "show", "target": "$.app.toasts", "value": "deleted" }] } } } }
+                    "footer": { "children": { "confirm": { "_title": "Delete project", "on": { "press": [{ "command": "close", "target": "#confirmDialog" }, { "command": "show", "target": "$.app.toasts", "value": "deleted" }] } } } }
                 }
             }
         },

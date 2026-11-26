@@ -11,7 +11,7 @@ const LOGIC = Object.freeze({
                 {
                     from: 'editing',
                     when: { path: '$.app.children.addContact.saved', is: true },
-                    do: [{ command: 'save-data', into: '$.data.contacts', value: { form: '^addContact.body' }, as: 'save' }],
+                    do: [{ command: 'save-data', into: '$.data.contacts', value: { form: '#addContact.body' }, as: 'save' }],
                     to: 'saving'
                 },
                 { from: 'saving', when: { result: 'save', is: 'accepted' }, do: [{ command: 'notify', target: 'toast' }], to: 'editing' }
@@ -104,7 +104,7 @@ describe('formatLogic', () => {
                     run: '$.functions.host.ordersFetch',
                     status: '$.data.orders.status',
                     records: { into: '$.data.orders.records', key: 'id' },
-                    window: '^orders',
+                    window: '#orders',
                     cache: 20
                 },
                 ping: { request: '$.data.ping', run: '$.functions.host.ping', status: '$.data.pong' }
@@ -119,7 +119,7 @@ describe('formatLogic', () => {
         expect(lines).toEqual([
             'logic',
             '  compute tax runs $.functions.pricing.tax inputs amount → tax $.data.lines.{id}.tax',
-            '  effect fetchOrders runs $.functions.host.ordersFetch on $.data.orders.request records into $.data.orders.records by id window ^orders cache 20',
+            '  effect fetchOrders runs $.functions.host.ordersFetch on $.data.orders.request records into $.data.orders.records by id window #orders cache 20',
             '    status ready, total 120, token abc (at $.data.orders.status)',
             '  effect ping runs $.functions.host.ping on $.data.ping',
             '    status idle (at $.data.pong)'

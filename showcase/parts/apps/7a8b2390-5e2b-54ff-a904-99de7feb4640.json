@@ -1830,7 +1830,7 @@
                           "submitted": [
                             {
                               "command": "close",
-                              "target": "^formDialog"
+                              "target": "#formDialog"
                             },
                             {
                               "command": "show",
@@ -2427,7 +2427,7 @@
                                 "role": {
                                   "component": "textField",
                                   "_label": "Role",
-                                  "<-value": "^masterDetail.children.list.current.role"
+                                  "<-value": "#masterDetail.children.list.current.role"
                                 }
                               }
                             }
@@ -3179,7 +3179,7 @@
                               "press": [
                                 {
                                   "command": "close",
-                                  "target": "^confirmDialog"
+                                  "target": "#confirmDialog"
                                 },
                                 {
                                   "command": "show",

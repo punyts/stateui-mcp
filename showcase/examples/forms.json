@@ -209,7 +209,7 @@
                             "name": { "_label": "Full name" },
                             "email": { "component": "textField", "_label": "Email address", "inputType": "email", "pattern": "email" }
                         },
-                        "on": { "submitted": [{ "command": "close", "target": "^formDialog" }, { "command": "show", "target": "$.app.toasts", "value": "saved" }] }
+                        "on": { "submitted": [{ "command": "close", "target": "#formDialog" }, { "command": "show", "target": "$.app.toasts", "value": "saved" }] }
                     }
                 }
             }
