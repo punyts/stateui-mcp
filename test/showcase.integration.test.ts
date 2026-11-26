@@ -130,6 +130,9 @@ describe.skipIf(!installed)('the starter apps in the headless browser', () => {
         });
         const click = async (path: string): Promise<boolean> => (await call(harness.client, 'ui_interact', { app, actions: [{ action: 'click', path }] })).isError;
 
+        // Nothing has written the window's own state yet: it is read from the definition
+        const closedAtStart = await shown();
+
         // Act
         const opened = await click(`${home}.surface.children.icons.children.notes`);
         await expect.poll(shown).toEqual({ window: false, task: false, variant: 'soft' });
@@ -137,12 +140,17 @@ describe.skipIf(!installed)('the starter apps in the headless browser', () => {
         await expect.poll(shown).toEqual({ window: true, task: false, variant: 'ghost' });
         const restored = await click(task);
         await expect.poll(shown).toEqual({ window: false, task: false, variant: 'soft' });
-        // The close control is inside the window, not a node of its own: the write is what the rule on its event makes
-        const closed = await call(harness.client, 'ui_state_set', { app, path: '$.data.windows.notes.open', value: false });
+        // The close control is inside the window, not a node of its own: focus goes to the window's title, and five
+        // Tabs later (snap left, snap right, minimize, maximize, close) Enter presses the control
+        const closed = await call(harness.client, 'ui_interact', {
+            app,
+            actions: [{ action: 'focus', path: `${home}.surface.children.notes` }, ...Array.from({ length: 5 }, () => ({ action: 'key', value: 'Tab' })), { action: 'key', value: 'Enter' }]
+        });
         await expect.poll(shown).toEqual({ window: true, task: true, variant: 'ghost' });
         const events = await call(harness.client, 'ui_events_read', { app });
 
         // Assert
+        expect(closedAtStart).toEqual({ window: true, task: true, variant: 'ghost' });
         expect([opened, minimized, restored, closed.isError]).toEqual([false, false, false, false]);
         expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
     });

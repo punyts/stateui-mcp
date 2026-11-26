@@ -62,6 +62,7 @@
                         },
                         "children": {
                             "wallpaper": {
+                                "@id": "deskWallpaper",
                                 "component": "drawing",
                                 "_title": "Wallpaper",
                                 "fit": "cover",
@@ -234,6 +235,7 @@
                                 }
                             },
                             "files": {
+                                "@id": "filesWindow",
                                 "component": "window",
                                 "_title": "Files",
                                 "icon": "folder",
@@ -330,6 +332,7 @@
                                                 }
                                             },
                                             "listing": {
+                                                "@id": "fileListing",
                                                 "component": "list",
                                                 "placement": {
                                                     "grow": 2
@@ -416,13 +419,14 @@
                                                 "on": {
                                                     "press": {
                                                         "command": "open",
-                                                        "target": "$.screens.home.children.surface.children.files.children.confirm"
+                                                        "target": "#deleteDialog"
                                                     }
                                                 }
                                             }
                                         }
                                     },
                                     "confirm": {
+                                        "@id": "deleteDialog",
                                         "component": "confirmDialog",
                                         "_title": "Delete this item?",
                                         "body": {
@@ -446,6 +450,7 @@
                                 "on": {}
                             },
                             "notes": {
+                                "@id": "notesWindow",
                                 "component": "window",
                                 "_title": "Notes",
                                 "icon": "notes",
@@ -541,6 +546,7 @@
                                 }
                             },
                             "viewer": {
+                                "@id": "viewerWindow",
                                 "component": "window",
                                 "_title": "Viewer",
                                 "icon": "photo",
@@ -581,6 +587,7 @@
                                         }
                                     },
                                     "picture": {
+                                        "@id": "viewerPicture",
                                         "component": "drawing",
                                         "_title": "Picture",
                                         "placement": {
@@ -701,6 +708,7 @@
                                 }
                             },
                             "settings": {
+                                "@id": "settingsWindow",
                                 "component": "window",
                                 "_title": "Settings",
                                 "icon": "settings",
@@ -798,6 +806,7 @@
                                 },
                                 "children": {
                                     "files": {
+                                        "@id": "filesTask",
                                         "component": "button",
                                         "_title": "Files",
                                         "icon": "folder",
@@ -807,6 +816,7 @@
                                         "variant": "soft"
                                     },
                                     "notes": {
+                                        "@id": "notesTask",
                                         "component": "button",
                                         "_title": "Notes",
                                         "icon": "notes",
@@ -816,6 +826,7 @@
                                         "variant": "ghost"
                                     },
                                     "viewer": {
+                                        "@id": "viewerTask",
                                         "component": "button",
                                         "_title": "Viewer",
                                         "icon": "photo",
@@ -825,6 +836,7 @@
                                         "variant": "ghost"
                                     },
                                     "settings": {
+                                        "@id": "settingsTask",
                                         "component": "button",
                                         "_title": "Settings",
                                         "icon": "settings",
@@ -1191,7 +1203,7 @@
                         "from": "$.data.files",
                         "filter": "$record.folder === $.data.windows.files.folder",
                         "sort": "sortKey",
-                        "into": "$.screens.home.children.surface.children.files.children.browse.children.listing"
+                        "into": "#fileListing"
                     }
                 ]
             },
@@ -1205,7 +1217,7 @@
                         "from": "$.data.files",
                         "filter": "$record.folder === $.data.windows.files.folder",
                         "sort": "sortKey",
-                        "into": "$.screens.home.children.surface.children.files.children.browse.children.listing"
+                        "into": "#fileListing"
                     }
                 ]
             },
@@ -1754,7 +1766,7 @@
                     {
                         "command": "copy",
                         "from": "$.data.files.{{ $trigger }}.paints",
-                        "target": "$.screens.home.children.surface.children.viewer.children.picture.paints"
+                        "target": "#viewerPicture.paints"
                     },
                     {
                         "command": "copy",
@@ -1784,7 +1796,7 @@
                     {
                         "command": "copy",
                         "from": "$.data.files.{{ $trigger }}.paints",
-                        "target": "$.screens.home.children.surface.children.wallpaper.paints"
+                        "target": "#deskWallpaper.paints"
                     }
                 ]
             },
@@ -1853,9 +1865,9 @@
                     }
                 },
                 "outputs": {
-                    "hidden": "$.screens.home.children.surface.children.{app}.hidden",
-                    "closed": "$.screens.home.children.taskbar.children.tasks.children.{app}.hidden",
-                    "variant": "$.screens.home.children.taskbar.children.tasks.children.{app}.variant"
+                    "hidden": "#{app}Window.hidden",
+                    "closed": "#{app}Task.hidden",
+                    "variant": "#{app}Task.variant"
                 },
                 "rows": [
                     {
@@ -1902,7 +1914,7 @@
                 },
                 "outputs": {
                     "placement": "$.data.windows.{app}.placement",
-                    "maximized": "$.screens.home.children.surface.children.{app}.maximized"
+                    "maximized": "#{app}Window.maximized"
                 },
                 "rows": [
                     {

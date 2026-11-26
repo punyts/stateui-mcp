@@ -111,6 +111,29 @@ describe('ui_state_set, ui_state_get and ui_state_reset on an instance', () => {
         expect(await partRevision()).toBe(1);
     });
 
+    it('should read a node property the instance has not changed from the definition, and name the closest node for one that is nowhere', async () => {
+        // Arrange
+        const welcome = '$.screens.home.children.welcome';
+        await call(harness.client, 'ui_state_set', { app: 'shop', path: SEARCH, value: 'lamp' });
+
+        // Act
+        const defined = await call(harness.client, 'ui_state_get', { app: 'shop', path: `${welcome}._text` });
+        const node = await call(harness.client, 'ui_state_get', { app: 'shop', path: 'screens.about' });
+        const changed = await call(harness.client, 'ui_state_get', { app: 'shop', path: SEARCH });
+        const missing = await call(harness.client, 'ui_state_get', { app: 'shop', path: `${welcome}.tone` });
+        const noScreen = await call(harness.client, 'ui_state_get', { app: 'shop', path: '$.screens.nowhere.children' });
+        const whole = await call(harness.client, 'ui_state_get', { app: 'shop' });
+
+        // Assert
+        expect(defined.body).toMatchObject({ app: 'shop', source: 'definition', path: `${welcome}._text`, value: 'Welcome home' });
+        expect(node.body).toMatchObject({ source: 'definition', value: { component: 'text', _text: 'About the shop' } });
+        expect(changed.body).toMatchObject({ source: 'instance', value: 'lamp' });
+        expect(missing.body).toMatchObject({ error: 'unknown-path', path: `${welcome}.tone`, closest: welcome });
+        expect(noScreen.body).toMatchObject({ error: 'unknown-path', closest: '$.screens' });
+        expect(whole.body['source']).toBe('instance');
+        expect(JSON.stringify(whole.body['state'])).not.toContain('Welcome home');
+    });
+
     it('should refuse a definition path, and write a shared dataset to the copy of the test run until a reset', async () => {
         // Act
         const theme = await call(harness.client, 'ui_state_set', { app: 'shop', path: '$.theme', value: {} });

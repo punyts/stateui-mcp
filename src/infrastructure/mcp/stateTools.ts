@@ -54,21 +54,6 @@ function elideLong(value: unknown): unknown {
     return value;
 }
 
-/** The value at a state path such as `$.data.cart`; the leading `$.` is optional. found is false when a segment is missing */
-function valueAt(state: unknown, path: string): { found: boolean; value: unknown; closest: string } {
-    const segments = path.replace(/^\$\.?/, '').split('.').filter((segment) => segment !== '');
-    let current: unknown = state;
-    const walked: string[] = [];
-    for (const segment of segments) {
-        if (current === null || typeof current !== 'object' || !Object.hasOwn(current, segment)) {
-            return { found: false, value: undefined, closest: walked.length === 0 ? '$' : `$.${walked.join('.')}` };
-        }
-        current = (current as Record<string, unknown>)[segment];
-        walked.push(segment);
-    }
-    return { found: true, value: current, closest: path };
-}
-
 function invalidArgument(parsed: { argument: string; message: string }): ToolOutcome {
     return fail('invalid-argument', parsed.message, { argument: parsed.argument });
 }
@@ -90,7 +75,7 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
         {
             name: 'ui_state_get',
             description:
-                'Run time: read the app state as { data, app } (and screens and route for an app with screens): the data, and what users typed, picked or opened. It reads the instance of the app part from the server (source "instance"). path reads one part. Long strings are shortened unless full is true. Reading changes nothing. Returns { app, revision, source, state, preview }, or with path { app, revision, source, path, value, preview }; revision is the definition\'s, preview says whether a view is open and lists its runtime errors.',
+                'Run time: read the app state as { data, app } (and screens and route for an app with screens): the data, and what users typed, picked or opened. It reads the instance of the app part from the server (source "instance"). path reads one part; a node property the instance has not changed is read from the definition (source "definition"). Long strings are shortened unless full is true. Reading changes nothing. Returns { app, revision, source, state, preview }, or with path { app, revision, source, path, value, preview }; revision is the definition\'s, preview says whether a view is open and lists its runtime errors.',
             inputSchema: STATE_GET.schema,
             annotations: READ_ONLY,
             run: async (args) => {
@@ -99,13 +84,16 @@ export function createStateTools(dependencies: StateToolDependencies): readonly 
                 const { path, full } = parsed.value;
                 const target = await resolve(parsed.value);
                 if (!isRunTarget(target)) return target;
-                const read = await useCases.getPartState.execute(target.part);
+                const read = await useCases.getPartState.execute(target.part, path);
                 const named = runName(target);
                 const shown = (value: unknown): unknown => (full === true ? value : elideLong(value));
                 if (path === undefined) return succeed({ ...named, revision: read.revision, source: read.source, state: shown(read.state), preview: read.preview });
-                const at = valueAt(read.state, path);
-                if (!at.found) return fail('unknown-path', `Nothing is at ${path}; the closest part that exists is ${at.closest}`, { ...named, path, closest: at.closest });
-                return succeed({ ...named, revision: read.revision, source: read.source, path, value: shown(at.value), preview: read.preview });
+                const at = read.at;
+                if (at === undefined || !at.found) {
+                    const closest = at?.closest ?? '$';
+                    return fail('unknown-path', `Nothing is at ${path}; the closest part that exists is ${closest}`, { ...named, path, closest });
+                }
+                return succeed({ ...named, revision: read.revision, source: at.source, path, value: shown(at.value), preview: read.preview });
             }
         },
         {

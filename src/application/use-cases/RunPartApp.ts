@@ -22,6 +22,15 @@ export class FindPartApp {
     }
 }
 
+/** What is at one state path: `found` is false when a step is missing, and `closest` is then the last step that exists */
+export interface PartStateAt {
+    readonly found: boolean;
+    readonly value: unknown;
+    readonly closest: string;
+    /** Where the value was read: the instance, or the definition for a node property the instance has not changed */
+    readonly source: 'instance' | 'definition';
+}
+
 export interface PartStateResult {
     readonly app: string;
     /** The app part's revision: using the app never raises it */
@@ -30,25 +39,77 @@ export interface PartStateResult {
     readonly state: JsonObject;
     readonly source: 'instance';
     readonly preview: UiPreviewDto;
+    /** What is at the path asked for; absent without a path */
+    readonly at?: PartStateAt;
+}
+
+/** The steps of a state path such as `$.data.cart`; the leading `$.` is optional */
+function stepsOf(path: string): string[] {
+    return path
+        .replace(/^\$\.?/, '')
+        .split('.')
+        .filter((step) => step !== '');
+}
+
+/** The value below `root` at `steps`, and the steps that exist when one is missing */
+function walk(root: unknown, steps: readonly string[]): { found: boolean; value: unknown; walked: string[] } {
+    let current: unknown = root;
+    const walked: string[] = [];
+    for (const step of steps) {
+        if (current === null || typeof current !== 'object' || !Object.hasOwn(current, step)) return { found: false, value: undefined, walked };
+        current = (current as Record<string, unknown>)[step];
+        walked.push(step);
+    }
+    return { found: true, value: current, walked };
 }
 
 /**
+ * The steps of a node path in the assembled document: `$.app…` is the app node and `$.screens.{name}…` the root of a
+ * screen, which the document keeps under `root`. Undefined for a path that is not below a node
+ */
+function definitionSteps(steps: readonly string[]): string[] | undefined {
+    if (steps[0] === 'app') return [...steps];
+    if (steps[0] === 'screens' && steps.length >= 2) return ['screens', steps[1] as string, 'root', ...steps.slice(2)];
+    return undefined;
+}
+
+const statePathOf = (steps: readonly string[]): string => (steps.length === 0 ? '$' : `$.${steps.join('.')}`);
+
+/**
  * The state of the owner's own instance of an app part, read from its running authority (started over the
- * definition and the stored instance when nothing runs it yet), with what its views report
+ * definition and the stored instance when nothing runs it yet), with what its views report.
+ *
+ * The instance keeps `$.app` and `$.screens` sparse: only what a user, a tool or the logic changed. With a `path`,
+ * a node path the instance does not have is read from the definition, so a property that still has its definition
+ * value (a window's `hidden: true` nothing has written yet) is found, as the running app has it
  */
 export class GetPartState {
     constructor(
-        private readonly states: Pick<InstanceStates, 'state'>,
+        private readonly states: Pick<InstanceStates, 'state' | 'shape'>,
         private readonly previewLog: UiPreviewLog,
         private readonly now: () => Date,
         private readonly report: UseCaseReport
     ) {}
 
-    async execute(part: UiPart<'apps'>): Promise<PartStateResult> {
+    async execute(part: UiPart<'apps'>, path?: string): Promise<PartStateResult> {
         const state = await this.states.state(part);
         const preview = toPreviewDto(await this.previewLog.status(part.id, this.now()));
-        this.report.info('Instance state read', { app: part.name, previewAttached: preview.attached });
-        return { app: part.name, revision: part.revision, state, source: 'instance', preview };
+        const at = path === undefined ? undefined : await this.valueAt(part, state, path);
+        this.report.info('Instance state read', { app: part.name, previewAttached: preview.attached, ...(at !== undefined && { found: at.found, from: at.source }) });
+        return { app: part.name, revision: part.revision, state, source: 'instance', preview, ...(at !== undefined && { at }) };
+    }
+
+    private async valueAt(part: UiPart<'apps'>, state: JsonObject, path: string): Promise<PartStateAt> {
+        const steps = stepsOf(path);
+        const own = walk(state, steps);
+        if (own.found) return { found: true, value: own.value, closest: path, source: 'instance' };
+        const inDocument = definitionSteps(steps);
+        if (inDocument === undefined) return { found: false, value: undefined, closest: statePathOf(own.walked), source: 'instance' };
+        const defined = walk((await this.states.shape(part)).document, inDocument);
+        if (defined.found) return { found: true, value: defined.value, closest: path, source: 'definition' };
+        // The steps the definition has, counted as state path steps: a screen's `root` is not one
+        const reached = defined.walked.length - (steps[0] === 'screens' && defined.walked.length > 2 ? 1 : 0);
+        return { found: false, value: undefined, closest: statePathOf(steps.slice(0, Math.max(own.walked.length, reached))), source: 'instance' };
     }
 }
 

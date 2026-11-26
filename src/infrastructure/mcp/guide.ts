@@ -99,7 +99,7 @@ const LOGIC = 'Behavior goes in the logic of an app or of a logic module (ui_log
 
 const LIVE_VIEW = [
     'Every app has a live view at the url ui_preview returns. A person can open it in a browser; it follows every part write, ui_state_set and ui_command at once. ui_preview also opens a headless Chromium page of the same url, which ui_screenshot, ui_interact, ui_state_get and ui_command use.',
-    'ui_state_get reads the state of the default user\'s instance of the app from the server (source "instance"), whether or not a view is open, and includes a preview block: whether a view is open (attached) and the runtime errors the views reported.',
+    'ui_state_get reads the state of the default user\'s instance of the app from the server (source "instance"), whether or not a view is open (with path, a node property nothing changed yet comes from the definition, source "definition"), and includes a preview block: whether a view is open (attached) and the runtime errors the views reported.',
     'To test behavior from a known state: ui_state_reset puts the instance back to the definition, ui_state_set with logic: false sets up values without firing rules, and ui_logic_trace shows what every machine, rule, table and guard did with each change and why one did not fire.',
     'ui_command runs a component command (a toast, a focus, a scroll) in the open views. With no view open it answers "no preview is open; the command was not delivered" and nothing happens: call ui_preview first.',
     'No chat turn carries the events a running app raises. When the user may have acted in the app, call ui_events_read with the cursor from the last call. An event named <id>.<event> is the user acting on a node with that @id, not a message to answer.'

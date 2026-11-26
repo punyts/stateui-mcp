@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **The Lumen desktop's logic names its nodes by id.** Each window carries `@id` `{app}Window` and each taskbar
+  button `{app}Task`, and the tables `windowShow` and `windowPlace` write `#{app}Window.hidden`,
+  `#{app}Task.hidden`, `#{app}Task.variant` and `#{app}Window.maximized`. The file listing (`fileListing`), the
+  Viewer's picture (`viewerPicture`), the wallpaper (`deskWallpaper`) and the delete dialog (`deleteDialog`) have ids
+  too, which the rules' `into` and `copy` targets and the Delete button's `open` name, so a node can move without the
+  logic changing. Rule triggers stay `$.raised.…` paths (a trigger takes no `#` reference), and Northwind Ops keeps
+  state paths: its rules write nodes of screens other than the one shown, and logic finds an id in the current
+  screen and the app node only. Test: `test/showcase.integration.test.ts` ("should open, minimize, restore and close
+  a Lumen window, …"), which now presses the window's close control with the keyboard (focus on the window, Tab to
+  the control, Enter) where it wrote the data.
+- **Fix: `ui_state_get` with a `path` reads a node property the instance has not changed.** The instance keeps
+  `$.app` and `$.screens` sparse, so a property that still had its definition value (a closed window's
+  `hidden: true`) answered `unknown-path`. A node path the instance does not have is now read from the assembled
+  definition, with `source: "definition"`; `unknown-path` names the closest step of either. The read without a
+  `path` is unchanged: the instance alone. Tests: `test/runTools.test.ts` ("should read a node property the instance
+  has not changed from the definition, …"), `test/showcase.integration.test.ts` (the Lumen window's state before
+  anything wrote it). Two 3D tests of `test/browser.integration.test.ts` that took `unknown-path` to mean "the
+  camera was not moved" now read `source`.
 - **The showcase and the starter apps validate with no warnings.** The Lumen desktop keeps what a window shows on its
   nodes, not in `$.data`: each window node holds its own `hidden` and `maximized`, each taskbar button its own `hidden`
   and `variant`, as literals, and the tables `windowShow` and `windowPlace` write them at their state paths

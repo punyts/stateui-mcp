@@ -1870,21 +1870,22 @@ describe.skipIf(!installed)('press on a 3D node through its proxy with the agent
         expect(chosen).toBe('peg');
         expect(position[0]).toBeGreaterThan(-2);
         expect(position.slice(1)).toEqual([-1, 0]);
-        expect(camera.isError).toBe(true);
+        expect(camera.body).toMatchObject({ source: 'definition', value: [0, 0, 5] });
     });
 
     it('should drag from the mesh by an offset to orbit the camera, raising no press', async () => {
-        // Arrange: the instance holds no camera position until a user moves the camera
+        // Arrange: the instance holds no camera position until a user moves the camera, so it is read from the definition
         await reset();
-        const before = await call(harness.client, 'ui_state_get', { app: 'parts', path: `${EYE}.position` });
+        const read = { app: 'parts', path: `${EYE}.position` };
+        const before = await call(harness.client, 'ui_state_get', read);
 
         // Act
         const dragged = await call(harness.client, 'ui_interact', { app: 'parts', actions: [{ action: 'drag', path: LID, value: '+40,+0' }] });
-        const after = await valueWhen(`${EYE}.position`, (value) => Array.isArray(value));
+        const after = (await eventually(harness, 'ui_state_get', read, (found) => found.body['source'] === 'instance')).body['value'];
 
         // Assert: the camera turned around the box on its sphere of radius 5, and the drag was not a press
         expect(dragged.isError).toBe(false);
-        expect(before.isError).toBe(true);
+        expect(before.body).toMatchObject({ source: 'definition', value: [0, 0, 5] });
         expect(Math.hypot(...(after as number[]))).toBeCloseTo(5, 3);
         expect((after as number[])[0]).not.toBeCloseTo(0, 2);
         expect(await valueAt('$.data.ui.p1.chosen')).toBe('none');
