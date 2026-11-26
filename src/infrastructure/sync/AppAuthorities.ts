@@ -14,6 +14,7 @@ import type { AppLogicLimits, DataGate } from './AppLogic.js';
 import { AppLogic } from './AppLogic.js';
 import { appNamespace } from './FileNamespaceStorage.js';
 import type { InstanceStart } from './InstanceStart.js';
+import { PeerShares } from './PeerShares.js';
 
 /** A client emit, with the app and the id of the view that raised it */
 export type AppEmitHandler = (appId: string, name: string, value: JsonValue | undefined, viewId: string) => void;
@@ -102,6 +103,10 @@ export class AppAuthorities {
     private readonly appIds = new Map<string, string>();
     /** The answers to the apps' `call` commands */
     readonly calls: AppCalls;
+    /** The running instances of each app that see their peers' shared branches */
+    readonly peers = new PeerShares();
+    /** By namespace: takes the instance out of its app's peers */
+    private readonly leaving = new Map<string, () => void>();
     /** The effects of Full-mode logic that wait for the agent's answer */
     readonly effects: AppEffects;
 
@@ -119,7 +124,8 @@ export class AppAuthorities {
 
     /** The authority of a running instance, over the instance's own storage, which gives the starting state */
     instance(start: InstanceStart, storage: NamespaceStorage): Promise<Authority> {
-        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined, start.key.person);
+        const group = `${start.key.ownerId}/${start.key.appId}`.toLowerCase();
+        return this.open(appNamespace(start.key), start.key.appId.toLowerCase(), start.document, storage, {}, this.dataGate === undefined, start.key.person, group);
     }
 
     /**
@@ -157,7 +163,7 @@ export class AppAuthorities {
     }
 
     /** The authority of a namespace, made on first use; its emits and its logic's events are recorded under `appId` */
-    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true, person?: string): Promise<Authority> {
+    private open(namespace: string, appId: string, document: UiDocument, storage: NamespaceStorage, initial: Record<string, SyncValue>, derive = true, person?: string, group?: string): Promise<Authority> {
         let authority = this.authorities.get(namespace);
         if (authority === undefined) {
             authority = createAuthority({
@@ -174,6 +180,7 @@ export class AppAuthorities {
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
                 this.startLogic(namespace, appId, created, document, derive, person);
+                if (person !== undefined && group !== undefined) this.leaving.set(namespace, this.peers.join(group, namespace, person, created, document));
                 return created;
             }, (error: unknown) => {
                 throw this.explain(appId, error);
@@ -262,6 +269,8 @@ export class AppAuthorities {
         const authority = this.authorities.get(namespace);
         if (authority === undefined) return;
         this.authorities.delete(namespace);
+        this.leaving.get(namespace)?.();
+        this.leaving.delete(namespace);
         this.logics.get(namespace)?.dispose();
         this.logics.delete(namespace);
         this.calls.forget(this.appIds.get(namespace) ?? '');

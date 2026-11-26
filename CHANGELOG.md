@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Each instance sees its peers' shared branches in `$.peers`** (docs/design/state-definitions-and-instances.md).
+  `PeerShares` groups an app's running instances and writes each one's `$.peers.<path>` with the values of the
+  people on the same `by` value, following changes, joins and leaves; client writes there are refused. The saving
+  topic of the guide names `@share` and `$peers`. Test: `src/infrastructure/sync/PeerShares.test.ts`.
 - **Definitions have an address: `<owner>/components/<app>`** (docs/design/state-definitions-and-instances.md).
   `StateBranch` adds `components`, `$.components.<app>` of the owner's tree, with the app id lower-cased as under
   `apps`; `definitionStateAddress` and `definitionOfAddress` write and read it. Test: `src/domain/StateAddress.test.ts`
