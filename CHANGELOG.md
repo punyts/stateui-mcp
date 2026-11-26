@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Definitions have an address: `<owner>/components/<app>`** (docs/design/state-definitions-and-instances.md).
+  `StateBranch` adds `components`, `$.components.<app>` of the owner's tree, with the app id lower-cased as under
+  `apps`; `definitionStateAddress` and `definitionOfAddress` write and read it. Test: `src/domain/StateAddress.test.ts`
+  ("should put an app's definition under components in its owner's tree, …").
 - **Assembly knows the component library.** The validator's `assembleApp` and an instance's assembly
   (`src/infrastructure/sync/InstanceStart.ts`) pass the library, so a component's own marks (a button's `@transient`
   `pressed`) reach the document's `ephemeral` list and the authority never stores a press. Covered by stateui-app's

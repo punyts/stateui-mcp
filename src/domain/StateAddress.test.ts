@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAddress, instanceOfAddress, parseAddress, userStateAddress } from './StateAddress.js';
+import { definitionOfAddress, definitionStateAddress, formatAddress, instanceOfAddress, parseAddress, userStateAddress } from './StateAddress.js';
 import type { OwnerNames } from './StateAddress.js';
 
 const APP = '0F8FAD5B-D9CB-469F-A165-70867728950E';
@@ -39,6 +39,17 @@ describe('StateAddress', () => {
         expect(instanceOfAddress(theirs, NUMBERS)).toEqual({ appId: app, person: 'u7' });
         expect(instanceOfAddress(`99/apps/${app}`, NUMBERS)).toBeUndefined();
         expect(instanceOfAddress('7/data/orders', NUMBERS)).toBeUndefined();
+    });
+
+    it("should put an app's definition under components in its owner's tree, and find the owner and app again", () => {
+        // Act
+        const address = definitionStateAddress('w1', 'Shop', NUMBERS);
+
+        // Assert
+        expect(address).toBe('7/components/shop');
+        expect(definitionOfAddress(address, NUMBERS)).toEqual({ appId: 'shop', owner: 'w1' });
+        expect(definitionOfAddress('7/apps/shop', NUMBERS)).toBeUndefined();
+        expect(instanceOfAddress(address, NUMBERS)).toBeUndefined();
     });
 
     it('should read back what it writes, and nothing else', () => {
