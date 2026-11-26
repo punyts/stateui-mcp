@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **The view keeps its app in IndexedDB** (docs/design/state-definitions-and-instances.md, offline). The view host's
+  sync client keeps the confirmed state, the outbox, the device's `@local` changes and the document in IndexedDB
+  (`openIndexedDbLocalStore` of `@punyts/state-sync`, database `stateui-sync`) in place of `localStorage`; `start`
+  opens it first and falls back to memory. Breaking: what a browser kept in `localStorage` is no longer read. Tests:
+  `test/browser.integration.test.ts`.
 - **The host reads an app by ids** (docs/design/state-definitions-and-instances.md). Breaking. The view host takes the
   runtime's `raised` message: an event of a node with an `@id` is queued for `ui_events_read` as `<id>.<event>` with
   the report `{ id, event, value?, row? }` as its payload, raised on `window` (and on a panel's element) as

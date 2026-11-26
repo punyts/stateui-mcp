@@ -17,7 +17,7 @@
  * allows what the runtime frame's allows (`APP_PAGE_CSP`).
  *
  * The app runs in Full mode: the page's sync client syncs the app's state, and the server's view messages bring the
- * document. The sync client keeps the confirmed state and the changes not yet acknowledged in `localStorage`, with
+ * document. The sync client keeps the confirmed state and the changes not yet acknowledged in IndexedDB, with
  * the document beside them, so the app opens and takes changes offline and sends them when the connection is back.
  *
  * An owner app (`data-namespace` on the body, `instances.<person>.<ownerId>.<appId>`) syncs with the
@@ -80,7 +80,7 @@
  * is the document revision the runtime rendered, and `sync` is the sync status (`connecting`, `online`, `offline`).
  */
 
-import { createMemoryLocalStore, createSyncClient, createWebLocalStore, forgetNamespace, randomId } from '@punyts/state-sync';
+import { createMemoryLocalStore, createSyncClient, forgetNamespace, openIndexedDbLocalStore, randomId } from '@punyts/state-sync';
 import { filesSource } from './filesSource.js';
 import { forgetListed } from './forgetListed.js';
 import { MAX_WRITES, SEGMENT, copy, deepEqual, diffComplete, isJson, isRecord, planDocumentUpdate } from './documentUpdate.js';
@@ -328,11 +328,13 @@ function isAppMessage(value: unknown): value is AppMessage {
     return isRecord(value) && value['type'] === 'app' && typeof value['revision'] === 'number' && isRecord(value['document']) && isRecord(value['icons']);
 }
 
-/** `localStorage`, or memory when the page may not use it */
-function localStore(): LocalStore {
+/**
+ * The device's store of a namespace: IndexedDB (docs/design/state-definitions-and-instances.md, offline), or memory
+ * when the page may not use it
+ */
+async function deviceStore(namespace: string): Promise<LocalStore> {
     try {
-        window.localStorage.getItem('stateui');
-        return createWebLocalStore(window.localStorage, 'stateui-sync');
+        return await openIndexedDbLocalStore([namespace], { name: 'stateui-sync' });
     } catch {
         return createMemoryLocalStore();
     }
@@ -364,7 +366,8 @@ export class LiveView {
     private readonly instance: boolean;
     /** `?screen=` and `?params=`: where the view navigates once the app is first ready */
     private openAt: { screen: string; params?: Json } | undefined;
-    private readonly store = localStore();
+    /** The device's store, memory until `start` has opened IndexedDB */
+    private store: LocalStore = createMemoryLocalStore();
     private readonly nonce = createNonce();
     private client: SyncClient | undefined;
     private frame: HTMLIFrameElement | undefined;
@@ -460,6 +463,14 @@ export class LiveView {
     /** Starts the view with the channel to its server, made for this view's id and kind */
     start(channelFor: (view: LiveView) => ViewChannel): void {
         this.channel = channelFor(this);
+        void deviceStore(this.namespace).then((store) => {
+            this.store = store;
+            this.begin();
+        });
+    }
+
+    /** Starts the view once the device's store is open */
+    private begin(): void {
         forgetListed(this.store, this.body.dataset['forget'], this.namespace);
         const revoked = this.body.dataset['revoked'];
         if (revoked !== undefined) {
