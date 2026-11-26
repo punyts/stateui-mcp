@@ -155,7 +155,49 @@ describe.skipIf(!installed)('the starter apps in the headless browser', () => {
         expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
     });
 
-    it('should label a new Northwind order with its number after a hash', async () => {
+    it('should maximize and restore a Lumen window with its control, writing maximized and the placement on the window', async () => {
+        // Arrange
+        const app = 'lumen-desktop';
+        const home = '$.screens.home.children';
+        const window = `${home}.surface.children.notes`;
+        await call(harness.client, 'ui_preview', { app, screen: 'home' });
+        const read = async (path: string): Promise<unknown> => (await call(harness.client, 'ui_state_get', { app, path })).body['value'];
+        const placed = async (): Promise<unknown> => {
+            const { x, y, width, height } = ((await read('$.data.windows.notes.placement')) ?? {}) as Record<string, unknown>;
+            return { maximized: await read(`${window}.maximized`), x, y, width, height };
+        };
+        // The maximize control is the fourth after the window's title (snap left, snap right, minimize, maximize)
+        const pressMaximize = async (): Promise<boolean> =>
+            (
+                await call(harness.client, 'ui_interact', {
+                    app,
+                    actions: [{ action: 'focus', path: window }, ...Array.from({ length: 4 }, () => ({ action: 'key', value: 'Tab' })), { action: 'key', value: 'Enter' }]
+                })
+            ).isError;
+        const opened = (await call(harness.client, 'ui_interact', { app, actions: [{ action: 'click', path: `${home}.surface.children.icons.children.notes` }] })).isError;
+        await expect.poll(() => read(`${window}.hidden`)).toBe(false);
+        const free = await placed();
+
+        // Act
+        const maximized = await pressMaximize();
+        await expect.poll(placed).toEqual({ maximized: true, x: '0px', y: '0px', width: '100%', height: '100%' });
+        const restored = await pressMaximize();
+        await expect.poll(placed).toEqual(free);
+        const events = await call(harness.client, 'ui_events_read', { app });
+
+        // Assert
+        expect(free).toEqual({
+            maximized: false,
+            x: 'min(210px, max(0px, calc(100% - 760px)))',
+            y: 'min(60px, max(0px, calc(100% - 520px)))',
+            width: 'min(760px, 100%)',
+            height: 'min(520px, 100%)'
+        });
+        expect([opened, maximized, restored]).toEqual([false, false, false]);
+        expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
+    });
+
+    it('should label a new Northwind order with its number after a hash and count it on the screens that do not show', async () => {
         // Arrange
         const app = 'northwind-ops';
         const content = '$.screens.create.children.content.children';
@@ -165,6 +207,12 @@ describe.skipIf(!installed)('the starter apps in the headless browser', () => {
             return Object.values(orders).map((order) => order.label === `#${order.number}`);
         };
         const before = ((await labels()) as boolean[]).length;
+        // The rules name these nodes by id (#ordersTable, #openOrdersStat); neither is on the screen that shows
+        const counted = async (): Promise<unknown> => ({
+            orders: (await call(harness.client, 'ui_state_get', { app, path: '$.screens.orders.children.content.children.table.total' })).body['value'],
+            open: (await call(harness.client, 'ui_state_get', { app, path: '$.screens.home.children.content.children.figures.children.open.children.stat.value' })).body['value']
+        });
+        const countedBefore = (await counted()) as { orders: number; open: number };
 
         // Act
         const created = await call(harness.client, 'ui_interact', {
@@ -180,5 +228,8 @@ describe.skipIf(!installed)('the starter apps in the headless browser', () => {
         expect(created.isError, JSON.stringify(created.body)).toBe(false);
         await expect.poll(labels).toHaveLength(before + 1);
         expect(await labels()).not.toContain(false);
+        await expect.poll(counted).toEqual({ orders: countedBefore.orders + 1, open: countedBefore.open + 1 });
+        const events = await call(harness.client, 'ui_events_read', { app });
+        expect((events.body['events'] as { name: string }[]).filter((event) => event.name === 'logic.failed')).toEqual([]);
     });
 });

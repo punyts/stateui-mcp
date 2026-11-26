@@ -1,14 +1,32 @@
 # Changelog
 
 ## Unreleased
+- **Northwind Ops' logic names its nodes by id.** The rules write nodes of screens other than the one shown (a new
+  order counts on the dashboard and in the orders table while the order screen shows), which logic now finds by id
+  (`@punyts/stateui-app`, "Find a node of another screen by id in logic"). Thirty-one nodes carry an `@id`, each
+  unique in the app and no node's key: the dashboard's `revenueStat`, `openOrdersStat`, `customersStat`,
+  `fulfilmentBar`, `pendingBadge`, `cancelledBadge`, `statusChart`, `attentionList`, `attentionCount`,
+  `recentOrders` and `lowStockList`; `ordersTable`; the order screen's `orderLabel`, `orderStatusBadge`,
+  `orderPriority`, `orderAvatar`, `orderCustomer`, `orderFacts`, `orderItems`, `orderSteps`, `orderProgress` and
+  `orderNote`; `newOrderCustomer` and `newOrderProduct`; `customerName`, `customerAvatar`, `customerFacts` and
+  `customerOrders`; `editorName`, `editorPrice` and `editorStock`. Every `target`, `from`, `into` and bare path
+  value of the rules that named one of them by `$.screens.…` is `#id.property` (46 references). What stays a state
+  path: a rule trigger (`ordersFilter`'s `when.path`), and a path read inside an expression (`if`, `filter`,
+  `{{ … }}`), neither of which takes a `#` reference. The committed showcase is regenerated. Test:
+  `test/showcase.integration.test.ts` ("should label a new Northwind order with its number after a hash and count it
+  on the screens that do not show"), which reads the orders table's total and the dashboard's open-orders figure,
+  both written by id from the order screen, and expects no `logic.failed`.
+- **The Lumen window's maximize control is tested.** `windowPlace` writes `maximized` on the window node by its id
+  and the placement into the window's record. Test: `test/showcase.integration.test.ts` ("should maximize and
+  restore a Lumen window with its control, writing maximized and the placement on the window"): focus on the window,
+  four Tabs to the maximize control, Enter; `maximized` turns true and the placement fills the surface, and the same
+  press turns both back.
 - **The Lumen desktop's logic names its nodes by id.** Each window carries `@id` `{app}Window` and each taskbar
   button `{app}Task`, and the tables `windowShow` and `windowPlace` write `#{app}Window.hidden`,
   `#{app}Task.hidden`, `#{app}Task.variant` and `#{app}Window.maximized`. The file listing (`fileListing`), the
   Viewer's picture (`viewerPicture`), the wallpaper (`deskWallpaper`) and the delete dialog (`deleteDialog`) have ids
   too, which the rules' `into` and `copy` targets and the Delete button's `open` name, so a node can move without the
-  logic changing. Rule triggers stay `$.raised.…` paths (a trigger takes no `#` reference), and Northwind Ops keeps
-  state paths: its rules write nodes of screens other than the one shown, and logic finds an id in the current
-  screen and the app node only. Test: `test/showcase.integration.test.ts` ("should open, minimize, restore and close
+  logic changing. Rule triggers stay `$.raised.…` paths (a trigger takes no `#` reference). Test: `test/showcase.integration.test.ts` ("should open, minimize, restore and close
   a Lumen window, …"), which now presses the window's close control with the keyboard (focus on the window, Tab to
   the control, Enter) where it wrote the data.
 - **Fix: `ui_state_get` with a `path` reads a node property the instance has not changed.** The instance keeps

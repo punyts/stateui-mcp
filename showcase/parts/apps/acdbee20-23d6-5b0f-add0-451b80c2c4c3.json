@@ -148,6 +148,7 @@
                       "_subtitle": "All orders, without cancellations",
                       "children": {
                         "stat": {
+                          "@id": "revenueStat",
                           "component": "stat",
                           "format": "currency",
                           "currency": "EUR",
@@ -163,6 +164,7 @@
                       "_subtitle": "Not shipped yet",
                       "children": {
                         "stat": {
+                          "@id": "openOrdersStat",
                           "component": "stat",
                           "_label": "Open",
                           "value": 0
@@ -175,6 +177,7 @@
                       "_subtitle": "With an account",
                       "children": {
                         "stat": {
+                          "@id": "customersStat",
                           "component": "stat",
                           "_label": "Active",
                           "value": 0
@@ -201,6 +204,7 @@
                       },
                       "children": {
                         "bar": {
+                          "@id": "fulfilmentBar",
                           "component": "progress",
                           "_label": "Shipped or delivered",
                           "tone": "success",
@@ -217,6 +221,7 @@
                               "textRole": "caption"
                             },
                             "pending": {
+                              "@id": "pendingBadge",
                               "component": "badge",
                               "tone": "warning",
                               "_text": "Pending",
@@ -229,6 +234,7 @@
                               "textRole": "caption"
                             },
                             "cancelled": {
+                              "@id": "cancelledBadge",
                               "component": "badge",
                               "tone": "danger",
                               "_text": "Cancelled",
@@ -254,6 +260,7 @@
                           "_text": "Pending express orders should leave the warehouse today."
                         },
                         "count": {
+                          "@id": "attentionCount",
                           "component": "stat",
                           "_label": "Express and pending",
                           "tone": "warning",
@@ -261,6 +268,7 @@
                           "value": 0
                         },
                         "list": {
+                          "@id": "attentionList",
                           "component": "list",
                           "divided": true,
                           "_empty": "No express order is waiting",
@@ -293,6 +301,7 @@
                       },
                       "children": {
                         "chart": {
+                          "@id": "statusChart",
                           "component": "chart",
                           "type": "donut",
                           "x": "label",
@@ -343,6 +352,7 @@
                       "_subtitle": "At or below the reorder level",
                       "children": {
                         "list": {
+                          "@id": "lowStockList",
                           "component": "list",
                           "divided": true,
                           "_empty": "Every product is in stock",
@@ -376,6 +386,7 @@
                       },
                       "children": {
                         "table": {
+                          "@id": "recentOrders",
                           "component": "table",
                           "striped": true,
                           "_empty": "No orders yet",
@@ -517,6 +528,7 @@
                   "_text": "Open an order to see it, ship it or cancel it."
                 },
                 "table": {
+                  "@id": "ordersTable",
                   "component": "table",
                   "striped": true,
                   "resizable": true,
@@ -666,17 +678,20 @@
                           }
                         },
                         "label": {
+                          "@id": "orderLabel",
                           "component": "text",
                           "textRole": "title",
                           "element": "h2",
                           "_text": "Order"
                         },
                         "status": {
+                          "@id": "orderStatusBadge",
                           "component": "badge",
                           "tone": "neutral",
                           "_text": "pending"
                         },
                         "priority": {
+                          "@id": "orderPriority",
                           "component": "chip",
                           "size": "sm",
                           "icon": "truck",
@@ -751,10 +766,12 @@
                           "component": "toolbar",
                           "children": {
                             "avatar": {
+                              "@id": "orderAvatar",
                               "component": "avatar",
                               "_name": "Customer"
                             },
                             "name": {
+                              "@id": "orderCustomer",
                               "component": "text",
                               "textRole": "heading",
                               "_text": "Customer"
@@ -762,6 +779,7 @@
                           }
                         },
                         "facts": {
+                          "@id": "orderFacts",
                           "component": "descriptionList",
                           "record": {
                             "email": "",
@@ -800,6 +818,7 @@
                       "_title": "Items",
                       "children": {
                         "facts": {
+                          "@id": "orderItems",
                           "component": "descriptionList",
                           "record": {
                             "productName": "",
@@ -850,6 +869,7 @@
                       },
                       "children": {
                         "steps": {
+                          "@id": "orderSteps",
                           "component": "stepper",
                           "linear": false,
                           "_label": "Fulfilment steps",
@@ -874,6 +894,7 @@
                           "orientation": "vertical"
                         },
                         "progress": {
+                          "@id": "orderProgress",
                           "component": "progress",
                           "_label": "Fulfilment",
                           "tone": "success",
@@ -893,6 +914,7 @@
                       },
                       "children": {
                         "note": {
+                          "@id": "orderNote",
                           "component": "textareaField",
                           "_label": "Only your team sees this note",
                           "value": ""
@@ -999,6 +1021,7 @@
                   },
                   "children": {
                     "customer": {
+                      "@id": "newOrderCustomer",
                       "component": "selectField",
                       "_label": "Customer",
                       "required": true,
@@ -1008,6 +1031,7 @@
                       "value": ""
                     },
                     "product": {
+                      "@id": "newOrderProduct",
                       "component": "selectField",
                       "_label": "Product",
                       "required": true,
@@ -1290,10 +1314,12 @@
                       },
                       "children": {
                         "avatar": {
+                          "@id": "customerAvatar",
                           "component": "avatar",
                           "_name": "Customer"
                         },
                         "name": {
+                          "@id": "customerName",
                           "component": "text",
                           "textRole": "heading",
                           "_text": "Pick a customer in the list"
@@ -1301,6 +1327,7 @@
                       }
                     },
                     "facts": {
+                      "@id": "customerFacts",
                       "component": "descriptionList",
                       "record": {
                         "email": "",
@@ -1328,6 +1355,7 @@
                       }
                     },
                     "orders": {
+                      "@id": "customerOrders",
                       "component": "table",
                       "items": [],
                       "_empty": "No orders yet",
@@ -1460,6 +1488,7 @@
                   },
                   "children": {
                     "name": {
+                      "@id": "editorName",
                       "component": "text",
                       "textRole": "heading",
                       "_text": "No product picked"
@@ -1474,6 +1503,7 @@
                       },
                       "children": {
                         "price": {
+                          "@id": "editorPrice",
                           "component": "numberField",
                           "_label": "Price",
                           "format": "currency",
@@ -1483,6 +1513,7 @@
                           "value": 0
                         },
                         "stock": {
+                          "@id": "editorStock",
                           "component": "numberField",
                           "_label": "Stock",
                           "min": 0,
@@ -1734,32 +1765,32 @@
           "do": [
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.figures.children.revenue.children.stat.value",
+              "target": "#revenueStat.value",
               "value": "{{ round(sum($.data.orders, 'revenue')) }}"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.figures.children.open.children.stat.value",
+              "target": "#openOrdersStat.value",
               "value": "{{ count($.data.orders, 'status', 'pending') + count($.data.orders, 'status', 'paid') + count($.data.orders, 'status', 'packed') }}"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.grid.children.fulfilment.children.bar.value",
+              "target": "#fulfilmentBar.value",
               "value": "{{ round((count($.data.orders, 'status', 'shipped') + count($.data.orders, 'status', 'delivered')) * 100 / size($.data.orders)) }}"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.grid.children.fulfilment.children.badges.children.pending.count",
+              "target": "#pendingBadge.count",
               "value": "{{ count($.data.orders, 'status', 'pending') }}"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.grid.children.fulfilment.children.badges.children.cancelled.count",
+              "target": "#cancelledBadge.count",
               "value": "{{ count($.data.orders, 'status', 'cancelled') }}"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.grid.children.status.children.chart.records",
+              "target": "#statusChart.records",
               "value": {
                 "pending": {
                   "label": "Pending",
@@ -1792,12 +1823,12 @@
               "from": "$.data.orders",
               "filter": "$record.priority === 'express' && $record.status === 'pending'",
               "sort": "number",
-              "into": "$.screens.home.children.content.children.grid.children.attention.children.list"
+              "into": "#attentionList"
             },
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.grid.children.attention.children.count.value",
-              "value": "$.screens.home.children.content.children.grid.children.attention.children.list.total"
+              "target": "#attentionCount.value",
+              "value": "#attentionList.total"
             },
             {
               "command": "query",
@@ -1807,7 +1838,7 @@
                 "first": 0,
                 "count": 6
               },
-              "into": "$.screens.home.children.content.children.grid.children.recent.children.table"
+              "into": "#recentOrders"
             }
           ]
         },
@@ -1818,7 +1849,7 @@
           "do": [
             {
               "command": "set",
-              "target": "$.screens.home.children.content.children.figures.children.customers.children.stat.value",
+              "target": "#customersStat.value",
               "value": "{{ size($.data.customers) }}"
             }
           ]
@@ -1833,7 +1864,7 @@
               "from": "$.data.products",
               "filter": "$record.stock <= $record.reorderAt",
               "sort": "stock",
-              "into": "$.screens.home.children.content.children.grid.children.lowStock.children.list"
+              "into": "#lowStockList"
             }
           ]
         },
@@ -1847,7 +1878,7 @@
               "from": "$.data.orders",
               "filter": "(coalesce($.screens.orders.children.content.children.tools.children.status.value, 'all') === 'all' || $record.status === $.screens.orders.children.content.children.tools.children.status.value) && (includes(lower($record.customer), lower($.screens.orders.children.content.children.tools.children.search.value)) || includes($record.label, $.screens.orders.children.content.children.tools.children.search.value))",
               "sort": "-number",
-              "into": "$.screens.orders.children.content.children.table"
+              "into": "#ordersTable"
             }
           ]
         },
@@ -1861,7 +1892,7 @@
               "from": "$.data.orders",
               "filter": "(coalesce($.screens.orders.children.content.children.tools.children.status.value, 'all') === 'all' || $record.status === $.screens.orders.children.content.children.tools.children.status.value) && (includes(lower($record.customer), lower($.screens.orders.children.content.children.tools.children.search.value)) || includes($record.label, $.screens.orders.children.content.children.tools.children.search.value))",
               "sort": "-number",
-              "into": "$.screens.orders.children.content.children.table"
+              "into": "#ordersTable"
             }
           ]
         },
@@ -1902,57 +1933,57 @@
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.label",
-              "target": "$.screens.order.children.content.children.top.children.title.children.label._text"
+              "target": "#orderLabel._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.status",
-              "target": "$.screens.order.children.content.children.top.children.title.children.status._text"
+              "target": "#orderStatusBadge._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.statusTone",
-              "target": "$.screens.order.children.content.children.top.children.title.children.status.tone"
+              "target": "#orderStatusBadge.tone"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.priority",
-              "target": "$.screens.order.children.content.children.top.children.title.children.priority._text"
+              "target": "#orderPriority._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.customer",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.who.children.avatar._name"
+              "target": "#orderAvatar._name"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.customer",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.who.children.name._text"
+              "target": "#orderCustomer._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.facts.record"
+              "target": "#orderFacts.record"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}",
-              "target": "$.screens.order.children.content.children.grid.children.items.children.facts.record"
+              "target": "#orderItems.record"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.status",
-              "target": "$.screens.order.children.content.children.grid.children.history.children.steps.active"
+              "target": "#orderSteps.active"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.progress",
-              "target": "$.screens.order.children.content.children.grid.children.history.children.progress.value"
+              "target": "#orderProgress.value"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.notes",
-              "target": "$.screens.order.children.content.children.grid.children.notes.children.note.value"
+              "target": "#orderNote.value"
             }
           ]
         },
@@ -1965,42 +1996,42 @@
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.status",
-              "target": "$.screens.order.children.content.children.top.children.title.children.status._text"
+              "target": "#orderStatusBadge._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.statusTone",
-              "target": "$.screens.order.children.content.children.top.children.title.children.status.tone"
+              "target": "#orderStatusBadge.tone"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.customer",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.who.children.avatar._name"
+              "target": "#orderAvatar._name"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.customer",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.who.children.name._text"
+              "target": "#orderCustomer._text"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.facts.record"
+              "target": "#orderFacts.record"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}",
-              "target": "$.screens.order.children.content.children.grid.children.items.children.facts.record"
+              "target": "#orderItems.record"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.status",
-              "target": "$.screens.order.children.content.children.grid.children.history.children.steps.active"
+              "target": "#orderSteps.active"
             },
             {
               "command": "copy",
               "from": "$.data.orders.{{ $.route.params.id }}.progress",
-              "target": "$.screens.order.children.content.children.grid.children.history.children.progress.value"
+              "target": "#orderProgress.value"
             }
           ]
         },
@@ -2048,7 +2079,7 @@
           "do": [
             {
               "command": "copy",
-              "from": "$.screens.order.children.content.children.grid.children.notes.children.note.value",
+              "from": "#orderNote.value",
               "target": "$.data.orders.{{ $.route.params.id }}.notes"
             }
           ]
@@ -2067,7 +2098,7 @@
             },
             {
               "command": "set",
-              "target": "$.screens.order.children.content.children.grid.children.customer.children.facts.record.shipped",
+              "target": "#orderFacts.record.shipped",
               "value": "{{ today() }}"
             }
           ]
@@ -2084,10 +2115,10 @@
               "value": {
                 "number": "{{ max($.data.orders, 'number') + 1 }}",
                 "label": "{{ '#' + string(max($.data.orders, 'number') + 1) }}",
-                "customerId": "$.screens.create.children.content.children.form.children.customer.value",
+                "customerId": "#newOrderCustomer.value",
                 "customer": "",
                 "email": "",
-                "product": "$.screens.create.children.content.children.form.children.product.value",
+                "product": "#newOrderProduct.value",
                 "productName": "",
                 "sku": "",
                 "unitPrice": 0,
@@ -2162,24 +2193,24 @@
             {
               "command": "copy",
               "from": "$.data.customers.{{ first($trigger) }}.name",
-              "target": "$.screens.customers.children.content.children.detail.children.who.children.name._text"
+              "target": "#customerName._text"
             },
             {
               "command": "copy",
               "from": "$.data.customers.{{ first($trigger) }}.name",
-              "target": "$.screens.customers.children.content.children.detail.children.who.children.avatar._name"
+              "target": "#customerAvatar._name"
             },
             {
               "command": "copy",
               "from": "$.data.customers.{{ first($trigger) }}",
-              "target": "$.screens.customers.children.content.children.detail.children.facts.record"
+              "target": "#customerFacts.record"
             },
             {
               "command": "query",
               "from": "$.data.orders",
               "filter": "$record.customerId === first($trigger)",
               "sort": "-number",
-              "into": "$.screens.customers.children.content.children.detail.children.orders"
+              "into": "#customerOrders"
             }
           ]
         },
@@ -2192,17 +2223,17 @@
             {
               "command": "copy",
               "from": "$.data.products.{{ first($trigger) }}.name",
-              "target": "$.screens.products.children.content.children.editor.children.name._text"
+              "target": "#editorName._text"
             },
             {
               "command": "copy",
               "from": "$.data.products.{{ first($trigger) }}.price",
-              "target": "$.screens.products.children.content.children.editor.children.fields.children.price.value"
+              "target": "#editorPrice.value"
             },
             {
               "command": "copy",
               "from": "$.data.products.{{ first($trigger) }}.stock",
-              "target": "$.screens.products.children.content.children.editor.children.fields.children.stock.value"
+              "target": "#editorStock.value"
             }
           ]
         },
@@ -2214,12 +2245,12 @@
           "do": [
             {
               "command": "set",
-              "target": "$.screens.products.children.content.children.editor.children.fields.children.stock.value",
+              "target": "#editorStock.value",
               "value": "{{ round(coalesce($.screens.products.children.content.children.editor.children.fields.children.stock.value, 0) * 1) + 50 }}"
             },
             {
               "command": "copy",
-              "from": "$.screens.products.children.content.children.editor.children.fields.children.stock.value",
+              "from": "#editorStock.value",
               "target": "$.data.products.{{ $.screens.products.children.content.children.table.selected }}.stock"
             }
           ]
