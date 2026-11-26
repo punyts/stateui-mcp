@@ -20,7 +20,7 @@ const APP = deepFreeze({
     app: { component: 'app', toasts: { component: 'hero' } },
     screens: {
         home: { root: { component: 'stack', children: { top: { component: 'hero' }, go: { component: 'button', on: { click: [{ command: 'navigate', target: 'about' }] } } } } },
-        about: { root: { component: 'text', on: { click: [{ command: 'navigate', target: 'home' }, { command: 'emit', target: 'about' }] } } }
+        about: { root: { component: 'text', on: { click: [{ command: 'navigate', target: 'home' }, { command: 'set', target: '$.data.about', value: 'about' }] } } }
     }
 }) as unknown as UiPartBodies['apps'];
 
@@ -104,7 +104,7 @@ describe('appWithRenamedScreen', () => {
         // Assert
         expect(renamed.start).toBe('welcome');
         expect(Object.keys(renamed.screens)).toEqual(['welcome', 'about']);
-        expect(renamed.screens['about']).toEqual({ root: { component: 'text', on: { click: [{ command: 'navigate', target: 'welcome' }, { command: 'emit', target: 'about' }] } } });
+        expect(renamed.screens['about']).toEqual({ root: { component: 'text', on: { click: [{ command: 'navigate', target: 'welcome' }, { command: 'set', target: '$.data.about', value: 'about' }] } } });
     });
 
     it('should keep the start of another screen and give undefined for a missing screen', () => {

@@ -36,8 +36,9 @@
  *
  * The page it runs in can take part: `data-host-keys` on the body names key chords (`mod+shift+e`, space-separated)
  * the runtime gives the page instead of the app, each raised on `window` as a `stateui:key` event (`detail.key`),
- * and every `emit` of the app is raised there too, as a `stateui:emit` event (`detail.name`, `detail.payload`), as
- * well as sent to the server. Every change of the synced state is raised as `stateui:change` (`detail.path`,
+ * and every event of a node of the app that carries an `@id` is raised there too, as a `stateui:raised` event whose
+ * `detail` is the `RaisedReport` (`id`, `event`, `value?`, `row?`), as well as sent to the server as the app event
+ * `<id>.<event>` with the report as its payload. Every change of the synced state is raised as `stateui:change` (`detail.path`,
  * `detail.value`, undefined for a delete, and `detail.origin`, `user` for the person's own change in this view, else
  * `server`; a whole state the sync client loads comes as one change of `$.data`).
  *
@@ -55,8 +56,8 @@
  * - `mount(element, { document, icons?, keys?, inPage? })` puts a second runtime frame in `element` (with `inPage`, in
  *   the page surface, a runtime on an element of the page instead, whose `embeddedApp` nodes reach `apps`), driven by the page alone: it
  *   is loaded in `standalone` mode with the document given and the page's language and mode (`data-locale`,
- *   `data-mode` on the body), takes the page's writes and commands, and raises its emits on `element`
- *   (not on `window`) as `stateui:emit`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
+ *   `data-mode` on the body), takes the page's writes and commands, and raises the reports of its nodes with an
+ *   `@id` on `element` (not on `window`) as `stateui:raised`; a chord named in `keys` comes to `window` as `stateui:key`. It never syncs.
  *   The panel it returns also has `inspect` (as above, of its own frame), `watch(paths, listener)` (where those nodes
  *   are, now and whenever they move, and the popovers open in the frame), `view({ locale?, mode? })` and `frame()`. Magnetic draws its whole editor, and
  *   its sign-in and link pages, with it.
@@ -70,8 +71,8 @@
  *   by name: `pages(provider)` gives it a provider whose `open(name)` answers a page's `{ document, icons?, title? }`
  *   (undefined for a name that is not one), mounted in the asking element as a panel in the page, sized to it. The
  *   provider's `mounted(name, panel, element)` is handed the panel (as `mount` returns it) and `disposed(name, panel)`
- *   is called when the `embeddedApp` lets it go; its emits reach the `embeddedApp` and `stateui:emit` on the
- *   element. It refuses every other app.
+ *   is called when the `embeddedApp` lets it go; the reports of its nodes with an `@id` reach the `embeddedApp`
+ *   and `stateui:raised` on the element. It refuses every other app.
  *
  * A page with no `data-app-id` has no app of its own: it only mounts panels.
  *
@@ -89,7 +90,7 @@ import { BOUND_DECIDE, BOUND_REQUESTS, newRequests, requestEntries } from './req
 import { ALLOWED_FILE_TYPES } from '../domain/UiFile.js';
 import type { ServerMessage, ViewChannel } from './viewChannel.js';
 import type { LocalChange, LocalStore, StoreBridge, SyncClient, SyncRequest, SyncState, SyncStatusReport } from '@punyts/state-sync';
-import type { AppAsk, AppDocument, AppHost, AppOpenRequest, AttachedApp, EmbeddedApp, OpenedApp, RuntimeCore, StateuiPage } from '@punyts/stateui-app';
+import type { AppAsk, AppDocument, AppHost, AppOpenRequest, AttachedApp, EmbeddedApp, OpenedApp, RaisedReport, RuntimeCore, StateuiPage } from '@punyts/stateui-app';
 
 /** A key chord the page may name in `data-host-keys`: modifiers (mod, shift, alt, in that order) and a letter or a digit */
 const HOST_KEY = /^(mod\+)?(shift\+)?(alt\+)?([a-z0-9=-]|escape)$/;
@@ -128,8 +129,15 @@ function markedPaths(document: JsonRecord | undefined): { local: string[]; secre
     const list = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
     return { local: list(document?.['local']), secret: list(document?.['secret']) };
 }
+/** The report of a `raised` message of the runtime (validated there), without the protocol fields */
+function raisedOf(message: RuntimeMessage): RaisedReport | undefined {
+    const { id, event, value, row } = message as { id?: unknown; event?: unknown; value?: unknown; row?: unknown };
+    if (typeof id !== 'string' || typeof event !== 'string') return undefined;
+    return { id, event, ...(value === undefined ? {} : { value: value as RaisedReport['value'] }), ...(row === undefined ? {} : { row: row as RaisedReport['row'] }) };
+}
+
 /** What a page that attaches the live app to one of its elements gives with it */
-type AttachRequest = Pick<AppOpenRequest, 'screen' | 'onEmit' | 'onNavigate'>;
+type AttachRequest = Pick<AppOpenRequest, 'screen' | 'onRaised' | 'onNavigate'>;
 /** A navigation replaces `$.route` or writes below it */
 const ROUTE_PATHS = ['$.route', '$.route.$all'];
 
@@ -830,13 +838,15 @@ export class LiveView {
                 if (message['step'] === 'undo') this.client?.undo();
                 else if (message['step'] === 'redo') this.client?.redo();
                 break;
-            case 'emit':
-                if (typeof message['name'] === 'string') {
-                    this.channel.event(message['name'], message['payload'] as Json | undefined);
-                    window.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
-                    this.attached?.onEmit(message['name'], message['payload']);
+            case 'raised': {
+                const report = raisedOf(message);
+                if (report !== undefined) {
+                    this.channel.event(`${report.id}.${report.event}`, report as unknown as Json);
+                    window.dispatchEvent(new CustomEvent('stateui:raised', { detail: report }));
+                    this.attached?.onRaised(report);
                 }
                 break;
+            }
             case 'key':
                 if (typeof message['key'] === 'string' && this.hostKeys.includes(message['key'])) window.dispatchEvent(new CustomEvent('stateui:key', { detail: { key: message['key'] } }));
                 break;
@@ -905,8 +915,8 @@ export class LiveView {
 
     /**
      * Mounts the live app on `element`, a node of the page (an `embeddedApp`'s element), on `request.screen`; page
-     * surface only. A mount elsewhere is disposed first, and the app loads again from the synced state. The app's emits
-     * and the screens it moves to itself go to the request as well. Disposing it unmounts the app; the view keeps
+     * surface only. A mount elsewhere is disposed first, and the app loads again from the synced state. The reports of
+     * its nodes with an `@id` and the screens it moves to itself go to the request as well. Disposing it unmounts the app; the view keeps
      * syncing, and the next `attach` shows it again
      */
     attach(element: Element, request: AttachRequest): EmbeddedApp {
@@ -1098,7 +1108,7 @@ function changed(path: string, value: Json | undefined, origin: 'user' | 'server
 
 /**
  * A runtime frame the page drives alone: loaded in `standalone` mode with a document the page gives, it takes the
- * page's writes and commands and raises its emits on its element. Nothing of it is synced or stored
+ * page's writes and commands and raises the reports of its nodes with an `@id` on its element. Nothing of it is synced or stored
  */
 /** What `stateuiHost.mount` puts in an element: a document, its icons, the chords the page takes, and where it runs */
 interface PanelApp {
@@ -1287,8 +1297,9 @@ class PageView {
             this.holder.style.visibility = '';
             for (const queued of this.queued.splice(0)) this.send(queued);
             this.element.dispatchEvent(new CustomEvent('stateui:ready'));
-        } else if (message['type'] === 'emit' && typeof message['name'] === 'string') {
-            this.element.dispatchEvent(new CustomEvent('stateui:emit', { detail: { name: message['name'], payload: message['payload'] } }));
+        } else if (message['type'] === 'raised') {
+            const report = raisedOf(message);
+            if (report !== undefined) this.element.dispatchEvent(new CustomEvent('stateui:raised', { detail: report }));
         } else if (message['type'] === 'error') {
             this.element.dispatchEvent(new CustomEvent('stateui:error', { detail: { errors: message['errors'] } }));
         } else if (message['type'] === 'inspected' && typeof message['id'] === 'number') {
@@ -1332,22 +1343,21 @@ function appHost(live: LiveView | undefined, pages: () => SitePages | undefined,
 }
 
 /**
- * A site page in the element an `embeddedApp` gives: a panel in the page that fills it, its emits handed to the
- * `embeddedApp` as well as raised on the element, and the provider told when it is mounted and let go
+ * A site page in the element an `embeddedApp` gives: a panel in the page that fills it, the reports of its nodes with an
+ * `@id` handed to the `embeddedApp` as well as raised on the element, and the provider told when it is mounted and let go
  */
 function attachPage(
     name: string,
     app: PanelApp & { readonly title?: string },
-    request: Pick<AppOpenRequest, 'element' | 'onEmit'>,
+    request: Pick<AppOpenRequest, 'element' | 'onRaised'>,
     site: SitePages,
     panelOf: (element: HTMLElement, app: PanelApp, title: string) => Panel
 ): EmbeddedApp {
     const element = request.element as HTMLElement;
-    const onEmit = (event: Event): void => {
-        const detail = (event as CustomEvent<{ name: string; payload: unknown }>).detail;
-        request.onEmit(detail.name, detail.payload);
+    const onRaised = (event: Event): void => {
+        request.onRaised((event as CustomEvent<RaisedReport>).detail);
     };
-    element.addEventListener('stateui:emit', onEmit);
+    element.addEventListener('stateui:raised', onRaised);
     const panel = panelOf(element, { document: app.document, ...(app.icons !== undefined && { icons: app.icons }), ...(app.keys !== undefined && { keys: app.keys }), inPage: true, fill: true }, app.title ?? name);
     site.mounted?.(name, panel, element);
     let disposed = false;
@@ -1359,7 +1369,7 @@ function attachPage(
         dispose: () => {
             if (disposed) return;
             disposed = true;
-            element.removeEventListener('stateui:emit', onEmit);
+            element.removeEventListener('stateui:raised', onRaised);
             panel.dispose();
             site.disposed?.(name, panel);
         }

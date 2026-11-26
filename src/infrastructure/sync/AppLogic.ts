@@ -26,7 +26,7 @@ const ROOTS = ['$.app', '$.data', '$.server', '$.screens', ROUTE_PATH];
 const APP_ROOT = '$.app';
 const SCREENS_ROOT = '$.screens';
 
-/** What the app server learns from an app's logic: an `emit` or a failure, for `ui_events_read` */
+/** What the app server learns from an app's logic: a failure, for `ui_events_read` */
 export type AppLogicEvent = (name: string, payload: JsonValue | undefined) => void;
 
 /** Answers an app's effects whose function the server does not have (`LogicHost.effect`) */
@@ -81,7 +81,7 @@ export interface DataGate {
  *
  * The authority keeps `$.app` and `$.screens` sparse, so both are read through the document: the authority's value laid
  * over the document's value with the shape defaults. `notify` and `logic.failed` are sent to the views as app events;
- * `emit` and failures also go to `onEvent`, for the agent. The value a client change replaces is read before it is
+ * failures also go to `onEvent`, for the agent. The value a client change replaces is read before it is
  * applied (`onChange`), for `$previous`. Timers run on `setTimeout` without keeping the process alive; `call` goes to
  * `onCall`
  */
@@ -190,7 +190,6 @@ export class AppLogic {
             initial: index.initial,
             records: index.records,
             notify: (name, payload) => this.authority.emit(`${NOTIFY_PREFIX}${name}`, payload as SyncValue),
-            emit: (name, payload) => this.onEvent(name, payload as JsonValue),
             schedule: (ms, run) => {
                 const timer = setTimeout(() => {
                     if (this.timerAllowed(host)) run();

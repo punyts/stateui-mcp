@@ -26,14 +26,14 @@ function trigger(when: JsonValue | undefined): string {
     return parts.length === 0 ? 'when ?' : parts.join(' ');
 }
 
-/** The commands as `name`, with the notify, emit or call target, the `as` name and a reject reason */
+/** The commands as `name`, with the notify or call target, the `as` name and a reject reason */
 function commands(list: JsonValue | undefined): string {
     if (!Array.isArray(list) || list.length === 0) return '';
     const names = (list as readonly JsonValue[]).map((item) => {
         if (!isJsonObject(item) || typeof item['command'] !== 'string') return '?';
         const name = item['command'];
         const parts = [name];
-        if ((name === 'notify' || name === 'emit' || name === 'call') && typeof item['target'] === 'string') parts.push(item['target']);
+        if ((name === 'notify' || name === 'call') && typeof item['target'] === 'string') parts.push(item['target']);
         if (typeof item['as'] === 'string') parts.push(`as ${item['as']}`);
         if (name === 'reject' && typeof item['reason'] === 'string') parts.push(`"${shorten(item['reason'])}"`);
         return parts.join(' ');

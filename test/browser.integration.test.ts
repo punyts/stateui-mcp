@@ -113,8 +113,10 @@ describe.skipIf(!installed)('headless browser flow (Chromium through Playwright)
         // Assert
         expect(interacted.isError).toBe(false);
         expect((interacted.body['results'] as { ok: boolean }[]).map((result) => result.ok)).toEqual([true, true]);
-        expect((interacted.body['emits'] as { name: string }[]).map((event) => event.name)).toEqual(['form.saved']);
-        expect((after.body['events'] as { name: string; payload: unknown }[]).map((event) => [event.name, event.payload])).toEqual([['form.saved', 'ok']]);
+        expect((interacted.body['raised'] as { name: string }[]).map((event) => event.name)).toEqual(['save.press']);
+        const events = after.body['events'] as { name: string; payload: unknown }[];
+        expect(events.map((event) => event.name)).toEqual(['save.press']);
+        expect(events[0]?.payload).toMatchObject({ id: 'save', event: 'press' });
     });
 
     it('should have the typed value synced to the server', async () => {
@@ -1949,9 +1951,9 @@ describe.skipIf(!installed)('the host script serving an editor over the page (st
         expect(seen).toContainEqual({ path: '$.data.notes.n1', value: { title: 'one' }, origin: 'server' });
     });
 
-    it('should mount a frame the page drives: it takes a write and raises its emits on its element', async () => {
+    it('should mount a frame the page drives: it takes a write and raises the reports of its nodes with an @id on its element', async () => {
         // Arrange
-        const panel = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', on: { press: { command: 'emit', target: 'picked', value: 'x' } } } } } };
+        const panel = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', '@id': 'picked' } } } };
 
         // Act
         await page.evaluate((document_) => {
@@ -1960,7 +1962,7 @@ describe.skipIf(!installed)('the host script serving an editor over the page (st
             document.body.append(element);
             const emits: unknown[] = [];
             (window as unknown as { emits: unknown[] }).emits = emits;
-            element.addEventListener('stateui:emit', (event) => emits.push((event as CustomEvent).detail));
+            element.addEventListener('stateui:raised', (event) => emits.push((event as CustomEvent).detail));
             const host = (window as unknown as { stateuiHost: { mount(e: HTMLElement, a: object): { write(w: object[]): void } } }).stateuiHost;
             host.mount(element, { document: document_ }).write([{ path: '$.app.children.go._title', value: 'Pick' }]);
         }, panel);
@@ -1971,8 +1973,8 @@ describe.skipIf(!installed)('the host script serving an editor over the page (st
         const appEmits = await call(harness.client, 'ui_events_read', { app: 'editing' });
 
         // Assert
-        expect(emits).toEqual([{ name: 'picked', payload: 'x' }]);
-        expect((appEmits.body['events'] as { name: string }[]).some((event) => event.name === 'picked')).toBe(false);
+        expect(emits).toEqual([expect.objectContaining({ id: 'picked', event: 'press' })]);
+        expect((appEmits.body['events'] as { name: string }[]).some((event) => event.name.startsWith('picked.'))).toBe(false);
     });
 });
 
@@ -2052,7 +2054,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
                 inside.dispatchEvent(new CustomEvent('ui-app-open', {
                     bubbles: true,
                     composed: true,
-                    detail: { app: 'site-page', live: false, element: document.createElement('div'), onEmit: () => undefined, onNavigate: () => undefined, respond: (result: Promise<unknown>) => result.then(() => resolve('opened'), () => resolve('refused')) }
+                    detail: { app: 'site-page', live: false, element: document.createElement('div'), onRaised: () => undefined, onNavigate: () => undefined, respond: (result: Promise<unknown>) => result.then(() => resolve('opened'), () => resolve('refused')) }
                 }));
                 setTimeout(() => resolve('unanswered'), 2000);
             });
@@ -2125,7 +2127,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
             document.body.append(element);
             const host = (window as unknown as { stateuiHost: { apps: { open(ask: { app: string; live: boolean }): Promise<{ attach(request: object): unknown }> } } }).stateuiHost;
             const opened = await host.apps.open({ app: appId, live: true });
-            opened.attach({ element, onEmit: () => undefined, onNavigate: () => undefined });
+            opened.attach({ element, onRaised: () => undefined, onNavigate: () => undefined });
         }, app.id);
         await call(harness.client, 'ui_state_set', { app: app.name, path: `${EMAIL}.value`, value: 'attached@page.test' });
 
@@ -2148,7 +2150,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
             const element = document.body.appendChild(document.createElement('section'));
             const host = (window as unknown as { stateuiHost: { apps: { open(ask: { app: string; live: boolean }): Promise<{ attach?(request: object): unknown; follows?: unknown }> } } }).stateuiHost;
             const live = await host.apps.open({ app: appId, live: true });
-            live.attach?.({ element, onEmit: () => undefined, onNavigate: () => undefined });
+            live.attach?.({ element, onRaised: () => undefined, onNavigate: () => undefined });
             const preview = await host.apps.open({ app: appId, live: false });
             seen.push(preview.follows === undefined ? 'preview alone' : 'preview');
             return seen;
@@ -2183,7 +2185,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.close();
     });
 
-    it("should open a page of the site's own by name in an embeddedApp, hand its provider the panel and pass its emits on", async () => {
+    it("should open a page of the site's own by name in an embeddedApp, hand its provider the panel and pass its raised events on", async () => {
         // Arrange: a provider of one page, side, that records what it is handed
         const app = await createApp(harness.client, 'in-page-site');
         const page = await browser.newPage();
@@ -2191,7 +2193,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.evaluate(() => {
             const seen: unknown[] = [];
             (window as unknown as { seen: unknown[] }).seen = seen;
-            const side = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', on: { press: { command: 'emit', target: 'picked', value: 'x' } } } } } };
+            const side = { app: { component: 'panel', children: { go: { component: 'button', _title: 'Go', '@id': 'picked' } } } };
             const host = (window as unknown as { stateuiHost: { pages(provider: object): void } }).stateuiHost;
             host.pages({
                 open: (name: string) => (name === 'side' ? Promise.resolve({ document: side, title: 'Side' }) : undefined),
@@ -2208,7 +2210,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
             const element = document.createElement('section');
             element.id = 'panel';
             document.body.append(element);
-            element.addEventListener('emit', (event) => (window as unknown as { seen: unknown[] }).seen.push((event as CustomEvent).detail));
+            element.addEventListener('raised', (event) => (window as unknown as { seen: unknown[] }).seen.push((event as CustomEvent).detail));
             const document_ = {
                 app: {
                     component: 'panel',
@@ -2225,7 +2227,7 @@ describe.skipIf(!installed)('the live app in the page, B3a of the screens board 
         await page.waitForFunction(() => (window as unknown as { seen: unknown[] }).seen.length > 1);
 
         // Assert
-        expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(['mounted side', { name: 'picked', payload: 'x' }]);
+        expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(['mounted side', expect.objectContaining({ id: 'picked', event: 'press' })]);
         await expect.poll(() => page.locator('#panel').getByText('Nobody').isVisible()).toBe(true);
         expect(await page.locator('iframe').count()).toBe(0);
         await page.close();

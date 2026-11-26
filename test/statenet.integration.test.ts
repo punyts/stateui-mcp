@@ -128,17 +128,17 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         const interacted = await call(client, 'ui_interact', { app: 'contact', actions: [{ action: 'click', path: '$.screens.home.children.form.children.save' }] });
         const events = await eventually(
             async () => (await call(client, 'ui_events_read', { app: 'contact' })).body['events'] as { name: string; view: string }[],
-            (value) => Array.isArray(value) && value.some((event) => event.name === 'form.saved')
+            (value) => Array.isArray(value) && value.some((event) => event.name === 'save.press')
         );
         const shot = await call(client, 'ui_screenshot', { app: 'contact' });
 
         expect(interacted.isError).toBe(false);
-        expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'form.saved', view: 'headless' })]));
+        expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'save.press', view: 'headless' })]));
         expect(shot.images[0]?.mimeType).toBe('image/png');
     });
 
     it('should run a server rule on every press of a button that sets a value its path already holds', async () => {
-        // Arrange: Save sets its own busy to false, which it already is; a rule on the server emits on that path
+        // Arrange: Save sets its own busy to false, which it already is; a rule on the server counts each write of that path
         const save = '$.screens.home.children.press';
         const created = await call(client, 'ui_app_create', {
             name: 'presses',
@@ -147,7 +147,7 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         const rule = await call(client, 'ui_logic_write', {
             app: 'presses',
             expectedRevision: 1,
-            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path: `${save}.busy` }, do: [{ command: 'emit', target: 'save.pressed' }] } }]
+            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path: `${save}.busy` }, do: [{ command: 'increment', target: '$.data.pressed' }] } }]
         });
         const id = created.body['id'] as string;
         const page = await browser.newPage();
@@ -161,14 +161,14 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
             await new Promise((resolve) => setTimeout(resolve, 150));
         }
         const pressed = await eventually(
-            async () => ((await call(client, 'ui_events_read', { app: 'presses' })).body['events'] as { name: string }[]).filter((event) => event.name === 'save.pressed'),
-            (events) => Array.isArray(events) && events.length >= 3
+            async () => (await call(client, 'ui_state_get', { app: 'presses', path: '$.data.pressed' })).body['value'],
+            (count) => typeof count === 'number' && count >= 3
         );
         await page.close();
 
         // Assert
         expect([created.isError, rule.isError]).toEqual([false, false]);
-        expect(pressed).toHaveLength(3);
+        expect(pressed).toBe(3);
     });
 
     it("should run a server rule on every press of a plain button, through its transient pressed, with no on command", async () => {
@@ -178,7 +178,7 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         const rule = await call(client, 'ui_logic_write', {
             app: 'clicks',
             expectedRevision: 1,
-            operations: [{ op: 'set', unit: 'rules.go', value: { when: { path: `${button}.pressed` }, do: [{ command: 'emit', target: 'go.clicked' }] } }]
+            operations: [{ op: 'set', unit: 'rules.go', value: { when: { path: `${button}.pressed` }, do: [{ command: 'increment', target: '$.data.clicked' }] } }]
         });
         const page = await browser.newPage();
         await page.goto(server.viewOf(created.body['id'] as string));
@@ -190,15 +190,15 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
             await new Promise((resolve) => setTimeout(resolve, 150));
         }
         const clicked = await eventually(
-            async () => ((await call(client, 'ui_events_read', { app: 'clicks' })).body['events'] as { name: string }[]).filter((event) => event.name === 'go.clicked'),
-            (events) => Array.isArray(events) && events.length >= 3
+            async () => (await call(client, 'ui_state_get', { app: 'clicks', path: '$.data.clicked' })).body['value'],
+            (count) => typeof count === 'number' && count >= 3
         );
         const state = await call(client, 'ui_state_get', { app: 'clicks', path: `${button}.pressed` });
         await page.close();
 
         // Assert
         expect([created.isError, rule.isError]).toEqual([false, false]);
-        expect(clicked).toHaveLength(3);
+        expect(clicked).toBe(3);
         expect(state.body['value']).toMatchObject({ at: expect.any(Number), device: expect.any(String) });
     });
 
@@ -224,15 +224,17 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         const pressRule = await call(client, 'ui_logic_write', {
             app: 'raised',
             expectedRevision: 1,
-            operations: [{ op: 'set', unit: 'rules.opened', value: { when: { path: `$.raised.${card.slice(2)}.press` }, do: [{ command: 'emit', target: 'card.pressed' }] } }]
+            operations: [{ op: 'set', unit: 'rules.opened', value: { when: { path: `$.raised.${card.slice(2)}.press` }, do: [{ command: 'increment', target: '$.data.pressed' }] } }]
         });
-        const events = async (name: string): Promise<unknown[]> =>
-            ((await call(client, 'ui_events_read', { app: 'raised' })).body['events'] as { name: string }[]).filter((event) => event.name === name);
+        const count = async (name: string): Promise<number> => {
+            const value = (await call(client, 'ui_state_get', { app: 'raised', path: `$.data.${name}` })).body['value'];
+            return typeof value === 'number' ? value : 0;
+        };
 
         // Act: press the card twice, and hover the dot while no rule uses hover
         await call(client, 'ui_preview', { app: 'raised' });
         for (let press = 0; press < 2; press++) await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'click', path: card }] });
-        const pressed = await eventually(() => events('card.pressed'), (value) => Array.isArray(value) && value.length >= 2);
+        const pressed = await eventually(() => count('pressed'), (value) => value >= 2);
         await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'hover', path: dot }] });
         await new Promise((resolve) => setTimeout(resolve, 500));
         const unused = (await call(client, 'ui_state_get', { app: 'raised', path: `$.raised.${dot.slice(2)}` })).body;
@@ -241,23 +243,24 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         const hoverRule = await call(client, 'ui_logic_write', {
             app: 'raised',
             expectedRevision: 2,
-            operations: [{ op: 'set', unit: 'rules.looked', value: { when: { path: `$.raised.${dot.slice(2)}.hover` }, do: [{ command: 'emit', target: 'dot.hovered' }] } }]
+            operations: [{ op: 'set', unit: 'rules.looked', value: { when: { path: `$.raised.${dot.slice(2)}.hover` }, do: [{ command: 'increment', target: '$.data.hovered' }] } }]
         });
         await call(client, 'ui_preview', { app: 'raised' });
         await call(client, 'ui_interact', { app: 'raised', actions: [{ action: 'hover', path: card }, { action: 'hover', path: dot }] });
-        const hovered = await eventually(() => events('dot.hovered'), (value) => Array.isArray(value) && value.length >= 1);
+        const hovered = await eventually(() => count('hovered'), (value) => value >= 1);
         // Writing raised into the shape redraws it: that must not make it raise hover again and again
-        const settled = await eventually(() => events('dot.hovered'), () => false, 2000);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const settled = await count('hovered');
 
         // Assert
         expect([created.isError, pressRule.isError, hoverRule.isError]).toEqual([false, false, false]);
         // The raised paths are ordinary trigger paths: nothing warns about them
         expect(JSON.stringify([pressRule.body['warnings'], hoverRule.body['warnings']])).not.toContain('.raised.');
-        expect(pressed).toHaveLength(2);
+        expect(pressed).toBe(2);
         expect(unused['error']).toBe('unknown-path');
         // One hover at once and, the pointer still moving over the dot, at most the last one when the 250 ms window ends
-        expect(hovered.length).toBeGreaterThanOrEqual(1);
-        expect(settled.length).toBeLessThanOrEqual(2);
+        expect(hovered).toBeGreaterThanOrEqual(1);
+        expect(settled).toBeLessThanOrEqual(2);
     });
 
     it('should run a server rule on every tool write of the value a path already holds', async () => {
@@ -265,13 +268,17 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         await call(client, 'ui_logic_write', {
             app: 'presses',
             expectedRevision: 2,
-            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path }, do: [{ command: 'emit', target: 'tool.wrote' }] } }]
+            operations: [{ op: 'set', unit: 'rules.pressed', value: { when: { path }, do: [{ command: 'increment', target: '$.data.wrote' }] } }]
         });
 
         for (let write = 0; write < 2; write++) await call(client, 'ui_state_set', { app: 'presses', path, value: true });
-        const events = (await call(client, 'ui_events_read', { app: 'presses' })).body['events'] as { name: string }[];
+        const wrote = await eventually(
+            async () => (await call(client, 'ui_state_get', { app: 'presses', path: '$.data.wrote' })).body['value'],
+            (count) => count === 2,
+            2000
+        );
 
-        expect(events.filter((event) => event.name === 'tool.wrote')).toHaveLength(2);
+        expect(wrote).toBe(2);
     });
 
     it('should list the apps on the view page without an app', async () => {

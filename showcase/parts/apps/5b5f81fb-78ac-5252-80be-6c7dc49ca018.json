@@ -1666,10 +1666,6 @@
               "command": "copy",
               "from": "$.data.files.{{ $trigger }}.name",
               "target": "$.data.windows.notes.caption"
-            },
-            {
-              "command": "emit",
-              "target": "notes.loaded"
             }
           ]
         },

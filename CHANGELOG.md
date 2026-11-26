@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **The host reads an app by ids** (docs/design/state-definitions-and-instances.md). Breaking. The view host takes the
+  runtime's `raised` message: an event of a node with an `@id` is queued for `ui_events_read` as `<id>.<event>` with
+  the report `{ id, event, value?, row? }` as its payload, raised on `window` (and on a panel's element) as
+  `stateui:raised`, and handed to an attached `embeddedApp` through `onRaised`. `ui_interact` answers `raised` in
+  place of `emits`. Server logic has no `emit`; the guide, the logic tool and the starter app `lumen-desktop` drop it.
+  Tests: `test/browser.integration.test.ts` (the form app's `save.press`, a panel's `stateui:raised`, a site page's
+  raised events), `test/statenet.integration.test.ts`, `test/tools.test.ts`.
 - **Each instance sees its peers' shared branches in `$.peers`** (docs/design/state-definitions-and-instances.md).
   `PeerShares` groups an app's running instances and writes each one's `$.peers.<path>` with the values of the
   people on the same `by` value, following changes, joins and leaves; client writes there are refused. The saving

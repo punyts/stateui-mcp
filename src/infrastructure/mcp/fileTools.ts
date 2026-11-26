@@ -6,7 +6,7 @@ import type { UiToolDefinition } from './toolKit.js';
 
 const FILE_READ = defineInput({
     ...RUN_APP_FIELDS,
-    fileId: { type: 'string', uuid: true, required: true, description: 'The file id from a file reference in ui_state_get or an emit payload' }
+    fileId: { type: 'string', uuid: true, required: true, description: 'The file id from a file reference in ui_state_get or an event payload' }
 });
 
 export interface FileToolDependencies {

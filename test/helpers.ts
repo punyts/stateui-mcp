@@ -177,7 +177,7 @@ export async function httpHarness(dataDir: string, browser?: PreviewBrowser, ext
     };
 }
 
-/** The home screen root of the form app: a form with an email field and a Save button that emits */
+/** The home screen root of the form app: a form with an email field and a Save button the host is told of (`@id` save) */
 export const FORM_ROOT = Object.freeze({
     component: 'panel',
     children: Object.freeze({
@@ -185,7 +185,7 @@ export const FORM_ROOT = Object.freeze({
             component: 'panel',
             children: Object.freeze({
                 email: Object.freeze({ component: 'textField', _label: 'Email' }),
-                save: Object.freeze({ component: 'button', _title: 'Save', on: Object.freeze({ press: Object.freeze({ command: 'emit', target: 'form.saved', value: 'ok' }) }) })
+                save: Object.freeze({ component: 'button', _title: 'Save', '@id': 'save' })
             })
         })
     })

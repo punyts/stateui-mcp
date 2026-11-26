@@ -321,12 +321,12 @@ describe('live tools', () => {
         expect(shot.body['error']).toBe('browser-unavailable');
     });
 
-    it('should run the actions and return the results, errors and emits', async () => {
+    it('should run the actions and return the results, errors and raised events', async () => {
         const app = await createForm();
         browser['interact']?.mockResolvedValueOnce({
             results: [{ index: 0, action: 'click', path: '$.screens.home.children.form.children.save', ok: true }],
             errors: [],
-            events: [{ cursor: 1, name: 'form.saved', payload: 'ok', at: 'now', view: 'headless' }],
+            events: [{ cursor: 1, name: 'save.press', payload: { id: 'save', event: 'press' }, at: 'now', view: 'headless' }],
             cursor: 1
         });
 
@@ -334,7 +334,7 @@ describe('live tools', () => {
 
         expect(browser['interact']).toHaveBeenCalledWith(app.id, 1, [{ action: 'click', path: '$.screens.home.children.form.children.save' }]);
         expect(result.isError).toBe(false);
-        expect(result.body['emits']).toEqual([{ cursor: 1, name: 'form.saved', payload: 'ok', at: 'now', view: 'headless' }]);
+        expect(result.body['raised']).toEqual([{ cursor: 1, name: 'save.press', payload: { id: 'save', event: 'press' }, at: 'now', view: 'headless' }]);
     });
 
     it('should mark the call as an error when an action failed and keep the results', async () => {

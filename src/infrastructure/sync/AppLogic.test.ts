@@ -46,8 +46,7 @@ const DOCUMENT = Object.freeze({
                         do: [
                             { command: 'reset', target: '#addContact.body' },
                             { command: 'set', target: '#addContact.open', value: false },
-                            { command: 'notify', target: 'toast', value: { text: 'Contact added' } },
-                            { command: 'emit', target: 'contactAdded', value: '$result.key' }
+                            { command: 'notify', target: 'toast', value: { text: 'Contact added' } }
                         ],
                         to: 'editing'
                     },
@@ -130,7 +129,7 @@ describe('AppLogic', () => {
         expect(authority.get('$.app.children.addContact.body.children.name.value')).toBe('');
         expect(authority.get('$.app.children.addContact.open')).toBe(false);
         expect(authority.get('$.app.children.addContact.phase')).toBe('editing');
-        expect(events).toEqual([['contactAdded', Object.keys(contacts)[0]]]);
+        expect(events).toEqual([]);
         expect(failures).toEqual([]);
         const pushed = received.filter((message) => message.type === 'changes');
         expect(pushed[0]?.changes?.map((item) => item.path)).toEqual([

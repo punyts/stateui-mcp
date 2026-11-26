@@ -148,7 +148,7 @@ export interface LiveToolDependencies {
     readonly viewUrl: (appId: string) => string;
 }
 
-/** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and `emit` events */
+/** The tools that need a running view: the state a view holds, commands, the preview, screenshots, interaction and the events of nodes with an `@id` */
 export function createLiveTools(dependencies: LiveToolDependencies): readonly UiToolDefinition[] {
     const { useCases, hub, liveViews, browser, viewUrl, calls, effects, logic, instanceViews } = dependencies;
     const resolve = runTargets({ useCases, instanceViews });
@@ -253,7 +253,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_interact',
             description:
-                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag (onto another node, or by an offset "+dx,+dy" in page pixels) on nodes by path, and key on whatever has focus. The interactive shapes of a drawing are reached by their paths too (ui_tree with rendered: true lists them). An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, emits, cursor }: one result per action, the runtime errors raised meanwhile, and the emit events the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
+                'Run time: act on the running app in the headless page like a user, on the instance of an app part: click, hover, fill, press, select, choose (by option value or label), focus and drag (onto another node, or by an offset "+dx,+dy" in page pixels) on nodes by path, and key on whatever has focus. The interactive shapes of a drawing are reached by their paths too (ui_tree with rendered: true lists them). An action on a node behind an open modal fails. Actions run in order and stop at the first failure; an action whose element was re-rendered meanwhile is tried again. Returns { app, revision, results, errors, raised, cursor }: one result per action, the runtime errors raised meanwhile, and the events of nodes with an @id the app raised (also readable with ui_events_read). What the actions change is the instance\'s state, never the definition. The call is an error when an action failed.',
             inputSchema: INTERACT.schema,
             annotations: WRITES,
             run: async (args) => {
@@ -281,7 +281,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
                 try {
                     const result = await browser.interact(appId, target.viewRevision, steps);
                     const failed = result.results.some((step) => !step.ok);
-                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, emits: result.events, cursor: result.cursor, ...pendingScenes(result.pending), ...(result.moving !== undefined && { moving: result.moving }) };
+                    const body = { ...runName(target), revision, results: result.results, errors: result.errors, raised: result.events, cursor: result.cursor, ...pendingScenes(result.pending), ...(result.moving !== undefined && { moving: result.moving }) };
                     return failed ? { isError: true, body: { error: 'action-failed', message: 'An action failed; the later actions did not run', ...body } } : succeed(body);
                 } catch (error) {
                     if (error instanceof BrowserUnavailableError) return browserUnavailable(error);
@@ -292,7 +292,7 @@ export function createLiveTools(dependencies: LiveToolDependencies): readonly Ui
         {
             name: 'ui_events_read',
             description:
-                'Run time: read the events the running app raised, oldest first, for the instance of an app part: emit events (a button with an emit action, a form submit), logic.failed, logic.call (payload { id, name, payload }; answer it with ui_call_answer) and logic.effect (payload { id, name, token, request }: an effect whose function the server does not have; answer it with ui_effect_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app, events: [{ cursor, name, payload, at, view }], cursor }.',
+                'Run time: read the events the running app raised, oldest first, for the instance of an app part: "<id>.<event>" for each event of a node that carries an @id (payload { id, event, value, row }: value is the data of the event, row the record of a node in a row template), logic.failed, logic.call (payload { id, name, payload }; answer it with ui_call_answer) and logic.effect (payload { id, name, token, request }: an effect whose function the server does not have; answer it with ui_effect_answer). No chat turn carries them: read them after the user may have acted, and pass the returned cursor as since next time. At most 500 are kept per app; a restart empties the queue. Reading changes nothing. Returns { app, events: [{ cursor, name, payload, at, view }], cursor }.',
             inputSchema: EVENTS_READ.schema,
             annotations: READ_ONLY,
             run: async (args) => {
