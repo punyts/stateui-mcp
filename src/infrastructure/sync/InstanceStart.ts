@@ -1,5 +1,6 @@
-import { assembleApp } from '@punyts/stateui-app/core';
-import type { JsonValue as LibraryJsonValue } from '@punyts/stateui-app/core';
+import { assembleApp, libraryFromCatalog } from '@punyts/stateui-app/core';
+import type { CatalogSource, ComponentLibrary, JsonValue as LibraryJsonValue } from '@punyts/stateui-app/core';
+import { loadCatalogFile } from '../stateUiLibrary.js';
 import { loadPartSource } from '../../application/partSource.js';
 import type { BindingScope, InstanceShape } from '../../application/ports/InstanceStates.js';
 import type { UiPartRepository } from '../../application/ports/UiPartRepository.js';
@@ -48,9 +49,17 @@ export function bindingScopes(start: InstanceStart): InstanceShape['bindings'] {
  * run (`testPersonOf`, docs/design/stateui-test-runs.md) a shared binding is a person binding of its dataset's model:
  * its records start as the dataset's (which the document holds), its writes stay in the instance (checked against the model by the dataset hub), and a reset drops them
  */
+let library: ComponentLibrary | undefined;
+
+/** The component library, made once per process, so the marks of its components (a button's @transient pressed) reach the instance's path lists */
+function componentLibrary(): ComponentLibrary {
+    library ??= libraryFromCatalog(loadCatalogFile() as unknown as CatalogSource);
+    return library;
+}
+
 export async function assembleInstance(parts: UiPartRepository, app: UiPart<'apps'>, key: InstanceKey): Promise<InstanceStart> {
     const source = await loadPartSource(parts, partReferences('apps', app.body));
-    const { document } = assembleApp(app.body, source);
+    const { document } = assembleApp(app.body, source, { library: componentLibrary() });
     const bindings: Record<string, InstanceBinding> = {};
     const test = ownerOfTestPerson(key.person) !== undefined;
     for (const [name, binding] of Object.entries(app.body.uses?.data ?? {})) {

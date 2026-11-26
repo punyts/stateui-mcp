@@ -171,14 +171,14 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
         expect(pressed).toHaveLength(3);
     });
 
-    it("should run a server rule on every press of a plain button, through its clicked, with no on command", async () => {
-        // Arrange: a button with nothing wired; the rule watches its clicked
+    it("should run a server rule on every press of a plain button, through its transient pressed, with no on command", async () => {
+        // Arrange: a button with nothing wired; the rule watches its pressed
         const button = '$.screens.home.children.go';
         const created = await call(client, 'ui_app_create', { name: 'clicks', home: { component: 'panel', children: { go: { component: 'button', _title: 'Go' } } } });
         const rule = await call(client, 'ui_logic_write', {
             app: 'clicks',
             expectedRevision: 1,
-            operations: [{ op: 'set', unit: 'rules.go', value: { when: { path: `${button}.clicked`, is: true }, do: [{ command: 'emit', target: 'go.clicked' }] } }]
+            operations: [{ op: 'set', unit: 'rules.go', value: { when: { path: `${button}.pressed` }, do: [{ command: 'emit', target: 'go.clicked' }] } }]
         });
         const page = await browser.newPage();
         await page.goto(server.viewOf(created.body['id'] as string));
@@ -193,13 +193,13 @@ describe.skipIf(!installed)('the live view through Vite and a statenet (Chromium
             async () => ((await call(client, 'ui_events_read', { app: 'clicks' })).body['events'] as { name: string }[]).filter((event) => event.name === 'go.clicked'),
             (events) => Array.isArray(events) && events.length >= 3
         );
-        const state = await call(client, 'ui_state_get', { app: 'clicks', path: `${button}.clicked` });
+        const state = await call(client, 'ui_state_get', { app: 'clicks', path: `${button}.pressed` });
         await page.close();
 
         // Assert
         expect([created.isError, rule.isError]).toEqual([false, false]);
         expect(clicked).toHaveLength(3);
-        expect(state.body['value']).toBe(true);
+        expect(state.body['value']).toMatchObject({ at: expect.any(Number), device: expect.any(String) });
     });
 
     it("should run a server rule on every press of a card through $.raised, and on a shape's hover only when a rule uses it", async () => {

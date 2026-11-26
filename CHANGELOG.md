@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Assembly knows the component library.** The validator's `assembleApp` and an instance's assembly
+  (`src/infrastructure/sync/InstanceStart.ts`) pass the library, so a component's own marks (a button's `@transient`
+  `pressed`) reach the document's `ephemeral` list and the authority never stores a press. Covered by stateui-app's
+  `src/core/meta/metadataPaths.test.ts`.
 - **A person's app instance keeps an undo history.** Each app authority keeps the last `INSTANCE_HISTORY` (100)
   client changes (`src/infrastructure/sync/AppAuthorities.ts`), and the browser host hands the runtime's `history`
   message to its sync client's `undo()` or `redo()` (`src/browser/host.ts`). An undo is a server write, so the app's

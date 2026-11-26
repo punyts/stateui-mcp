@@ -135,7 +135,8 @@ export class StateUiAppValidator implements UiAppValidator {
     }
 
     assembleApp(blueprint: AppBlueprint, parts: PartSource): UiDocument {
-        return JSON.parse(JSON.stringify(assembleApp(blueprint, parts).document)) as UiDocument;
+        // With the library, the marks of library components (a button's @transient pressed) reach the path lists
+        return JSON.parse(JSON.stringify(assembleApp(blueprint, parts, { library: this.library }).document)) as UiDocument;
     }
 
     validatePart<K extends PartKind>(kind: K, name: string, body: UiPartBodies[K], parts: PartSource): readonly UiBuildError[] {
