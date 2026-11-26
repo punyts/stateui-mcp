@@ -825,6 +825,11 @@ export class LiveView {
             case 'decide':
                 this.onDecide(message);
                 break;
+            case 'history':
+                // undo or redo of the person's instance; dropped while offline, as the client refuses it
+                if (message['step'] === 'undo') this.client?.undo();
+                else if (message['step'] === 'redo') this.client?.redo();
+                break;
             case 'emit':
                 if (typeof message['name'] === 'string') {
                     this.channel.event(message['name'], message['payload'] as Json | undefined);

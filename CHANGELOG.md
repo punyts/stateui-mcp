@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **A person's app instance keeps an undo history.** Each app authority keeps the last `INSTANCE_HISTORY` (100)
+  client changes (`src/infrastructure/sync/AppAuthorities.ts`), and the browser host hands the runtime's `history`
+  message to its sync client's `undo()` or `redo()` (`src/browser/host.ts`). An undo is a server write, so the app's
+  logic does not run for it. The `saving` guide topic names the commands. Test:
+  `src/infrastructure/sync/AppLogic.test.ts` ("should run no logic for an undo of a client change").
 - **`@local`, `@secret` and `@transient` reach the sync layer**. The browser host gives its sync client the
   document's `local` and `secret` lists, and updates them with each new document (`src/browser/host.ts`).
   Each app authority takes the document's `secret` list, and its `ephemeral` list, which now holds the `@transient`

@@ -39,6 +39,9 @@ function secretOf(document: UiDocument): string[] {
     return Array.isArray(secret) ? secret.filter((item): item is string => typeof item === 'string') : [];
 }
 
+/** How many of a person's changes to an app instance its `undo` command can take back */
+export const INSTANCE_HISTORY = 100;
+
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
@@ -162,6 +165,8 @@ export class AppAuthorities {
                 storage,
                 initial,
                 createParents: true,
+                // A person's instance keeps its newest changes to undo (docs/design/state-definitions-and-instances.md)
+                history: INSTANCE_HISTORY,
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey }),
                 // The app's ephemeral paths are shared like any change but never saved, and never hold up a durable save
                 ...(ephemeralOf(document).length > 0 && { ephemeral: ephemeralOf(document) }),

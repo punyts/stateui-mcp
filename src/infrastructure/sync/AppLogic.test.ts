@@ -85,12 +85,13 @@ interface Message {
 let counter = 0;
 const change = (path: string, value: unknown) => ({ type: 'change', change: { id: `c-${++counter}`, path, op: 'set', value, base: 0 } });
 
-async function setup(document: UiDocument = DOCUMENT) {
+async function setup(document: UiDocument = DOCUMENT, history = 0) {
     const authority: Authority = await createAuthority({
         namespace: NAMESPACE,
         storage: createMemoryNamespaceStorage(),
         initial: { data: JSON.parse(JSON.stringify(document['data'])), app: {} },
-        createParents: true
+        createParents: true,
+        history
     });
     const events: [string, JsonValue | undefined][] = [];
     const failures: string[] = [];
@@ -138,6 +139,21 @@ describe('AppLogic', () => {
             '$.app.children.addContact.phase'
         ]);
         expect(received.some((message) => message.type === 'emit' && message.name === 'notify.toast')).toBe(true);
+    });
+
+    it('should run no logic for an undo of a client change', async () => {
+        // Arrange
+        const { authority, send } = await setup(DOCUMENT, 10);
+        send(change('$.data.contacts.c1', { name: 'Bo' }));
+        const counted = authority.get('$.data.stats.contacts');
+
+        // Act
+        send({ type: 'undo' });
+
+        // Assert
+        expect(counted).toBe(1);
+        expect(authority.get('$.data.contacts.c1')).toBeUndefined();
+        expect(authority.get('$.data.stats.contacts')).toBe(1);
     });
 
     it('should reject a client change a guard refuses', async () => {
