@@ -122,6 +122,12 @@ const CONTENT_PREFIX = '_';
 const INSPECT_TIMEOUT_MS = 2000;
 
 type AppMessage = Extract<ServerMessage, { type: 'app' }>;
+
+/** The `local` and `secret` path lists assembly writes into a document from its nodes' metadata, empty when absent */
+function markedPaths(document: JsonRecord | undefined): { local: string[]; secret: string[] } {
+    const list = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
+    return { local: list(document?.['local']), secret: list(document?.['secret']) };
+}
 /** What a page that attaches the live app to one of its elements gives with it */
 type AttachRequest = Pick<AppOpenRequest, 'screen' | 'onEmit' | 'onNavigate'>;
 /** A navigation replaces `$.route` or writes below it */
@@ -471,6 +477,8 @@ export class LiveView {
             transport: this.channel.transport((message) => this.onServerMessage(message)),
             localStore: this.store,
             clientId: this.viewId,
+            // The paths the document's nodes mark @local (never sent) and @secret (sent while online, never kept)
+            ...markedPaths(this.app?.document),
             onStatus: (report) => this.onSyncStatus(report),
             onEmit: (name, value) => {
                 if (name === BOUND_REQUESTS && Array.isArray(value)) {
@@ -672,6 +680,7 @@ export class LiveView {
     private onApp(app: AppMessage): void {
         const previous = this.app;
         this.app = app;
+        this.client?.setPaths(markedPaths(app.document));
         this.ensureFrame();
         if (!this.frameLoaded) return;
         if (!this.loaded || this.sentDocument === undefined || previous === undefined) {

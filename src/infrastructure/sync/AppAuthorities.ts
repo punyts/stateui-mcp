@@ -33,6 +33,12 @@ function ephemeralOf(document: UiDocument): string[] {
     return external !== undefined && Object.keys(external).length > 0 ? [...declared, '$.external'] : declared;
 }
 
+/** The paths the app's nodes mark `@secret` (assembly writes them to `secret`): server logic sees them, nothing keeps them */
+function secretOf(document: UiDocument): string[] {
+    const secret = (document as { secret?: unknown }).secret;
+    return Array.isArray(secret) ? secret.filter((item): item is string => typeof item === 'string') : [];
+}
+
 /** The view id the events of an app's own logic (`emit`, `logic.failed`) are recorded under */
 export const LOGIC_VIEW_ID = 'logic';
 
@@ -158,7 +164,8 @@ export class AppAuthorities {
                 createParents: true,
                 ...(this.serverKey !== undefined && { serverKey: this.serverKey }),
                 // The app's ephemeral paths are shared like any change but never saved, and never hold up a durable save
-                ...(ephemeralOf(document).length > 0 && { ephemeral: ephemeralOf(document) })
+                ...(ephemeralOf(document).length > 0 && { ephemeral: ephemeralOf(document) }),
+                ...(secretOf(document).length > 0 && { secret: secretOf(document) })
             }).then((created) => {
                 created.onEmit((name, value, clientId) => this.onEmit(appId, name, value as JsonValue | undefined, clientId));
                 this.startLogic(namespace, appId, created, document, derive, person);

@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- **`@local`, `@secret` and `@transient` reach the sync layer**. The browser host gives its sync client the
+  document's `local` and `secret` lists, and updates them with each new document (`src/browser/host.ts`).
+  Each app authority takes the document's `secret` list, and its `ephemeral` list, which now holds the `@transient`
+  paths too (`src/infrastructure/sync/AppAuthorities.ts`). The guide's `paths` topic explains `#name` and `@id`, and
+  its `saving` topic explains the three marks. Covered by state-sync's `src/Client.meta.test.ts` and
+  `src/authority/Secret.test.ts`, and by stateui-app's assemble test.
 - **Node references are `#name` in the guide, the starter apps and the showcase**
   (docs/design/state-definitions-and-instances.md). The committed showcase is regenerated. Tests:
   `test/showcase.integration.test.ts`, `test/starters.test.ts`.
